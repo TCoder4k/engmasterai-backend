@@ -1,0 +1,167 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+//// ===================== ENUMS =====================
+
+enum UserRole {
+  USER
+  ADMIN
+}
+
+enum CourseType {
+  VOCAB
+  GRAMMAR
+  COMMUNICATION
+}
+
+enum LessonTaskType {
+  VIDEO
+  QUIZ
+  ARRANGE
+  TRUE_FALSE
+}
+
+enum TaskProgressStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  COMPLETED
+}
+
+//// ===================== MODELS =====================
+
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  password  String
+  name      String
+  avatarUrl String?
+  role      UserRole @default(USER)
+
+  totalPoints Int @default(0)
+  level       Int @default(1)
+
+  createdAt DateTime @default(now())
+
+  taskProgress LessonTaskProgress[]
+
+  @@map("users")
+}
+
+model Course {
+  id          String     @id @default(uuid())
+  title       String
+  type        CourseType
+  description String
+  thumbnail   String?
+  isPublished Boolean    @default(false)
+
+  createdAt DateTime @default(now())
+
+  lessons Lesson[]
+
+  @@map("courses")
+}
+
+model Lesson {
+  id          String  @id @default(uuid())
+  courseId    String
+  title       String
+  description String?
+  orderIndex  Int
+  isFree      Boolean @default(false)
+
+  createdAt DateTime @default(now())
+
+  course       Course             @relation(fields: [courseId], references: [id])
+  tasks        LessonTask[]
+  vocabularies LessonVocabulary[]
+
+  @@map("lessons")
+}
+
+model LessonTask {
+  id         String         @id @default(uuid())
+  lessonId   String
+  type       LessonTaskType
+  title      String
+  content    Json
+  points     Int
+  orderIndex Int
+
+  createdAt DateTime @default(now())
+
+  lesson    Lesson               @relation(fields: [lessonId], references: [id])
+  questions Question[]
+  progress  LessonTaskProgress[]
+
+  @@map("lesson_tasks")
+}
+
+model Question {
+  id            String  @id @default(uuid())
+  taskId        String
+  content       String
+  options       Json?
+  correctAnswer Json
+  explanation   String?
+  audioUrl      String?
+  imageUrl      String?
+  orderIndex    Int
+
+  task LessonTask @relation(fields: [taskId], references: [id])
+
+  @@map("questions")
+}
+
+model LessonTaskProgress {
+  id            String             @id @default(uuid())
+  userId        String
+  taskId        String
+  status        TaskProgressStatus @default(NOT_STARTED)
+  score         Int                @default(0)
+  maxScore      Int
+  attemptsCount Int                @default(0)
+  completedAt   DateTime?
+
+  user User       @relation(fields: [userId], references: [id])
+  task LessonTask @relation(fields: [taskId], references: [id])
+
+  @@unique([userId, taskId])
+  @@map("lesson_task_progress")
+}
+
+model Vocabulary {
+  id            String  @id @default(uuid())
+  word          String
+  pronunciation String?
+  meaning       String
+  example       String?
+  audioUrl      String?
+  imageUrl      String?
+  partOfSpeech  String?
+  level         Int
+
+  createdAt DateTime @default(now())
+
+  lessons LessonVocabulary[]
+
+  @@map("vocabularies")
+}
+
+model LessonVocabulary {
+  id         String @id @default(uuid())
+  lessonId   String
+  vocabId    String
+  orderIndex Int
+
+  lesson     Lesson     @relation(fields: [lessonId], references: [id])
+  vocabulary Vocabulary @relation(fields: [vocabId], references: [id])
+
+  @@unique([lessonId, vocabId])
+  @@map("lesson_vocabularies")
+}
