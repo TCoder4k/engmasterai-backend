@@ -1,10 +1,14 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
 generator client {
   provider = "prisma-client-js"
 }
 
-datasource db {
-  provider = "postgresql"
-}
+
+
 
 //// ===================== ENUMS =====================
 
@@ -33,13 +37,13 @@ enum TaskProgressStatus {
 }
 
 //// ===================== MODELS =====================
-
+//
 model User {
   id        String   @id @default(uuid())
   email     String   @unique
   password  String
   name      String
-  avatarUrl String?
+  avatarUrl String? //can be null
   role      UserRole @default(USER)
 
   totalPoints Int @default(0)
@@ -49,7 +53,7 @@ model User {
 
   taskProgress LessonTaskProgress[]
 
-  @@map("users")
+  @@map("users") //users dùng cho query sql , còn User dùng cho code 
 }
 
 model Course {
@@ -117,7 +121,7 @@ model Question {
 
   @@map("questions")
 }
-
+//Một user có thể có nhiều tiến độ làm bài
 model LessonTaskProgress {
   id            String             @id @default(uuid())
   userId        String
@@ -128,7 +132,7 @@ model LessonTaskProgress {
   attemptsCount Int                @default(0)
   completedAt   DateTime?
 
-  user User       @relation(fields: [userId], references: [id])
+  user User       @relation(fields: [userId], references: [id]) //reference tham chiếu đến id của bảng tiến độ
   task LessonTask @relation(fields: [taskId], references: [id])
 
   @@unique([userId, taskId])
