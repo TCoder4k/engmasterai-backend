@@ -14,5 +14,16 @@ services:
     ports:
       - "5432:5432"
 
+  redis:
+    image: redis:7-alpine
+    container_name: engmasterai-redis
+    restart: always
+    ports:
+      - "6379:6379"
+    volumes:
+      - engmasterai_redis:/data
+    command: redis-server --appendonly yes
+
 volumes:
   engmasterai_postgres:
+  engmasterai_redis:

@@ -1,9 +1,9 @@
-import { IsEmail, IsNotEmpty, IsString, MinLength } from "class-validator";
+import { IsEmail, IsNotEmpty, IsString, MinLength, IsEnum } from "class-validator";
+import { UserRole } from "@prisma/client";
 
-//Define a type or authentication request
+//Define a type for login request
 export class LoginDTO {
     @IsEmail()
-    @IsString()
     @IsNotEmpty()
     email: string;
 
@@ -11,4 +11,8 @@ export class LoginDTO {
     @IsNotEmpty()
     @MinLength(6)
     password: string;
+
+    @IsEnum(UserRole, { message: 'Role must be either USER or ADMIN' })
+    @IsNotEmpty()
+    role: UserRole;
 }

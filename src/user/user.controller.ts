@@ -11,9 +11,14 @@ import {
   ParseUUIDPipe,
   UseGuards,
   Req,
+  Post,
+  UseInterceptors,
+  UploadedFile,
+  BadRequestException,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { UserService } from './user.service';
-import { UpdateUserDto } from './dto/update-user.dto';
+import { UpdateUserDto, ChangePasswordDto } from './dto';
 import { JwtAuthGuard, RolesGuard } from '../auth/guard';
 import { Roles } from '../auth/decorator';
 import { UserRole } from '@prisma/client';
@@ -47,6 +52,42 @@ export class UserController {
   @Put('me')
   async updateMe(@Req() req, @Body() updateUserDto: UpdateUserDto) {
     return this.userService.update(req.user.userId, updateUserDto);
+  }
+
+  //Upload avatar cho bản thân - ALL authenticated users can access
+  @Post('me/avatar')
+  @UseInterceptors(FileInterceptor('avatar'))
+  async uploadAvatar(@Req() req, @UploadedFile() file: Express.Multer.File) {
+    if (!file) {
+      throw new BadRequestException('No file uploaded');
+    }
+
+    // Validate file type
+    const allowedMimeTypes = ['image/jpeg', 'image/png', 'image/jpg', 'image/webp'];
+    if (!allowedMimeTypes.includes(file.mimetype)) {
+      throw new BadRequestException('Only image files are allowed (JPEG, PNG, WebP)');
+    }
+
+    // Validate file size (10MB max)
+    const maxSize = 10 * 1024 * 1024;
+    if (file.size > maxSize) {
+      throw new BadRequestException('File size must not exceed 10MB');
+    }
+
+    return this.userService.updateAvatar(req.user.userId, file);
+  }
+
+  //Đổi mật khẩu - ALL authenticated users can access
+  @Post('me/password')
+  async changePassword(
+    @Req() req,
+    @Body() changePasswordDto: ChangePasswordDto,
+  ) {
+    return this.userService.changePassword(
+      req.user.userId,
+      changePasswordDto.currentPassword,
+      changePasswordDto.newPassword,
+    );
   }
   
   //Admin cập nhật thông tin user bất kỳ
