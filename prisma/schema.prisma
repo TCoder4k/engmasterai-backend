@@ -18,9 +18,9 @@ enum UserRole {
 }
 
 enum CourseType {
-  VOCAB
   GRAMMAR
-  COMMUNICATION
+  VOCABULARY
+  LISTENING
 }
 
 enum LessonTaskType {
