@@ -76,15 +76,26 @@ model Lesson {
   courseId    String
   title       String
   description String?
+  notes       String?
+
+  videoUrl              String?
+  pdfUrl                String?
+  audioUrl              String?
+  videoDurationMinutes  Int?
+  estimatedStudyMinutes Int?
+  learningObjectives    String[] @default([])
+
   orderIndex  Int
-  isFree      Boolean @default(false)
+  isPublished Boolean @default(false)
 
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   course       Course             @relation(fields: [courseId], references: [id])
   tasks        LessonTask[]
   vocabularies LessonVocabulary[]
 
+  @@index([courseId])
   @@map("lessons")
 }
 
