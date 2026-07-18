@@ -5,9 +5,24 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { UpdateUserDto } from './dto/update-user.dto';
+import { UpdateProfileDto, AdminUpdateUserDto } from './dto/update-user.dto';
 import { CloudinaryService } from '../shared/services/cloudinary.service';
+import { Prisma } from '@prisma/client';
 import * as argon from 'argon2';
+
+// Fields safe to return to any caller — never includes `password`.
+const SAFE_USER_SELECT = {
+  id: true,
+  email: true,
+  name: true,
+  avatarUrl: true,
+  role: true,
+  totalPoints: true,
+  level: true,
+  createdAt: true,
+};
+
+const MAX_LIMIT = 100;
 
 @Injectable()
 export class UserService {
@@ -17,23 +32,14 @@ export class UserService {
   ) {}
 
   async findAll(page?: number, limit?: number) {
-    const take = limit || 10;
+    const take = Math.min(limit || 10, MAX_LIMIT);
     const skip = page ? (page - 1) * take : 0;
 
     const [users, total] = await Promise.all([
       this.prismaService.user.findMany({
         skip,
         take,
-        select: {
-          id: true,
-          email: true,
-          name: true,
-          avatarUrl: true,
-          role: true,
-          totalPoints: true,
-          level: true,
-          createdAt: true,
-        },
+        select: SAFE_USER_SELECT,
         orderBy: { createdAt: 'desc' },
       }),
       this.prismaService.user.count(),
@@ -53,16 +59,7 @@ export class UserService {
   async findOne(id: string) {
     const user = await this.prismaService.user.findUnique({
       where: { id },
-      select: {
-        id: true,
-        email: true,
-        name: true,
-        avatarUrl: true,
-        role: true,
-        totalPoints: true,
-        level: true,
-        createdAt: true,
-      },
+      select: SAFE_USER_SELECT,
     });
 
     if (!user) {
@@ -76,38 +73,61 @@ export class UserService {
     return this.prismaService.user.findUnique({ where: { email } });
   }
 
-  async update(id: string, updateUserDto: UpdateUserDto) {
+  // Self-service update (PUT /users/me). Builds the Prisma `data` object
+  // field-by-field from UpdateProfileDto — which itself has no role/level/
+  // totalPoints fields — rather than spreading the DTO, so this method can
+  // never write a privileged field even if the DTO shape changes later.
+  async updateProfile(id: string, dto: UpdateProfileDto) {
     await this.findOne(id);
+    await this.assertEmailAvailable(id, dto.email);
 
-    if (updateUserDto.email) {
-      const existingUser = await this.prismaService.user.findUnique({
-        where: { email: updateUserDto.email },
-      });
-
-      if (existingUser && existingUser.id !== id) {
-        throw new ConflictException('Email is already in use');
-      }
-    }
-
-    const data: any = { ...updateUserDto };
-    if (updateUserDto.password) {
-      data.password = await argon.hash(updateUserDto.password);
-    }
+    const data: Prisma.UserUpdateInput = {};
+    if (dto.email !== undefined) data.email = dto.email;
+    if (dto.name !== undefined) data.name = dto.name;
+    if (dto.avatarUrl !== undefined) data.avatarUrl = dto.avatarUrl;
+    if (dto.password) data.password = await argon.hash(dto.password);
 
     return this.prismaService.user.update({
       where: { id },
       data,
-      select: {
-        id: true,
-        email: true,
-        name: true,
-        avatarUrl: true,
-        role: true,
-        totalPoints: true,
-        level: true,
-        createdAt: true,
-      },
+      select: SAFE_USER_SELECT,
     });
+  }
+
+  // Admin update (PUT /users/:id, ADMIN only). The only path that may write
+  // role/level/totalPoints — kept in its own DTO and method so the
+  // self-service path above can't be extended into a privilege escalation by
+  // accident.
+  async adminUpdate(id: string, dto: AdminUpdateUserDto) {
+    await this.findOne(id);
+    await this.assertEmailAvailable(id, dto.email);
+
+    const data: Prisma.UserUpdateInput = {};
+    if (dto.email !== undefined) data.email = dto.email;
+    if (dto.name !== undefined) data.name = dto.name;
+    if (dto.avatarUrl !== undefined) data.avatarUrl = dto.avatarUrl;
+    if (dto.role !== undefined) data.role = dto.role;
+    if (dto.totalPoints !== undefined) data.totalPoints = dto.totalPoints;
+    if (dto.level !== undefined) data.level = dto.level;
+    if (dto.password) data.password = await argon.hash(dto.password);
+
+    return this.prismaService.user.update({
+      where: { id },
+      data,
+      select: SAFE_USER_SELECT,
+    });
+  }
+
+  private async assertEmailAvailable(id: string, email?: string) {
+    if (!email) return;
+
+    const existingUser = await this.prismaService.user.findUnique({
+      where: { email },
+    });
+
+    if (existingUser && existingUser.id !== id) {
+      throw new ConflictException('Email is already in use');
+    }
   }
 
   async remove(id: string) {
@@ -149,16 +169,7 @@ export class UserService {
       return this.prismaService.user.update({
         where: { id: userId },
         data: { avatarUrl: result.secure_url },
-        select: {
-          id: true,
-          email: true,
-          name: true,
-          avatarUrl: true,
-          role: true,
-          totalPoints: true,
-          level: true,
-          createdAt: true,
-        },
+        select: SAFE_USER_SELECT,
       });
     } catch (error) {
       throw new BadRequestException(

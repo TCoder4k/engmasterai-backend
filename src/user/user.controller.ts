@@ -15,13 +15,26 @@ import {
   UseInterceptors,
   UploadedFile,
   BadRequestException,
+  ValidationPipe,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { UserService } from './user.service';
-import { UpdateUserDto, ChangePasswordDto } from './dto';
+import {
+  UpdateProfileDto,
+  AdminUpdateUserDto,
+  ChangePasswordDto,
+  QueryUserDto,
+} from './dto';
 import { JwtAuthGuard, RolesGuard } from '../auth/guard';
 import { Roles } from '../auth/decorator';
 import { UserRole } from '@prisma/client';
+
+// The app-wide ValidationPipe (main.ts) doesn't enable `transform`, so query
+// string values ("5") wouldn't be coerced to numbers for QueryUserDto's
+// @Type() decorators. Scoping a transform-enabled pipe to just this @Query()
+// param mirrors CourseController's queryPipe instead of changing global
+// validation behavior for every other module.
+const queryPipe = new ValidationPipe({ transform: true });
 
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('users')
@@ -31,8 +44,8 @@ export class UserController {
   //Lấy ra tất cả người dùng trong hệ thống
   @Get()
   @Roles(UserRole.ADMIN)
-  async findAll(@Query('page') page?: number, @Query('limit') limit?: number) {
-    return this.userService.findAll(page, limit);
+  async findAll(@Query(queryPipe) query: QueryUserDto) {
+    return this.userService.findAll(query.page, query.limit);
   }
 
   //Xem thông tin bản thân - ALL authenticated users can access
@@ -49,9 +62,11 @@ export class UserController {
   }
 
   //Cập nhật thông tin bản thân - ALL authenticated users can access
+  // Uses UpdateProfileDto (no role/level/totalPoints) so a self-update can
+  // never escalate privilege — see UserService.updateProfile.
   @Put('me')
-  async updateMe(@Req() req, @Body() updateUserDto: UpdateUserDto) {
-    return this.userService.update(req.user.userId, updateUserDto);
+  async updateMe(@Req() req, @Body() updateProfileDto: UpdateProfileDto) {
+    return this.userService.updateProfile(req.user.userId, updateProfileDto);
   }
 
   //Upload avatar cho bản thân - ALL authenticated users can access
@@ -90,14 +105,14 @@ export class UserController {
     );
   }
   
-  //Admin cập nhật thông tin user bất kỳ
+  //Admin cập nhật thông tin user bất kỳ (được phép đổi role/level/totalPoints)
   @Put(':id')
   @Roles(UserRole.ADMIN)
   async update(
     @Param('id', ParseUUIDPipe) id: string,
-    @Body() updateUserDto: UpdateUserDto,
+    @Body() adminUpdateUserDto: AdminUpdateUserDto,
   ) {
-    return this.userService.update(id, updateUserDto);
+    return this.userService.adminUpdate(id, adminUpdateUserDto);
   }
   //Admin xoá người dùng 
   @Delete(':id')
