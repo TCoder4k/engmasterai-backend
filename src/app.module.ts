@@ -9,6 +9,7 @@ import { CourseModule } from './course/course.module';
 import { LessonModule } from './lesson/lesson.module';
 import { VocabLibraryModule } from './vocab-library/vocab-library.module';
 import { VocabDeckModule } from './vocab-deck/vocab-deck.module';
+import { VocabWordModule } from './vocab-word/vocab-word.module';
 
 @Module({
   imports: [
@@ -21,6 +22,7 @@ import { VocabDeckModule } from './vocab-deck/vocab-deck.module';
     LessonModule,
     VocabLibraryModule,
     VocabDeckModule,
+    VocabWordModule,
   ],
 })
 export class AppModule {}

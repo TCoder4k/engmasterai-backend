@@ -45,6 +45,26 @@ enum CefrLevel {
   C2
 }
 
+enum PartOfSpeech {
+  NOUN
+  VERB
+  ADJECTIVE
+  ADVERB
+  PRONOUN
+  PREPOSITION
+  CONJUNCTION
+  INTERJECTION
+  DETERMINER
+  PHRASE
+  IDIOM
+}
+
+enum WordSource {
+  ADMIN
+  IMPORT
+  AI
+}
+
 //// ===================== MODELS =====================
 //
 model User {
@@ -217,8 +237,75 @@ model VocabDeck {
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt
 
-  library VocabLibrary @relation(fields: [libraryId], references: [id])
+  library   VocabLibrary    @relation(fields: [libraryId], references: [id])
+  deckWords VocabDeckWord[]
 
   @@index([libraryId])
   @@map("vocab_decks")
+}
+
+model VocabWord {
+  id           String       @id @default(uuid())
+  text         String
+  ipa          String?
+  audioUrl     String?
+  imageUrl     String?
+  cefrLevel    CefrLevel?
+  synonyms     String[]     @default([])
+  antonyms     String[]     @default([])
+  collocations String[]     @default([])
+  wordFamily   String[]     @default([])
+  source       WordSource   @default(ADMIN)
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  meanings  VocabWordMeaning[]
+  examples  VocabWordExample[]
+  deckWords VocabDeckWord[]
+
+  @@index([text])
+  @@map("vocab_words")
+}
+
+model VocabWordMeaning {
+  id           String        @id @default(uuid())
+  wordId       String
+  partOfSpeech PartOfSpeech?
+  meaning      String
+  orderIndex   Int
+  createdAt    DateTime      @default(now())
+
+  word VocabWord @relation(fields: [wordId], references: [id], onDelete: Cascade)
+
+  @@index([wordId])
+  @@map("vocab_word_meanings")
+}
+
+model VocabWordExample {
+  id          String   @id @default(uuid())
+  wordId      String
+  sentence    String
+  translation String?
+  orderIndex  Int
+  createdAt   DateTime @default(now())
+
+  word VocabWord @relation(fields: [wordId], references: [id], onDelete: Cascade)
+
+  @@index([wordId])
+  @@map("vocab_word_examples")
+}
+
+model VocabDeckWord {
+  id         String   @id @default(uuid())
+  deckId     String
+  wordId     String
+  orderIndex Int
+  createdAt  DateTime @default(now())
+
+  deck VocabDeck @relation(fields: [deckId], references: [id], onDelete: Cascade)
+  word VocabWord @relation(fields: [wordId], references: [id])
+
+  @@unique([deckId, wordId])
+  @@index([wordId])
+  @@map("vocab_deck_words")
 }

@@ -2,11 +2,13 @@ import {
   Body,
   Controller,
   Delete,
+  Get,
   HttpCode,
   HttpStatus,
   Param,
   ParseUUIDPipe,
   Patch,
+  Req,
   UseGuards,
 } from '@nestjs/common';
 import { VocabDeckService } from './vocab-deck.service';
@@ -15,13 +17,18 @@ import { JwtAuthGuard, RolesGuard } from '../auth/guard';
 import { Roles } from '../auth/decorator';
 import { UserRole } from '@prisma/client';
 
-// No GET :id in Phase 1 — a standalone single-deck read has no consumer yet
-// (DeckDetailPage is deferred to Phase 2), so it isn't built ahead of a
-// caller. Every method below already looks the deck up by id internally via
-// the service's findOneOrThrow for its own guard checks.
 @Controller('vocab/decks')
 export class VocabDeckController {
   constructor(private readonly vocabDeckService: VocabDeckService) {}
+
+  // Any authenticated user — the Phase-1 scope-cut endpoint, now with its
+  // consumer (DeckDetailPage). Every other method below already looks the
+  // deck up by id internally for its own guard checks.
+  @UseGuards(JwtAuthGuard)
+  @Get(':id')
+  async findOnePublished(@Param('id', ParseUUIDPipe) id: string, @Req() req) {
+    return this.vocabDeckService.findOnePublished(id, req.user);
+  }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN)
