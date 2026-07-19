@@ -7,6 +7,8 @@ import { UserModule } from './user/user.module';
 import { SharedModule } from './shared/shared.module';
 import { CourseModule } from './course/course.module';
 import { LessonModule } from './lesson/lesson.module';
+import { VocabLibraryModule } from './vocab-library/vocab-library.module';
+import { VocabDeckModule } from './vocab-deck/vocab-deck.module';
 
 @Module({
   imports: [
@@ -17,6 +19,8 @@ import { LessonModule } from './lesson/lesson.module';
     UserModule,
     CourseModule,
     LessonModule,
+    VocabLibraryModule,
+    VocabDeckModule,
   ],
 })
 export class AppModule {}

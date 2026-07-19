@@ -36,6 +36,15 @@ enum TaskProgressStatus {
   COMPLETED
 }
 
+enum CefrLevel {
+  A1
+  A2
+  B1
+  B2
+  C1
+  C2
+}
+
 //// ===================== MODELS =====================
 //
 model User {
@@ -179,4 +188,37 @@ model LessonVocabulary {
 
   @@unique([lessonId, vocabId])
   @@map("lesson_vocabularies")
+}
+
+model VocabLibrary {
+  id          String   @id @default(uuid())
+  name        String
+  description String
+  thumbnail   String?
+  orderIndex  Int
+  isPublished Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  decks VocabDeck[]
+
+  @@map("vocab_libraries")
+}
+
+model VocabDeck {
+  id          String     @id @default(uuid())
+  libraryId   String
+  name        String
+  description String?
+  thumbnail   String?
+  cefrLevel   CefrLevel?
+  orderIndex  Int
+  isPublished Boolean    @default(false)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  library VocabLibrary @relation(fields: [libraryId], references: [id])
+
+  @@index([libraryId])
+  @@map("vocab_decks")
 }
