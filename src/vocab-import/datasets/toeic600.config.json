@@ -1,0 +1,51 @@
+{
+  "id": "toeic600",
+  "mapper": "generic",
+  "importSource": "IMPORT",
+  "files": {
+    "table": "toeic/toeic-600-words-dataset/data/toeic_600_words.csv",
+    "format": "csv"
+  },
+  "library": {
+    "name": "TOEIC 600 Essential Words",
+    "description": "Core TOEIC vocabulary organized by workplace and daily-life topic, sourced from the TOEIC 600 word list."
+  },
+  "deckFrom": { "column": "topic" },
+  "columns": {
+    "text": "english",
+    "ipa": "pronounce",
+    "meanings": [
+      { "from": "vietnamese", "posFrom": "type" },
+      { "from": "explain", "posFrom": "type" }
+    ],
+    "examples": [
+      { "sentence": "example", "translation": "example_vietnamese" }
+    ]
+  },
+  "posAliases": {
+    "n.": "NOUN",
+    "v.": "VERB",
+    "adv.": "ADVERB",
+    "adj.": "ADJECTIVE",
+    "perp.": "PREPOSITION",
+    "n,v.": "NOUN",
+    "n, v.": "NOUN",
+    "v, n.": "VERB",
+    "phr. v.": "PHRASE",
+    "phr.v.": "PHRASE",
+    "n.ph.": "PHRASE"
+  },
+  "cefrAliases": {},
+  "media": {
+    "audio": {
+      "root": "toeic/toeic-600-words-dataset/media/audio",
+      "slug": "underscoreSpaces",
+      "remoteUrlColumn": "audio_url"
+    },
+    "image": {
+      "root": "toeic/toeic-600-words-dataset/media/images",
+      "slug": "underscoreSpaces",
+      "remoteUrlColumn": "image_url"
+    }
+  }
+}
