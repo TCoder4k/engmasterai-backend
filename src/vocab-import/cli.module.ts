@@ -8,6 +8,11 @@ import { VocabImportModule } from './vocab-import.module';
 // needs the DB and Cloudinary, and skipping the rest keeps boot fast and
 // side-effect-free (approved plan §2).
 @Module({
-  imports: [ConfigModule.forRoot({ isGlobal: true }), PrismaModule, SharedModule, VocabImportModule],
+  imports: [
+    ConfigModule.forRoot({ isGlobal: true }),
+    PrismaModule,
+    SharedModule,
+    VocabImportModule,
+  ],
 })
 export class CliModule {}

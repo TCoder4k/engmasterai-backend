@@ -1,8 +1,17 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Req, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  ParseUUIDPipe,
+  Post,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
 import { LessonService } from './lesson.service';
 import { CreateLessonDto } from './dto';
-import { JwtAuthGuard, RolesGuard } from '../auth/guard';
-import { Roles } from '../auth/decorator';
+import { JwtAuthGuard, RolesGuard } from '../auth/guards';
+import { Roles } from '../auth/decorators';
 import { UserRole } from '@prisma/client';
 
 @Controller('courses/:courseId/lessons')
@@ -23,7 +32,9 @@ export class LessonCourseController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN)
   @Get('manage')
-  async findAllByCourseManage(@Param('courseId', ParseUUIDPipe) courseId: string) {
+  async findAllByCourseManage(
+    @Param('courseId', ParseUUIDPipe) courseId: string,
+  ) {
     return this.lessonService.findAllByCourseManage(courseId);
   }
 

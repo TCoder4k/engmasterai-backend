@@ -5,7 +5,10 @@ export function normalizeDedupeKey(text: string): string {
   return text.trim().toLowerCase();
 }
 
-export function splitMultiValue(raw: string | undefined, separator: string): string[] {
+export function splitMultiValue(
+  raw: string | undefined,
+  separator: string,
+): string[] {
   if (!raw) return [];
   return raw
     .split(separator)

@@ -6,7 +6,13 @@ import {
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { UserRole } from '@prisma/client';
-import { ROLES_KEY } from '../decorator/roles.decorator';
+import type { Request } from 'express';
+import { ROLES_KEY } from '../decorators/roles.decorator';
+
+// Populated by JwtStrategy.validate() and attached to the request by Passport.
+type RequestWithUser = Request & {
+  user?: { userId: string; email: string; role: UserRole };
+};
 
 /**
  * Guard that checks if the authenticated user has the required role(s)
@@ -29,7 +35,7 @@ export class RolesGuard implements CanActivate {
     }
 
     // Get the user from the request (populated by JwtAuthGuard)
-    const { user } = context.switchToHttp().getRequest();
+    const { user } = context.switchToHttp().getRequest<RequestWithUser>();
 
     if (!user || !user.role) {
       throw new ForbiddenException('Access denied: No role found');

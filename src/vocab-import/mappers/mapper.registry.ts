@@ -17,7 +17,9 @@ export class MapperRegistry {
   get(id: string): DatasetMapper {
     const mapper = this.mappers.get(id);
     if (!mapper) {
-      throw new Error(`Unknown mapper "${id}". Registered mappers: ${Array.from(this.mappers.keys()).join(', ')}`);
+      throw new Error(
+        `Unknown mapper "${id}". Registered mappers: ${Array.from(this.mappers.keys()).join(', ')}`,
+      );
     }
     return mapper;
   }

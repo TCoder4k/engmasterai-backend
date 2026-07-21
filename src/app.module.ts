@@ -5,6 +5,7 @@ import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './auth/auth.module';
 import { UserModule } from './user/user.module';
 import { SharedModule } from './shared/shared.module';
+import { SharedRedisModule } from './shared/redis/redis.module';
 import { CourseModule } from './course/course.module';
 import { LessonModule } from './lesson/lesson.module';
 import { VocabLibraryModule } from './vocab-library/vocab-library.module';
@@ -16,6 +17,7 @@ import { VocabWordModule } from './vocab-word/vocab-word.module';
     ConfigModule.forRoot({ isGlobal: true }),
     PrismaModule,
     SharedModule,
+    SharedRedisModule,
     AuthModule,
     UserModule,
     CourseModule,

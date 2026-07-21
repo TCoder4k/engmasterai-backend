@@ -12,10 +12,16 @@ export function resolveDatasetRoot(): string {
   return path.resolve(__dirname, '..', '..', '..', 'dataset');
 }
 
-function resolveConfigPaths(config: DatasetConfig, datasetRoot: string): DatasetConfig {
+function resolveConfigPaths(
+  config: DatasetConfig,
+  datasetRoot: string,
+): DatasetConfig {
   const resolved: DatasetConfig = {
     ...config,
-    files: { ...config.files, table: path.resolve(datasetRoot, config.files.table) },
+    files: {
+      ...config.files,
+      table: path.resolve(datasetRoot, config.files.table),
+    },
   };
 
   if (config.media) {
@@ -38,9 +44,15 @@ function resolveConfigPaths(config: DatasetConfig, datasetRoot: string): Dataset
 }
 
 export function loadDatasetConfig(datasetId: string): DatasetConfig {
-  const configPath = path.join(__dirname, 'datasets', `${datasetId}.config.json`);
+  const configPath = path.join(
+    __dirname,
+    'datasets',
+    `${datasetId}.config.json`,
+  );
   if (!fs.existsSync(configPath)) {
-    throw new Error(`No dataset config found for "${datasetId}" (expected ${configPath})`);
+    throw new Error(
+      `No dataset config found for "${datasetId}" (expected ${configPath})`,
+    );
   }
 
   const raw = fs.readFileSync(configPath, 'utf-8');
@@ -48,7 +60,9 @@ export function loadDatasetConfig(datasetId: string): DatasetConfig {
   try {
     parsed = JSON.parse(raw);
   } catch (err) {
-    throw new Error(`Could not parse dataset config ${configPath}: ${(err as Error).message}`);
+    throw new Error(
+      `Could not parse dataset config ${configPath}: ${(err as Error).message}`,
+    );
   }
 
   validateConfigShape(parsed, configPath);
@@ -57,7 +71,10 @@ export function loadDatasetConfig(datasetId: string): DatasetConfig {
   return resolveConfigPaths(parsed, datasetRoot);
 }
 
-function validateConfigShape(config: Partial<DatasetConfig>, configPath: string): void {
+function validateConfigShape(
+  config: Partial<DatasetConfig>,
+  configPath: string,
+): void {
   const problems: string[] = [];
 
   if (!config.id) problems.push('missing "id"');
@@ -65,7 +82,8 @@ function validateConfigShape(config: Partial<DatasetConfig>, configPath: string)
   if (!config.importSource) problems.push('missing "importSource"');
   if (!config.files?.table) problems.push('missing "files.table"');
   if (!config.library?.name) problems.push('missing "library.name"');
-  if (!config.library?.description) problems.push('missing "library.description" (schema-required)');
+  if (!config.library?.description)
+    problems.push('missing "library.description" (schema-required)');
   if (!config.deckFrom) problems.push('missing "deckFrom"');
   if (!config.columns?.text) problems.push('missing "columns.text"');
   if (!config.columns?.meanings || config.columns.meanings.length === 0) {
@@ -73,7 +91,9 @@ function validateConfigShape(config: Partial<DatasetConfig>, configPath: string)
   }
 
   if (problems.length > 0) {
-    throw new Error(`Invalid dataset config ${configPath}:\n  - ${problems.join('\n  - ')}`);
+    throw new Error(
+      `Invalid dataset config ${configPath}:\n  - ${problems.join('\n  - ')}`,
+    );
   }
 }
 

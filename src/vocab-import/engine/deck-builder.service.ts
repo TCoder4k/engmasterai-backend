@@ -50,7 +50,11 @@ export class DeckBuilderService {
     let attached = 0;
 
     for (const [deckKey, deckWords] of groups) {
-      const { deckId, created } = await this.getOrCreateDeck(libraryId, deckKey, dryRun);
+      const { deckId, created } = await this.getOrCreateDeck(
+        libraryId,
+        deckKey,
+        dryRun,
+      );
       if (created) decksCreated++;
       else decksReused++;
 
@@ -64,7 +68,10 @@ export class DeckBuilderService {
     return { decksCreated, decksReused, attached, unattachedNoDeckKey };
   }
 
-  private async getOrCreateLibrary(config: DatasetConfig, dryRun: boolean): Promise<string> {
+  private async getOrCreateLibrary(
+    config: DatasetConfig,
+    dryRun: boolean,
+  ): Promise<string> {
     const existing = await this.prismaService.vocabLibrary.findFirst({
       where: { name: config.library.name },
       select: { id: true },
@@ -72,7 +79,9 @@ export class DeckBuilderService {
     if (existing) return existing.id;
     if (dryRun) return DRY_RUN_LIBRARY_ID;
 
-    const maxOrderIndex = await this.prismaService.vocabLibrary.aggregate({ _max: { orderIndex: true } });
+    const maxOrderIndex = await this.prismaService.vocabLibrary.aggregate({
+      _max: { orderIndex: true },
+    });
     const created = await this.prismaService.vocabLibrary.create({
       data: {
         name: config.library.name,
@@ -117,7 +126,11 @@ export class DeckBuilderService {
   // skipDuplicates as a race backstop, matching VocabDeckService.attachWords
   // — the @@unique([deckId, wordId]) constraint makes a concurrent attach
   // of the same pair safe even though duplicates are already filtered here.
-  private async attachWords(deckId: string, wordIds: string[], dryRun: boolean): Promise<number> {
+  private async attachWords(
+    deckId: string,
+    wordIds: string[],
+    dryRun: boolean,
+  ): Promise<number> {
     if (wordIds.length === 0) return 0;
 
     const isRealDeck = !deckId.startsWith('<dry-run-deck:');
@@ -155,7 +168,11 @@ export class DeckBuilderService {
     let nextOrderIndex = (maxOrderIndex._max.orderIndex ?? -1) + 1;
 
     await this.prismaService.vocabDeckWord.createMany({
-      data: bounded.map((wordId) => ({ deckId, wordId, orderIndex: nextOrderIndex++ })),
+      data: bounded.map((wordId) => ({
+        deckId,
+        wordId,
+        orderIndex: nextOrderIndex++,
+      })),
       skipDuplicates: true,
     });
 

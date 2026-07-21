@@ -1,4 +1,8 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateLessonDto } from './dto/create-lesson.dto';
 import { UpdateLessonDto } from './dto/update-lesson.dto';
@@ -189,7 +193,9 @@ export class LessonService {
   }
 
   private async findOneOrThrow(id: string) {
-    const lesson = await this.prismaService.lesson.findUnique({ where: { id } });
+    const lesson = await this.prismaService.lesson.findUnique({
+      where: { id },
+    });
     if (!lesson) {
       throw new NotFoundException(`Lesson with ID ${id} not found`);
     }
@@ -199,8 +205,13 @@ export class LessonService {
   // Access seam: the single place that decides whether a user may see a
   // course's lessons. Today this only checks the course is published; a
   // future Enrollment/purchase model plugs in here without touching callers.
-  private async assertCourseAccessibleToUser(courseId: string, _user: { userId: string }) {
-    const course = await this.prismaService.course.findUnique({ where: { id: courseId } });
+  private async assertCourseAccessibleToUser(
+    courseId: string,
+    _user: { userId: string },
+  ) {
+    const course = await this.prismaService.course.findUnique({
+      where: { id: courseId },
+    });
     if (!course || !course.isPublished) {
       throw new NotFoundException(`Course with ID ${courseId} not found`);
     }
@@ -208,7 +219,9 @@ export class LessonService {
   }
 
   private async assertCourseExists(courseId: string) {
-    const course = await this.prismaService.course.findUnique({ where: { id: courseId } });
+    const course = await this.prismaService.course.findUnique({
+      where: { id: courseId },
+    });
     if (!course) {
       throw new NotFoundException(`Course with ID ${courseId} not found`);
     }

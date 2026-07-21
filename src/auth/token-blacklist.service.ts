@@ -1,76 +1,77 @@
-import { Injectable } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  ServiceUnavailableException,
+} from '@nestjs/common';
+import { InjectRedis } from '@nestjs-modules/ioredis';
+import Redis from 'ioredis';
+import { accessTokenBlacklistKey } from './auth-redis.constants';
+import { sha256Hex } from './utils/hash.util';
 
 /**
- * Token Blacklist Service (In-Memory)
- * Quản lý danh sách các token đã bị vô hiệu hóa (logout)
- * Sử dụng in-memory Map để lưu trữ (phù hợp cho development)
+ * Access-token blacklist (Redis-backed).
+ *
+ * Replaces the previous in-memory `Map` implementation, which was lost on
+ * restart and not shared across instances. Only a SHA-256 hash of the token
+ * is ever stored — never the raw JWT (which embeds the user's email) — and
+ * Redis's own `EX` handles expiry, so there is no manual cleanup timer to
+ * maintain.
+ *
+ * A Redis connection failure is a service outage, not "token is fine": both
+ * methods throw `ServiceUnavailableException` (503) rather than silently
+ * treating an unverifiable token as clean (fail-open) or as invalid (401,
+ * which would incorrectly imply the token itself is bad).
  */
 @Injectable()
 export class TokenBlacklistService {
-  // In-memory storage: Map<token, expiresAt>
-  private blacklistedTokens: Map<string, number> = new Map();
+  private readonly logger = new Logger(TokenBlacklistService.name);
+
+  constructor(@InjectRedis() private readonly redis: Redis) {}
 
   /**
-   * Thêm token vào blacklist
-   * @param token - JWT token cần vô hiệu hóa
-   * @param expiresAt - Thời điểm token hết hạn (Unix timestamp in seconds)
+   * Adds a token to the blacklist for the remainder of its natural lifetime.
+   * @param token - JWT access token to revoke
+   * @param expiresAt - the token's `exp` claim (Unix timestamp, seconds)
    */
-  addToBlacklist(token: string, expiresAt: number): void {
+  async addToBlacklist(token: string, expiresAt: number): Promise<void> {
     const now = Math.floor(Date.now() / 1000);
     const ttl = expiresAt - now;
 
-    if (ttl > 0) {
-      this.blacklistedTokens.set(token, expiresAt);
+    // Already expired — nothing to revoke, and Redis rejects a non-positive EX.
+    if (ttl <= 0) return;
 
-      // Tự động xóa token khỏi blacklist sau khi hết hạn
-      setTimeout(() => {
-        this.blacklistedTokens.delete(token);
-      }, ttl * 1000);
+    try {
+      await this.redis.set(
+        accessTokenBlacklistKey(sha256Hex(token)),
+        '1',
+        'EX',
+        ttl,
+      );
+    } catch (error) {
+      this.logger.error(
+        'Redis write failed while blacklisting an access token',
+        error as Error,
+      );
+      throw new ServiceUnavailableException(
+        'Authentication service temporarily unavailable',
+      );
     }
   }
 
-  /**
-   * Kiểm tra token có bị blacklist không
-   * @param token - JWT token cần kiểm tra
-   * @returns true nếu token bị blacklist
-   */
-  isBlacklisted(token: string): boolean {
-    const expiresAt = this.blacklistedTokens.get(token);
-
-    if (!expiresAt) {
-      return false;
-    }
-
-    const now = Math.floor(Date.now() / 1000);
-
-    // Nếu token đã hết hạn, xóa khỏi blacklist
-    if (now >= expiresAt) {
-      this.blacklistedTokens.delete(token);
-      return false;
-    }
-
-    return true;
-  }
-
-  /**
-   * Xóa token khỏi blacklist (nếu cần)
-   * @param token - JWT token cần xóa
-   */
-  removeFromBlacklist(token: string): void {
-    this.blacklistedTokens.delete(token);
-  }
-
-  /**
-   * Dọn dẹp các token đã hết hạn (chạy định kỳ nếu cần)
-   */
-  cleanup(): void {
-    const now = Math.floor(Date.now() / 1000);
-
-    for (const [token, expiresAt] of this.blacklistedTokens.entries()) {
-      if (now >= expiresAt) {
-        this.blacklistedTokens.delete(token);
-      }
+  async isBlacklisted(token: string): Promise<boolean> {
+    try {
+      const value = await this.redis.get(
+        accessTokenBlacklistKey(sha256Hex(token)),
+      );
+      return value !== null;
+    } catch (error) {
+      this.logger.error(
+        'Redis read failed while checking the access-token blacklist',
+        error as Error,
+      );
+      throw new ServiceUnavailableException(
+        'Authentication service temporarily unavailable',
+      );
     }
   }
 }
-

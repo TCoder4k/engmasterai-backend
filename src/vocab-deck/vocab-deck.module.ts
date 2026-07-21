@@ -12,7 +12,11 @@ import { PrismaModule } from '../prisma/prisma.module';
 // export anything to the other.
 @Module({
   imports: [PrismaModule],
-  controllers: [VocabDeckController, VocabDeckLibraryController, VocabDeckWordController],
+  controllers: [
+    VocabDeckController,
+    VocabDeckLibraryController,
+    VocabDeckWordController,
+  ],
   providers: [VocabDeckService],
 })
 export class VocabDeckModule {}

@@ -19,7 +19,9 @@ export interface LoadedTable extends RawTable {
   delimiter?: string;
 }
 
-export async function loadRawTable(config: DatasetConfig): Promise<LoadedTable> {
+export async function loadRawTable(
+  config: DatasetConfig,
+): Promise<LoadedTable> {
   const filePath = config.files.table;
   const format = config.files.format ?? detectFormat(filePath);
 

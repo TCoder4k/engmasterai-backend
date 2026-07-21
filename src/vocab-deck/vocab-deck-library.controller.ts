@@ -1,8 +1,17 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Req, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  ParseUUIDPipe,
+  Post,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
 import { VocabDeckService } from './vocab-deck.service';
 import { CreateVocabDeckDto } from './dto';
-import { JwtAuthGuard, RolesGuard } from '../auth/guard';
-import { Roles } from '../auth/decorator';
+import { JwtAuthGuard, RolesGuard } from '../auth/guards';
+import { Roles } from '../auth/decorators';
 import { UserRole } from '@prisma/client';
 
 @Controller('vocab/libraries/:libraryId/decks')
@@ -26,7 +35,9 @@ export class VocabDeckLibraryController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN)
   @Get('manage')
-  async findAllByLibraryManage(@Param('libraryId', ParseUUIDPipe) libraryId: string) {
+  async findAllByLibraryManage(
+    @Param('libraryId', ParseUUIDPipe) libraryId: string,
+  ) {
     return this.vocabDeckService.findAllByLibraryManage(libraryId);
   }
 

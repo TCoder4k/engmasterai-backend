@@ -13,7 +13,10 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { CefrLevel } from '@prisma/client';
-import { CreateVocabWordMeaningDto, CreateVocabWordExampleDto } from './create-vocab-word.dto';
+import {
+  CreateVocabWordMeaningDto,
+  CreateVocabWordExampleDto,
+} from './create-vocab-word.dto';
 
 // Null-vs-undefined convention (the H1 fix — see the approved Phase 2 plan §7):
 //

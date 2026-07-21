@@ -6,7 +6,9 @@ export function readJson(filePath: string): RawTable {
   const parsed = JSON.parse(raw);
 
   if (!Array.isArray(parsed)) {
-    throw new Error(`${filePath} must contain a top-level JSON array of row objects`);
+    throw new Error(
+      `${filePath} must contain a top-level JSON array of row objects`,
+    );
   }
 
   const headerSet = new Set<string>();

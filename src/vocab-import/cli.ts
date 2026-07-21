@@ -13,7 +13,12 @@ import { MediaUploaderService } from './media/media-uploader.service';
 import { ImportEngineService } from './engine/import-engine.service';
 import { DeckBuilderService } from './engine/deck-builder.service';
 import { loadRawTable } from './analyzer/table-loader';
-import { AnalysisReport, ValidationReport, MediaManifest, ImportSummary } from './types/artifacts';
+import {
+  AnalysisReport,
+  ValidationReport,
+  MediaManifest,
+  ImportSummary,
+} from './types/artifacts';
 import { ImportWord } from './types/import-word';
 import { MappingIssue } from './mappers/mapper.interface';
 
@@ -36,7 +41,12 @@ const STAGE_ORDER = ['analyze', 'map', 'validate', 'media', 'import'] as const;
 type Stage = (typeof STAGE_ORDER)[number];
 
 function parseArgs(argv: string[]): CliArgs {
-  const args: Partial<CliArgs> = { mode: 'skip', dryRun: false, allowPartial: false, forceOverwrite: false };
+  const args: Partial<CliArgs> = {
+    mode: 'skip',
+    dryRun: false,
+    allowPartial: false,
+    forceOverwrite: false,
+  };
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
@@ -63,7 +73,9 @@ function writeJson(filePath: string, data: unknown): void {
 
 function readJson<T>(filePath: string): T {
   if (!fs.existsSync(filePath)) {
-    throw new Error(`Expected artifact not found: ${filePath} — run the prior stage first`);
+    throw new Error(
+      `Expected artifact not found: ${filePath} — run the prior stage first`,
+    );
   }
   return JSON.parse(fs.readFileSync(filePath, 'utf-8'));
 }
@@ -78,7 +90,8 @@ function renderAnalysisMarkdown(report: AnalysisReport): string {
   lines.push(`- Format: ${report.file.format}`);
   lines.push(`- Path: ${report.file.path}`);
   lines.push(`- BOM: ${report.file.hasBom}`);
-  if (report.file.delimiter) lines.push(`- Delimiter: ${JSON.stringify(report.file.delimiter)}`);
+  if (report.file.delimiter)
+    lines.push(`- Delimiter: ${JSON.stringify(report.file.delimiter)}`);
   lines.push(`- Rows: ${report.file.rowCount}`);
   lines.push('');
   lines.push('## Columns');
@@ -137,7 +150,8 @@ function renderValidationMarkdown(report: ValidationReport): string {
 }
 
 function shouldRun(stage: Stage, requested: string | undefined): boolean {
-  if (!requested) return stage === 'analyze' || stage === 'map' || stage === 'validate';
+  if (!requested)
+    return stage === 'analyze' || stage === 'map' || stage === 'validate';
   return requested === stage;
 }
 
@@ -150,7 +164,9 @@ function mergeManifest(fresh: MediaManifest, buildDir: string): MediaManifest {
   if (!fs.existsSync(manifestPath)) return fresh;
 
   const previous = readJson<MediaManifest>(manifestPath);
-  const previousByKey = new Map(previous.entries.map((e) => [`${e.kind}:${e.textKey}`, e]));
+  const previousByKey = new Map(
+    previous.entries.map((e) => [`${e.kind}:${e.textKey}`, e]),
+  );
 
   for (const entry of fresh.entries) {
     const prior = previousByKey.get(`${entry.kind}:${entry.textKey}`);
@@ -169,7 +185,9 @@ async function main() {
   const buildDir = buildDatasetBuildDir(args.dataset);
   const runId = randomUUID();
 
-  const app = await NestFactory.createApplicationContext(CliModule, { logger: ['error', 'warn', 'log'] });
+  const app = await NestFactory.createApplicationContext(CliModule, {
+    logger: ['error', 'warn', 'log'],
+  });
 
   try {
     let mapped: MappedArtifact | undefined;
@@ -178,7 +196,10 @@ async function main() {
       const analyzer = app.get(DatasetAnalyzerService);
       const report = await analyzer.analyze(config, runId);
       writeJson(path.join(buildDir, 'analysis.json'), report);
-      fs.writeFileSync(path.join(buildDir, 'analysis.md'), renderAnalysisMarkdown(report));
+      fs.writeFileSync(
+        path.join(buildDir, 'analysis.md'),
+        renderAnalysisMarkdown(report),
+      );
       console.log(
         `[analyze] ${report.file.rowCount} rows, ${report.columns.length} columns → ${path.join(buildDir, 'analysis.md')}`,
       );
@@ -196,7 +217,9 @@ async function main() {
         words: result.words,
         issues: result.issues,
       });
-      console.log(`[map] ${result.words.length} words mapped, ${result.issues.length} mapping issue(s)`);
+      console.log(
+        `[map] ${result.words.length} words mapped, ${result.issues.length} mapping issue(s)`,
+      );
     }
 
     if (shouldRun('validate', args.stage)) {
@@ -204,14 +227,24 @@ async function main() {
         mapped = readJson<MappedArtifact>(path.join(buildDir, 'mapped.json'));
       }
       const validator = app.get(ImportValidatorService);
-      const report = await validator.validate(mapped.words, mapped.issues, config, runId);
+      const report = await validator.validate(
+        mapped.words,
+        mapped.issues,
+        config,
+        runId,
+      );
       writeJson(path.join(buildDir, 'validation.json'), report);
-      fs.writeFileSync(path.join(buildDir, 'validation.md'), renderValidationMarkdown(report));
+      fs.writeFileSync(
+        path.join(buildDir, 'validation.md'),
+        renderValidationMarkdown(report),
+      );
       console.log(
         `[validate] ${report.errors.length} error(s), ${report.warnings.length} warning(s) → ${path.join(buildDir, 'validation.md')}`,
       );
       if (report.errors.length > 0 && !args.allowPartial) {
-        console.log('Import blocked: fix the errors above (or pass --allow-partial) before running the media/import stages.');
+        console.log(
+          'Import blocked: fix the errors above (or pass --allow-partial) before running the media/import stages.',
+        );
         process.exitCode = 1;
       }
     }
@@ -220,28 +253,48 @@ async function main() {
       if (!mapped) {
         mapped = readJson<MappedArtifact>(path.join(buildDir, 'mapped.json'));
       }
-      const words = args.limit ? mapped.words.slice(0, args.limit) : mapped.words;
+      const words = args.limit
+        ? mapped.words.slice(0, args.limit)
+        : mapped.words;
 
       const resolver = app.get(MediaResolverService);
-      const manifest = mergeManifest(resolver.resolve(words, config, runId), buildDir);
+      const manifest = mergeManifest(
+        resolver.resolve(words, config, runId),
+        buildDir,
+      );
 
-      const persist = () => writeJson(path.join(buildDir, 'media-manifest.json'), manifest);
+      const persist = () =>
+        writeJson(path.join(buildDir, 'media-manifest.json'), manifest);
       persist();
 
       if (args.dryRun) {
         // Dry-run never uploads (approved plan §3's fix) — the manifest is
         // resolved so the preview shows what would upload / what's missing,
         // but every non-preexisting entry stays 'pending'.
-        const pending = manifest.entries.filter((e) => e.status === 'pending').length;
-        const missing = manifest.entries.filter((e) => e.status === 'missing').length;
-        console.log(`[media] (dry-run) ${pending} would upload, ${missing} missing (no local file or remote URL)`);
+        const pending = manifest.entries.filter(
+          (e) => e.status === 'pending',
+        ).length;
+        const missing = manifest.entries.filter(
+          (e) => e.status === 'missing',
+        ).length;
+        console.log(
+          `[media] (dry-run) ${pending} would upload, ${missing} missing (no local file or remote URL)`,
+        );
       } else {
         const uploader = app.get(MediaUploaderService);
         await uploader.upload(manifest, persist);
-        const uploaded = manifest.entries.filter((e) => e.status === 'uploaded').length;
-        const failed = manifest.entries.filter((e) => e.status === 'failed').length;
-        const missing = manifest.entries.filter((e) => e.status === 'missing').length;
-        console.log(`[media] ${uploaded} uploaded, ${failed} failed, ${missing} missing`);
+        const uploaded = manifest.entries.filter(
+          (e) => e.status === 'uploaded',
+        ).length;
+        const failed = manifest.entries.filter(
+          (e) => e.status === 'failed',
+        ).length;
+        const missing = manifest.entries.filter(
+          (e) => e.status === 'missing',
+        ).length;
+        console.log(
+          `[media] ${uploaded} uploaded, ${failed} failed, ${missing} missing`,
+        );
       }
     }
 
@@ -257,16 +310,22 @@ async function main() {
           return;
         }
       } else {
-        console.log('Warning: no validation.json found — proceeding without a validation gate.');
+        console.log(
+          'Warning: no validation.json found — proceeding without a validation gate.',
+        );
       }
 
       if (!mapped) {
         mapped = readJson<MappedArtifact>(path.join(buildDir, 'mapped.json'));
       }
-      const words = args.limit ? mapped.words.slice(0, args.limit) : mapped.words;
+      const words = args.limit
+        ? mapped.words.slice(0, args.limit)
+        : mapped.words;
 
       const manifestPath = path.join(buildDir, 'media-manifest.json');
-      const manifest = fs.existsSync(manifestPath) ? readJson<MediaManifest>(manifestPath) : undefined;
+      const manifest = fs.existsSync(manifestPath)
+        ? readJson<MediaManifest>(manifestPath)
+        : undefined;
 
       const startedAt = Date.now();
       const engine = app.get(ImportEngineService);
@@ -278,7 +337,12 @@ async function main() {
       });
 
       const deckBuilder = app.get(DeckBuilderService);
-      const deckResult = await deckBuilder.build(words, engineResult.wordIdByNormalizedText, config, args.dryRun);
+      const deckResult = await deckBuilder.build(
+        words,
+        engineResult.wordIdByNormalizedText,
+        config,
+        args.dryRun,
+      );
 
       const summary: ImportSummary = {
         runId,
@@ -294,8 +358,12 @@ async function main() {
         decksCreated: deckResult.decksCreated,
         decksReused: deckResult.decksReused,
         attached: deckResult.attached,
-        mediaUploaded: manifest ? manifest.entries.filter((e) => e.status === 'uploaded').length : 0,
-        mediaFailed: manifest ? manifest.entries.filter((e) => e.status === 'failed').length : 0,
+        mediaUploaded: manifest
+          ? manifest.entries.filter((e) => e.status === 'uploaded').length
+          : 0,
+        mediaFailed: manifest
+          ? manifest.entries.filter((e) => e.status === 'failed').length
+          : 0,
         unattachedNoDeckKey: deckResult.unattachedNoDeckKey,
         durationMs: Date.now() - startedAt,
       };
@@ -307,7 +375,8 @@ async function main() {
           `decks +${summary.decksCreated}/${summary.decksReused}, attached ${summary.attached}`,
       );
       if (summary.failed.length > 0) {
-        for (const f of summary.failed) console.log(`  failed: row ${f.row} (${f.text}): ${f.error}`);
+        for (const f of summary.failed)
+          console.log(`  failed: row ${f.row} (${f.text}): ${f.error}`);
       }
     }
   } catch (err) {

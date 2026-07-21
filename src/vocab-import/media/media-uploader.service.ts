@@ -9,7 +9,10 @@ const MAX_RETRIES = 2;
 const AUDIO_SIZE_CAP = 10 * 1024 * 1024; // matches POST /vocab/words/:id/audio
 const IMAGE_SIZE_CAP = 5 * 1024 * 1024; // matches POST /vocab/words/:id/image
 
-async function withRetry<T>(task: () => Promise<T>, retries: number): Promise<T> {
+async function withRetry<T>(
+  task: () => Promise<T>,
+  retries: number,
+): Promise<T> {
   let lastError: unknown;
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
@@ -34,7 +37,10 @@ export class MediaUploaderService {
   // onEntryUpdated is called after every single entry so an interrupted run
   // resumes by skipping everything already 'uploaded'. Concurrency-capped,
   // per-entry retry with backoff — one file's failure never aborts the run.
-  async upload(manifest: MediaManifest, onEntryUpdated: (manifest: MediaManifest) => void): Promise<MediaManifest> {
+  async upload(
+    manifest: MediaManifest,
+    onEntryUpdated: (manifest: MediaManifest) => void,
+  ): Promise<MediaManifest> {
     const limit = createLimiter(MAX_CONCURRENT);
 
     await Promise.all(
@@ -43,13 +49,18 @@ export class MediaUploaderService {
           if (entry.status !== 'pending') return;
 
           try {
-            const result = await withRetry(() => this.uploadEntry(entry), MAX_RETRIES);
+            const result = await withRetry(
+              () => this.uploadEntry(entry),
+              MAX_RETRIES,
+            );
             entry.status = 'uploaded';
             entry.secureUrl = result;
           } catch (err) {
             entry.status = 'failed';
             entry.error = (err as Error).message;
-            this.logger.warn(`Media upload failed for ${entry.kind}/${entry.textKey}: ${entry.error}`);
+            this.logger.warn(
+              `Media upload failed for ${entry.kind}/${entry.textKey}: ${entry.error}`,
+            );
           }
 
           onEntryUpdated(manifest);
@@ -83,7 +94,10 @@ export class MediaUploaderService {
     return result.secure_url;
   }
 
-  private async fetchRemote(url: string, kind: 'audio' | 'image'): Promise<Buffer> {
+  private async fetchRemote(
+    url: string,
+    kind: 'audio' | 'image',
+  ): Promise<Buffer> {
     const response = await fetch(url);
     if (!response.ok) {
       throw new Error(`Remote fetch failed (${response.status}) for ${url}`);
@@ -92,7 +106,9 @@ export class MediaUploaderService {
     const arrayBuffer = await response.arrayBuffer();
     const cap = kind === 'audio' ? AUDIO_SIZE_CAP : IMAGE_SIZE_CAP;
     if (arrayBuffer.byteLength > cap) {
-      throw new Error(`Remote file exceeds the ${cap / (1024 * 1024)}MB cap for ${kind}`);
+      throw new Error(
+        `Remote file exceeds the ${cap / (1024 * 1024)}MB cap for ${kind}`,
+      );
     }
 
     return Buffer.from(arrayBuffer);

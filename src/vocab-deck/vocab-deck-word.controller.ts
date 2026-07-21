@@ -13,8 +13,8 @@ import {
 } from '@nestjs/common';
 import { VocabDeckService } from './vocab-deck.service';
 import { AttachVocabDeckWordsDto } from './dto';
-import { JwtAuthGuard, RolesGuard } from '../auth/guard';
-import { Roles } from '../auth/decorator';
+import { JwtAuthGuard, RolesGuard } from '../auth/guards';
+import { Roles } from '../auth/decorators';
 import { UserRole } from '@prisma/client';
 
 // Third controller in the vocab-deck module, extending the established

@@ -35,7 +35,9 @@ export class ImportValidatorService {
     config: DatasetConfig,
     runId: string,
   ): Promise<ValidationReport> {
-    const errors: ValidationIssue[] = mapperIssues.map((issue) => ({ ...issue }));
+    const errors: ValidationIssue[] = mapperIssues.map((issue) => ({
+      ...issue,
+    }));
     const warnings: ValidationIssue[] = [];
 
     for (const word of words) {
@@ -54,7 +56,11 @@ export class ImportValidatorService {
 
     const dbDuplicates = await this.findDbDuplicates(words);
     for (const dup of dbDuplicates) {
-      warnings.push({ row: 0, text: dup.text, message: `Already exists in the database (id ${dup.existingId})` });
+      warnings.push({
+        row: 0,
+        text: dup.text,
+        message: `Already exists in the database (id ${dup.existingId})`,
+      });
     }
 
     return {
@@ -70,7 +76,11 @@ export class ImportValidatorService {
     };
   }
 
-  private validateStructural(word: ImportWord, errors: ValidationIssue[], warnings: ValidationIssue[]): void {
+  private validateStructural(
+    word: ImportWord,
+    errors: ValidationIssue[],
+    warnings: ValidationIssue[],
+  ): void {
     const row = word.source.row;
     const text = word.text;
 
@@ -79,24 +89,44 @@ export class ImportValidatorService {
       return;
     }
     if (text.length > TEXT_MAX) {
-      errors.push({ row, text, message: `text exceeds ${TEXT_MAX} characters` });
+      errors.push({
+        row,
+        text,
+        message: `text exceeds ${TEXT_MAX} characters`,
+      });
     }
     if (word.ipa && word.ipa.length > IPA_MAX) {
       errors.push({ row, text, message: `ipa exceeds ${IPA_MAX} characters` });
     }
     if (word.ipa && !IPA_LOOSE_PATTERN.test(word.ipa)) {
-      warnings.push({ row, text, message: `ipa "${word.ipa}" doesn't look like /slashed/ notation` });
+      warnings.push({
+        row,
+        text,
+        message: `ipa "${word.ipa}" doesn't look like /slashed/ notation`,
+      });
     }
 
     if (word.meanings.length === 0) {
-      errors.push({ row, text, message: 'No meanings — a word must have at least one' });
+      errors.push({
+        row,
+        text,
+        message: 'No meanings — a word must have at least one',
+      });
     }
     if (word.meanings.length > MEANING_MAX) {
-      errors.push({ row, text, message: `${word.meanings.length} meanings exceeds the cap of ${MEANING_MAX}` });
+      errors.push({
+        row,
+        text,
+        message: `${word.meanings.length} meanings exceeds the cap of ${MEANING_MAX}`,
+      });
     }
     word.meanings.forEach((m) => {
       if (m.meaning.length > MEANING_TEXT_MAX) {
-        errors.push({ row, text, message: `A meaning exceeds ${MEANING_TEXT_MAX} characters` });
+        errors.push({
+          row,
+          text,
+          message: `A meaning exceeds ${MEANING_TEXT_MAX} characters`,
+        });
       }
     });
 
@@ -104,14 +134,26 @@ export class ImportValidatorService {
       warnings.push({ row, text, message: 'No examples' });
     }
     if (word.examples.length > EXAMPLE_MAX) {
-      errors.push({ row, text, message: `${word.examples.length} examples exceeds the cap of ${EXAMPLE_MAX}` });
+      errors.push({
+        row,
+        text,
+        message: `${word.examples.length} examples exceeds the cap of ${EXAMPLE_MAX}`,
+      });
     }
     word.examples.forEach((e) => {
       if (e.sentence.length > EXAMPLE_TEXT_MAX) {
-        errors.push({ row, text, message: `An example sentence exceeds ${EXAMPLE_TEXT_MAX} characters` });
+        errors.push({
+          row,
+          text,
+          message: `An example sentence exceeds ${EXAMPLE_TEXT_MAX} characters`,
+        });
       }
       if (e.translation && e.translation.length > EXAMPLE_TEXT_MAX) {
-        errors.push({ row, text, message: `An example translation exceeds ${EXAMPLE_TEXT_MAX} characters` });
+        errors.push({
+          row,
+          text,
+          message: `An example translation exceeds ${EXAMPLE_TEXT_MAX} characters`,
+        });
       }
     });
 
@@ -122,11 +164,19 @@ export class ImportValidatorService {
       ['wordFamily', word.wordFamily],
     ] as const) {
       if (values.length > ARRAY_MAX) {
-        errors.push({ row, text, message: `${field} has ${values.length} items, exceeding the cap of ${ARRAY_MAX}` });
+        errors.push({
+          row,
+          text,
+          message: `${field} has ${values.length} items, exceeding the cap of ${ARRAY_MAX}`,
+        });
       }
       values.forEach((v) => {
         if (v.length > ARRAY_ITEM_MAX) {
-          errors.push({ row, text, message: `A ${field} entry exceeds ${ARRAY_ITEM_MAX} characters` });
+          errors.push({
+            row,
+            text,
+            message: `A ${field} entry exceeds ${ARRAY_ITEM_MAX} characters`,
+          });
         }
       });
     }
@@ -136,12 +186,20 @@ export class ImportValidatorService {
       ['image', word.media.image],
     ] as const) {
       if (ref?.remoteUrl && !HTTPS_URL_PATTERN.test(ref.remoteUrl)) {
-        errors.push({ row, text, message: `${field} remote URL must be https` });
+        errors.push({
+          row,
+          text,
+          message: `${field} remote URL must be https`,
+        });
       }
     }
   }
 
-  private validateMedia(word: ImportWord, config: DatasetConfig, warnings: ValidationIssue[]): void {
+  private validateMedia(
+    word: ImportWord,
+    config: DatasetConfig,
+    warnings: ValidationIssue[],
+  ): void {
     const row = word.source.row;
     const text = word.text;
     const deckKey = word.deckKey ?? '';
@@ -152,19 +210,28 @@ export class ImportValidatorService {
     ] as const) {
       if (!source) continue;
 
-      const remoteUrl = kind === 'audio' ? word.media.audio?.remoteUrl : word.media.image?.remoteUrl;
+      const remoteUrl =
+        kind === 'audio'
+          ? word.media.audio?.remoteUrl
+          : word.media.image?.remoteUrl;
       if (remoteUrl) continue; // remote fallback exists — nothing to warn about
 
       const slug = slugify(text, source.slug);
       const dir = path.join(source.root, deckKey);
       const match = matchLocalFile(dir, slug, extensions);
       if (match.matchType === 'none') {
-        warnings.push({ row, text, message: `No ${kind} available (no local file and no remote URL)` });
+        warnings.push({
+          row,
+          text,
+          message: `No ${kind} available (no local file and no remote URL)`,
+        });
       }
     }
   }
 
-  private findInFileDuplicates(words: ImportWord[]): { text: string; rows: number[] }[] {
+  private findInFileDuplicates(
+    words: ImportWord[],
+  ): { text: string; rows: number[] }[] {
     const rowsByKey = new Map<string, { text: string; rows: number[] }>();
     for (const word of words) {
       const key = normalizeDedupeKey(word.text);
@@ -178,7 +245,9 @@ export class ImportValidatorService {
     return Array.from(rowsByKey.values()).filter((v) => v.rows.length > 1);
   }
 
-  private async findDbDuplicates(words: ImportWord[]): Promise<{ text: string; existingId: string }[]> {
+  private async findDbDuplicates(
+    words: ImportWord[],
+  ): Promise<{ text: string; existingId: string }[]> {
     const candidateKeys = new Map<string, string>();
     for (const word of words) {
       candidateKeys.set(normalizeDedupeKey(word.text), word.text);
@@ -190,7 +259,9 @@ export class ImportValidatorService {
     // filter keeps this consistent with the case-insensitive dedupe
     // contract without requiring a second in-JS lowercase comparison pass.
     const existing = await this.prismaService.vocabWord.findMany({
-      where: { text: { in: Array.from(candidateKeys.values()), mode: 'insensitive' } },
+      where: {
+        text: { in: Array.from(candidateKeys.values()), mode: 'insensitive' },
+      },
       select: { id: true, text: true },
     });
 

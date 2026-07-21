@@ -25,8 +25,8 @@ import {
   ChangePasswordDto,
   QueryUserDto,
 } from './dto';
-import { JwtAuthGuard, RolesGuard } from '../auth/guard';
-import { Roles } from '../auth/decorator';
+import { JwtAuthGuard, RolesGuard } from '../auth/guards';
+import { Roles } from '../auth/decorators';
 import { UserRole } from '@prisma/client';
 
 // The app-wide ValidationPipe (main.ts) doesn't enable `transform`, so query
@@ -53,7 +53,7 @@ export class UserController {
   async getMe(@Req() req) {
     return this.userService.findOne(req.user.userId);
   }
-  
+
   //Xem chi tiết thông tin 1 người dùng bất kỳ
   @Get(':id')
   @Roles(UserRole.ADMIN)
@@ -78,9 +78,16 @@ export class UserController {
     }
 
     // Validate file type
-    const allowedMimeTypes = ['image/jpeg', 'image/png', 'image/jpg', 'image/webp'];
+    const allowedMimeTypes = [
+      'image/jpeg',
+      'image/png',
+      'image/jpg',
+      'image/webp',
+    ];
     if (!allowedMimeTypes.includes(file.mimetype)) {
-      throw new BadRequestException('Only image files are allowed (JPEG, PNG, WebP)');
+      throw new BadRequestException(
+        'Only image files are allowed (JPEG, PNG, WebP)',
+      );
     }
 
     // Validate file size (10MB max)
@@ -104,7 +111,7 @@ export class UserController {
       changePasswordDto.newPassword,
     );
   }
-  
+
   //Admin cập nhật thông tin user bất kỳ (được phép đổi role/level/totalPoints)
   @Put(':id')
   @Roles(UserRole.ADMIN)
@@ -114,7 +121,7 @@ export class UserController {
   ) {
     return this.userService.adminUpdate(id, adminUpdateUserDto);
   }
-  //Admin xoá người dùng 
+  //Admin xoá người dùng
   @Delete(':id')
   @Roles(UserRole.ADMIN)
   @HttpCode(HttpStatus.NO_CONTENT)

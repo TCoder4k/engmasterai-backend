@@ -19,16 +19,15 @@ import { UserRole } from '@prisma/client';
  * Đây chính là dữ liệu bạn đã "ký" khi sign token
  */
 export interface JwtPayload {
-  sub: string;        // userId (theo chuẩn JWT, sub = subject)
-  email: string;      // email user
-  role: UserRole;     // user role (USER or ADMIN)
-  iat?: number;       // issued at - thời điểm token được tạo (tự sinh)
-  exp?: number;       // expiration - thời điểm token hết hạn (tự sinh)
+  sub: string; // userId (theo chuẩn JWT, sub = subject)
+  email: string; // email user
+  role: UserRole; // user role (USER or ADMIN)
+  iat?: number; // issued at - thời điểm token được tạo (tự sinh)
+  exp?: number; // expiration - thời điểm token hết hạn (tự sinh)
 }
 
 @Injectable() // Đánh dấu class này là injectable để NestJS quản lý
 export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
-
   /**
    * Constructor chạy khi NestJS khởi tạo JwtStrategy
    * super(...) dùng để cấu hình cho passport-jwt
@@ -65,8 +64,9 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
    *
    * payload chính là phần data đã sign trong JWT
    */
-  async validate(payload: JwtPayload): Promise<{ userId: string; email: string; role: UserRole }> {
-
+  async validate(
+    payload: JwtPayload,
+  ): Promise<{ userId: string; email: string; role: UserRole }> {
     // Nếu payload không có sub => token sai cấu trúc
     if (!payload.sub) {
       throw new UnauthorizedException('Invalid token payload');

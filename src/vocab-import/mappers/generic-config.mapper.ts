@@ -24,18 +24,27 @@ export class GenericConfigMapper implements DatasetMapper {
       const text = (row[config.columns.text] ?? '').trim();
 
       if (!text) {
-        issues.push({ row: rowNumber, message: `Missing value in headword column "${config.columns.text}"` });
+        issues.push({
+          row: rowNumber,
+          message: `Missing value in headword column "${config.columns.text}"`,
+        });
         return;
       }
 
-      const ipa = config.columns.ipa ? row[config.columns.ipa]?.trim() || undefined : undefined;
+      const ipa = config.columns.ipa
+        ? row[config.columns.ipa]?.trim() || undefined
+        : undefined;
 
       let cefrLevel: CefrLevel | undefined;
       if (config.columns.cefrLevel) {
         const raw = row[config.columns.cefrLevel];
         const resolved = resolveAlias(raw, config.cefrAliases);
         if (resolved.unmapped) {
-          issues.push({ row: rowNumber, text, message: `Unrecognized CEFR value "${raw}"` });
+          issues.push({
+            row: rowNumber,
+            text,
+            message: `Unrecognized CEFR value "${raw}"`,
+          });
         } else {
           cefrLevel = resolved.value as CefrLevel | undefined;
         }
@@ -51,7 +60,11 @@ export class GenericConfigMapper implements DatasetMapper {
           const raw = row[meaningConfig.posFrom];
           const resolved = resolveAlias(raw, config.posAliases);
           if (resolved.unmapped) {
-            issues.push({ row: rowNumber, text, message: `Unrecognized part-of-speech value "${raw}"` });
+            issues.push({
+              row: rowNumber,
+              text,
+              message: `Unrecognized part-of-speech value "${raw}"`,
+            });
           } else {
             partOfSpeech = resolved.value as PartOfSpeech | undefined;
           }
@@ -69,10 +82,17 @@ export class GenericConfigMapper implements DatasetMapper {
             : undefined;
           return { sentence, translation };
         })
-        .filter((e): e is { sentence: string; translation: string | undefined } => e !== undefined);
+        .filter(
+          (e): e is { sentence: string; translation: string | undefined } =>
+            e !== undefined,
+        );
 
-      const synonyms = config.columns.synonyms ? splitMultiValue(row[config.columns.synonyms], separator) : [];
-      const antonyms = config.columns.antonyms ? splitMultiValue(row[config.columns.antonyms], separator) : [];
+      const synonyms = config.columns.synonyms
+        ? splitMultiValue(row[config.columns.synonyms], separator)
+        : [];
+      const antonyms = config.columns.antonyms
+        ? splitMultiValue(row[config.columns.antonyms], separator)
+        : [];
       const collocations = config.columns.collocations
         ? splitMultiValue(row[config.columns.collocations], separator)
         : [];

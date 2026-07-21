@@ -15,8 +15,8 @@ import {
 } from '@nestjs/common';
 import { CourseService } from './course.service';
 import { CreateCourseDto, UpdateCourseDto, QueryCourseDto } from './dto';
-import { JwtAuthGuard, RolesGuard } from '../auth/guard';
-import { Roles } from '../auth/decorator';
+import { JwtAuthGuard, RolesGuard } from '../auth/guards';
+import { Roles } from '../auth/decorators';
 import { UserRole } from '@prisma/client';
 
 // The app-wide ValidationPipe (main.ts) doesn't enable `transform`, so query
@@ -33,7 +33,11 @@ export class CourseController {
   // Public — lists published courses only.
   @Get()
   async findPublished(@Query(queryPipe) query: QueryCourseDto) {
-    return this.courseService.findPublished(query.page, query.limit, query.type);
+    return this.courseService.findPublished(
+      query.page,
+      query.limit,
+      query.type,
+    );
   }
 
   // Admin only — lists all courses including drafts.
@@ -42,7 +46,11 @@ export class CourseController {
   @Roles(UserRole.ADMIN)
   @Get('manage')
   async findAllManage(@Query(queryPipe) query: QueryCourseDto) {
-    return this.courseService.findAllManage(query.page, query.limit, query.type);
+    return this.courseService.findAllManage(
+      query.page,
+      query.limit,
+      query.type,
+    );
   }
 
   // Public — single published course.

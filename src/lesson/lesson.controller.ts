@@ -13,8 +13,8 @@ import {
 } from '@nestjs/common';
 import { LessonService } from './lesson.service';
 import { UpdateLessonDto } from './dto';
-import { JwtAuthGuard, RolesGuard } from '../auth/guard';
-import { Roles } from '../auth/decorator';
+import { JwtAuthGuard, RolesGuard } from '../auth/guards';
+import { Roles } from '../auth/decorators';
 import { UserRole } from '@prisma/client';
 
 @Controller('lessons')

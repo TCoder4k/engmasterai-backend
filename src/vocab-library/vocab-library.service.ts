@@ -1,4 +1,8 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateVocabLibraryDto } from './dto/create-vocab-library.dto';
 import { UpdateVocabLibraryDto } from './dto/update-vocab-library.dto';

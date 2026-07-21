@@ -1,4 +1,8 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { plainToInstance } from 'class-transformer';
 import { validateSync } from 'class-validator';
 import { parse } from 'csv-parse/sync';
@@ -249,7 +253,9 @@ export class VocabWordService {
           ...(dto.cefrLevel !== undefined && { cefrLevel: dto.cefrLevel }),
           ...(dto.synonyms !== undefined && { synonyms: dto.synonyms }),
           ...(dto.antonyms !== undefined && { antonyms: dto.antonyms }),
-          ...(dto.collocations !== undefined && { collocations: dto.collocations }),
+          ...(dto.collocations !== undefined && {
+            collocations: dto.collocations,
+          }),
           ...(dto.wordFamily !== undefined && { wordFamily: dto.wordFamily }),
         },
       });
@@ -390,17 +396,28 @@ export class VocabWordService {
 
       const examples = [
         row.example1
-          ? { sentence: row.example1.trim(), translation: row.example1Translation?.trim() || undefined }
+          ? {
+              sentence: row.example1.trim(),
+              translation: row.example1Translation?.trim() || undefined,
+            }
           : undefined,
         row.example2
-          ? { sentence: row.example2.trim(), translation: row.example2Translation?.trim() || undefined }
+          ? {
+              sentence: row.example2.trim(),
+              translation: row.example2Translation?.trim() || undefined,
+            }
           : undefined,
-      ].filter((e): e is { sentence: string; translation: string | undefined } => e !== undefined);
+      ].filter(
+        (e): e is { sentence: string; translation: string | undefined } =>
+          e !== undefined,
+      );
 
       const plain = {
         text: (row.text || '').trim(),
         ipa: row.ipa?.trim() || undefined,
-        cefrLevel: row.cefrLevel ? row.cefrLevel.trim().toUpperCase() : undefined,
+        cefrLevel: row.cefrLevel
+          ? row.cefrLevel.trim().toUpperCase()
+          : undefined,
         synonyms: splitMulti(row.synonyms),
         antonyms: splitMulti(row.antonyms),
         collocations: splitMulti(row.collocations),
@@ -409,7 +426,9 @@ export class VocabWordService {
         imageUrl: row.imageUrl?.trim() || undefined,
         meanings: [
           {
-            partOfSpeech: row.partOfSpeech ? row.partOfSpeech.trim().toUpperCase() : undefined,
+            partOfSpeech: row.partOfSpeech
+              ? row.partOfSpeech.trim().toUpperCase()
+              : undefined,
             meaning: (row.meaning || '').trim(),
           },
         ],
@@ -448,9 +467,13 @@ export class VocabWordService {
     const existing = await this.prismaService.vocabWord.findMany({
       select: { text: true },
     });
-    const existingTexts = new Set(existing.map((w) => w.text.trim().toLowerCase()));
+    const existingTexts = new Set(
+      existing.map((w) => w.text.trim().toLowerCase()),
+    );
 
-    const toCreate = candidates.filter((c) => !existingTexts.has(c.normalizedText));
+    const toCreate = candidates.filter(
+      (c) => !existingTexts.has(c.normalizedText),
+    );
     const skippedCount = candidates.length - toCreate.length;
 
     if (toCreate.length === 0) {
@@ -516,7 +539,9 @@ export class VocabWordService {
   }
 
   private async findOneOrThrow(id: string) {
-    const word = await this.prismaService.vocabWord.findUnique({ where: { id } });
+    const word = await this.prismaService.vocabWord.findUnique({
+      where: { id },
+    });
     if (!word) {
       throw new NotFoundException(`Vocabulary word with ID ${id} not found`);
     }

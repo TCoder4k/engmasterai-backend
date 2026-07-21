@@ -1,11 +1,16 @@
 import ExcelJS from 'exceljs';
 import { RawTable } from '../../types/raw-table';
 
-export async function readXlsx(filePath: string, sheetName?: string): Promise<RawTable> {
+export async function readXlsx(
+  filePath: string,
+  sheetName?: string,
+): Promise<RawTable> {
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.readFile(filePath);
 
-  const sheet = sheetName ? workbook.getWorksheet(sheetName) : workbook.worksheets[0];
+  const sheet = sheetName
+    ? workbook.getWorksheet(sheetName)
+    : workbook.worksheets[0];
   if (!sheet) {
     throw new Error(
       sheetName
@@ -46,7 +51,10 @@ function cellToString(value: ExcelJS.CellValue): string {
   if (typeof value === 'object' && 'text' in (value as { text?: unknown })) {
     return String((value as { text: unknown }).text ?? '');
   }
-  if (typeof value === 'object' && 'result' in (value as { result?: unknown })) {
+  if (
+    typeof value === 'object' &&
+    'result' in (value as { result?: unknown })
+  ) {
     return String((value as { result: unknown }).result ?? '');
   }
   return String(value).trim();

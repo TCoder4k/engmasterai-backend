@@ -14,9 +14,13 @@ import {
   ValidationPipe,
 } from '@nestjs/common';
 import { VocabLibraryService } from './vocab-library.service';
-import { CreateVocabLibraryDto, UpdateVocabLibraryDto, QueryVocabLibraryDto } from './dto';
-import { JwtAuthGuard, RolesGuard } from '../auth/guard';
-import { Roles } from '../auth/decorator';
+import {
+  CreateVocabLibraryDto,
+  UpdateVocabLibraryDto,
+  QueryVocabLibraryDto,
+} from './dto';
+import { JwtAuthGuard, RolesGuard } from '../auth/guards';
+import { Roles } from '../auth/decorators';
 import { UserRole } from '@prisma/client';
 
 // Same reasoning as CourseController: the app-wide ValidationPipe (main.ts)

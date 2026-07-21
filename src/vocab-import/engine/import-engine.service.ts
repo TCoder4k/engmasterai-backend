@@ -52,7 +52,13 @@ export class ImportEngineService {
     const candidateTexts = deduped.map((w) => w.text);
     const existing = await this.prismaService.vocabWord.findMany({
       where: { text: { in: candidateTexts, mode: 'insensitive' } },
-      select: { id: true, text: true, source: true, createdAt: true, updatedAt: true },
+      select: {
+        id: true,
+        text: true,
+        source: true,
+        createdAt: true,
+        updatedAt: true,
+      },
     });
     const existingByKey = new Map<string, ExistingWordRow>(
       existing.map((w) => [normalizeDedupeKey(w.text), w]),
@@ -81,7 +87,8 @@ export class ImportEngineService {
       }
 
       const isEdited =
-        existingRow.updatedAt.getTime() - existingRow.createdAt.getTime() > PROTECTED_EPSILON_MS;
+        existingRow.updatedAt.getTime() - existingRow.createdAt.getTime() >
+        PROTECTED_EPSILON_MS;
       const isProtected = existingRow.source === WordSource.ADMIN || isEdited;
 
       if (isProtected && !options.forceOverwrite) {
@@ -102,7 +109,10 @@ export class ImportEngineService {
       // words that already exist (so an attach preview against the real
       // DB stays accurate), synthetic ids for words that would be created.
       for (const word of toCreate) {
-        wordIdByNormalizedText.set(normalizeDedupeKey(word.text), `<dry-run:${word.text}>`);
+        wordIdByNormalizedText.set(
+          normalizeDedupeKey(word.text),
+          `<dry-run:${word.text}>`,
+        );
       }
       for (const { word, existingId } of toUpdate) {
         wordIdByNormalizedText.set(normalizeDedupeKey(word.text), existingId);
@@ -112,11 +122,19 @@ export class ImportEngineService {
     } else {
       for (const word of toCreate) {
         try {
-          const id = await this.createWord(word, manifest, options.importSource);
+          const id = await this.createWord(
+            word,
+            manifest,
+            options.importSource,
+          );
           wordIdByNormalizedText.set(normalizeDedupeKey(word.text), id);
           created++;
         } catch (err) {
-          failed.push({ text: word.text, row: word.source.row, error: (err as Error).message });
+          failed.push({
+            text: word.text,
+            row: word.source.row,
+            error: (err as Error).message,
+          });
         }
       }
 
@@ -126,17 +144,31 @@ export class ImportEngineService {
           wordIdByNormalizedText.set(normalizeDedupeKey(word.text), existingId);
           updated++;
         } catch (err) {
-          failed.push({ text: word.text, row: word.source.row, error: (err as Error).message });
+          failed.push({
+            text: word.text,
+            row: word.source.row,
+            error: (err as Error).message,
+          });
         }
       }
     }
 
-    return { wordIdByNormalizedText, created, updated, skipped, skippedProtected, failed };
+    return {
+      wordIdByNormalizedText,
+      created,
+      updated,
+      skipped,
+      skippedProtected,
+      failed,
+    };
   }
 
   // Keeps the first occurrence of each normalized text — same convention as
   // the existing CSV importer (later duplicates are skips, not errors).
-  private dedupeByText(words: ImportWord[]): { deduped: ImportWord[]; duplicateCount: number } {
+  private dedupeByText(words: ImportWord[]): {
+    deduped: ImportWord[];
+    duplicateCount: number;
+  } {
     const seen = new Set<string>();
     const deduped: ImportWord[] = [];
     let duplicateCount = 0;
@@ -154,16 +186,26 @@ export class ImportEngineService {
     return { deduped, duplicateCount };
   }
 
-  private getMediaUrl(manifest: MediaManifest | undefined, text: string, kind: 'audio' | 'image'): string | undefined {
+  private getMediaUrl(
+    manifest: MediaManifest | undefined,
+    text: string,
+    kind: 'audio' | 'image',
+  ): string | undefined {
     if (!manifest) return undefined;
     const key = normalizeDedupeKey(text);
-    const entry = manifest.entries.find((e) => e.kind === kind && e.textKey === key);
+    const entry = manifest.entries.find(
+      (e) => e.kind === kind && e.textKey === key,
+    );
     return entry?.status === 'uploaded' ? entry.secureUrl : undefined;
   }
 
   // Explicit field mapping, never spread — same rule as
   // VocabWordService.create (the global ValidationPipe has no whitelist).
-  private async createWord(word: ImportWord, manifest: MediaManifest | undefined, source: WordSource): Promise<string> {
+  private async createWord(
+    word: ImportWord,
+    manifest: MediaManifest | undefined,
+    source: WordSource,
+  ): Promise<string> {
     return this.prismaService.$transaction(async (tx) => {
       const created = await tx.vocabWord.create({
         data: {
@@ -210,12 +252,21 @@ export class ImportEngineService {
   // VocabWordService.update. Media URLs are filled only if currently null:
   // an import must never clobber an admin-uploaded asset on an
   // already-imported word that passed the protection check above.
-  private async updateWord(id: string, word: ImportWord, manifest: MediaManifest | undefined): Promise<void> {
+  private async updateWord(
+    id: string,
+    word: ImportWord,
+    manifest: MediaManifest | undefined,
+  ): Promise<void> {
     await this.prismaService.$transaction(async (tx) => {
-      const current = await tx.vocabWord.findUniqueOrThrow({ where: { id }, select: { audioUrl: true, imageUrl: true } });
+      const current = await tx.vocabWord.findUniqueOrThrow({
+        where: { id },
+        select: { audioUrl: true, imageUrl: true },
+      });
 
-      const audioUrl = current.audioUrl ?? this.getMediaUrl(manifest, word.text, 'audio');
-      const imageUrl = current.imageUrl ?? this.getMediaUrl(manifest, word.text, 'image');
+      const audioUrl =
+        current.audioUrl ?? this.getMediaUrl(manifest, word.text, 'audio');
+      const imageUrl =
+        current.imageUrl ?? this.getMediaUrl(manifest, word.text, 'image');
 
       await tx.vocabWord.update({
         where: { id },

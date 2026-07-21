@@ -19,9 +19,13 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { VocabWordService } from './vocab-word.service';
-import { CreateVocabWordDto, UpdateVocabWordDto, QueryVocabWordDto } from './dto';
-import { JwtAuthGuard, RolesGuard } from '../auth/guard';
-import { Roles } from '../auth/decorator';
+import {
+  CreateVocabWordDto,
+  UpdateVocabWordDto,
+  QueryVocabWordDto,
+} from './dto';
+import { JwtAuthGuard, RolesGuard } from '../auth/guards';
+import { Roles } from '../auth/decorators';
 import { UserRole } from '@prisma/client';
 
 // Same reasoning as every other content module: the app-wide ValidationPipe
@@ -86,7 +90,9 @@ export class VocabWordController {
       throw new BadRequestException('No file uploaded');
     }
 
-    const looksLikeCsvByName = file.originalname?.toLowerCase().endsWith('.csv');
+    const looksLikeCsvByName = file.originalname
+      ?.toLowerCase()
+      .endsWith('.csv');
     const isAllowedMimeType =
       CSV_MIME_TYPES.includes(file.mimetype) ||
       (file.mimetype === 'application/octet-stream' && looksLikeCsvByName);
@@ -114,7 +120,9 @@ export class VocabWordController {
       throw new BadRequestException('No file uploaded');
     }
     if (!AUDIO_MIME_TYPES.includes(file.mimetype)) {
-      throw new BadRequestException('Only audio files are allowed (MP3, MP4, OGG, WAV, WebM)');
+      throw new BadRequestException(
+        'Only audio files are allowed (MP3, MP4, OGG, WAV, WebM)',
+      );
     }
     if (file.size > AUDIO_MAX_SIZE) {
       throw new BadRequestException('Audio file must not exceed 10MB');
@@ -135,7 +143,9 @@ export class VocabWordController {
       throw new BadRequestException('No file uploaded');
     }
     if (!IMAGE_MIME_TYPES.includes(file.mimetype)) {
-      throw new BadRequestException('Only image files are allowed (JPEG, PNG, WebP)');
+      throw new BadRequestException(
+        'Only image files are allowed (JPEG, PNG, WebP)',
+      );
     }
     if (file.size > IMAGE_MAX_SIZE) {
       throw new BadRequestException('Image file must not exceed 5MB');

@@ -1,4 +1,8 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateVocabDeckDto } from './dto/create-vocab-deck.dto';
 import { UpdateVocabDeckDto } from './dto/update-vocab-deck.dto';
@@ -82,7 +86,12 @@ export class VocabDeckService {
             audioUrl: true,
             imageUrl: true,
             meanings: {
-              select: { id: true, partOfSpeech: true, meaning: true, orderIndex: true },
+              select: {
+                id: true,
+                partOfSpeech: true,
+                meaning: true,
+                orderIndex: true,
+              },
               orderBy: { orderIndex: 'asc' },
             },
           },
@@ -137,7 +146,9 @@ export class VocabDeckService {
     const existingWordIds = new Set(existingWords.map((w) => w.id));
     const missingIds = uniqueWordIds.filter((id) => !existingWordIds.has(id));
     if (missingIds.length > 0) {
-      throw new BadRequestException(`Word(s) not found: ${missingIds.join(', ')}`);
+      throw new BadRequestException(
+        `Word(s) not found: ${missingIds.join(', ')}`,
+      );
     }
 
     const alreadyAttached = await this.prismaService.vocabDeckWord.findMany({
@@ -148,7 +159,9 @@ export class VocabDeckService {
     const toAttach = uniqueWordIds.filter((id) => !alreadyAttachedIds.has(id));
 
     if (toAttach.length > 0) {
-      const currentCount = await this.prismaService.vocabDeckWord.count({ where: { deckId } });
+      const currentCount = await this.prismaService.vocabDeckWord.count({
+        where: { deckId },
+      });
       if (currentCount + toAttach.length > MAX_DECK_WORDS) {
         throw new BadRequestException(
           `Attaching these words would exceed the maximum deck size of ${MAX_DECK_WORDS} words.`,
@@ -165,7 +178,11 @@ export class VocabDeckService {
       // wordId]) constraint makes a concurrent attach of the same pair safe
       // even though we've already filtered it out above.
       await this.prismaService.vocabDeckWord.createMany({
-        data: toAttach.map((wordId) => ({ deckId, wordId, orderIndex: nextOrderIndex++ })),
+        data: toAttach.map((wordId) => ({
+          deckId,
+          wordId,
+          orderIndex: nextOrderIndex++,
+        })),
         skipDuplicates: true,
       });
     }
@@ -188,11 +205,15 @@ export class VocabDeckService {
       where: { deckId_wordId: { deckId, wordId } },
     });
     if (!deckWord) {
-      throw new NotFoundException(`Word ${wordId} is not attached to deck ${deckId}`);
+      throw new NotFoundException(
+        `Word ${wordId} is not attached to deck ${deckId}`,
+      );
     }
 
     if (deck.isPublished) {
-      const count = await this.prismaService.vocabDeckWord.count({ where: { deckId } });
+      const count = await this.prismaService.vocabDeckWord.count({
+        where: { deckId },
+      });
       if (count <= 1) {
         throw new BadRequestException(
           'Cannot detach the last word of a published deck. Unpublish it first.',
@@ -280,7 +301,9 @@ export class VocabDeckService {
   async publish(id: string) {
     await this.findOneOrThrow(id);
 
-    const wordCount = await this.prismaService.vocabDeckWord.count({ where: { deckId: id } });
+    const wordCount = await this.prismaService.vocabDeckWord.count({
+      where: { deckId: id },
+    });
     if (wordCount === 0) {
       throw new BadRequestException(
         'Cannot publish a deck with no words. Attach at least one word first.',
@@ -326,7 +349,9 @@ export class VocabDeckService {
   }
 
   private async findOneOrThrow(id: string) {
-    const deck = await this.prismaService.vocabDeck.findUnique({ where: { id } });
+    const deck = await this.prismaService.vocabDeck.findUnique({
+      where: { id },
+    });
     if (!deck) {
       throw new NotFoundException(`Vocabulary deck with ID ${id} not found`);
     }
@@ -338,7 +363,9 @@ export class VocabDeckService {
       where: { id: libraryId },
     });
     if (!library) {
-      throw new NotFoundException(`Vocabulary library with ID ${libraryId} not found`);
+      throw new NotFoundException(
+        `Vocabulary library with ID ${libraryId} not found`,
+      );
     }
     return library;
   }
@@ -348,12 +375,17 @@ export class VocabDeckService {
   // to mirror LessonService.assertCourseAccessibleToUser even though there
   // is no enrollment rule yet — a future one plugs in here without touching
   // callers.
-  private async assertLibraryAccessibleToUser(libraryId: string, _user: { userId: string }) {
+  private async assertLibraryAccessibleToUser(
+    libraryId: string,
+    _user: { userId: string },
+  ) {
     const library = await this.prismaService.vocabLibrary.findUnique({
       where: { id: libraryId },
     });
     if (!library || !library.isPublished) {
-      throw new NotFoundException(`Vocabulary library with ID ${libraryId} not found`);
+      throw new NotFoundException(
+        `Vocabulary library with ID ${libraryId} not found`,
+      );
     }
     return library;
   }
@@ -361,14 +393,23 @@ export class VocabDeckService {
   // Same seam shape as assertLibraryAccessibleToUser, one level down: a
   // deck's words are visible only if the deck AND its library are both
   // published.
-  private async assertDeckAccessibleToUser(deckId: string, _user: { userId: string }) {
+  private async assertDeckAccessibleToUser(
+    deckId: string,
+    _user: { userId: string },
+  ) {
     const deck = await this.prismaService.vocabDeck.findUnique({
       where: { id: deckId },
-      select: { id: true, isPublished: true, library: { select: { isPublished: true } } },
+      select: {
+        id: true,
+        isPublished: true,
+        library: { select: { isPublished: true } },
+      },
     });
 
     if (!deck || !deck.isPublished || !deck.library.isPublished) {
-      throw new NotFoundException(`Vocabulary deck with ID ${deckId} not found`);
+      throw new NotFoundException(
+        `Vocabulary deck with ID ${deckId} not found`,
+      );
     }
 
     return deck;

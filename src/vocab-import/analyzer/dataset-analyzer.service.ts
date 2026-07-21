@@ -12,7 +12,8 @@ import { FRAMEWORK_VERSION } from '../version';
 const IPA_PATTERN = /^\/.*\/$/;
 const URL_PATTERN = /^https?:\/\//i;
 const POS_PATTERN = /^[a-z]{1,6}\.$/i;
-const VIETNAMESE_DIACRITIC_PATTERN = /[ăâđêôơưàáảãạằắẳẵặầấẩẫậèéẻẽẹềếểễệìíỉĩịòóỏõọồốổỗộờớởỡợùúủũụừứửữựỳýỷỹỵ]/i;
+const VIETNAMESE_DIACRITIC_PATTERN =
+  /[ăâđêôơưàáảãạằắẳẵặầấẩẫậèéẻẽẹềếểễệìíỉĩịòóỏõọồốổỗộờớởỡợùúủũụừứửữựỳýỷỹỵ]/i;
 
 @Injectable()
 export class DatasetAnalyzerService {
@@ -20,7 +21,9 @@ export class DatasetAnalyzerService {
     const table = await loadRawTable(config);
     const { headers, rows } = table;
 
-    const columns: ColumnStat[] = headers.map((header) => this.computeColumnStat(header, rows));
+    const columns: ColumnStat[] = headers.map((header) =>
+      this.computeColumnStat(header, rows),
+    );
 
     const headwordColumn = config.columns?.text;
     const duplicateHeadwords = headwordColumn
@@ -72,7 +75,10 @@ export class DatasetAnalyzerService {
     };
   }
 
-  private computeColumnStat(header: string, rows: Record<string, string>[]): ColumnStat {
+  private computeColumnStat(
+    header: string,
+    rows: Record<string, string>[],
+  ): ColumnStat {
     const values = rows.map((r) => (r[header] ?? '').trim());
     const nonEmpty = values.filter((v) => v.length > 0);
     const distinct = new Map<string, number>();
@@ -97,18 +103,27 @@ export class DatasetAnalyzerService {
     };
   }
 
-  private guessRole(header: string, values: string[]): ColumnStat['guessedRole'] {
+  private guessRole(
+    header: string,
+    values: string[],
+  ): ColumnStat['guessedRole'] {
     if (values.length === 0) return undefined;
     const sample = values.slice(0, 50);
 
     if (sample.every((v) => IPA_PATTERN.test(v))) return 'ipa';
     if (sample.every((v) => URL_PATTERN.test(v))) return 'url';
     if (sample.every((v) => POS_PATTERN.test(v))) return 'partOfSpeech';
-    if (sample.filter((v) => VIETNAMESE_DIACRITIC_PATTERN.test(v)).length / sample.length > 0.5) {
+    if (
+      sample.filter((v) => VIETNAMESE_DIACRITIC_PATTERN.test(v)).length /
+        sample.length >
+      0.5
+    ) {
       return 'vietnamese';
     }
-    const avgLength = sample.reduce((sum, v) => sum + v.length, 0) / sample.length;
-    if (avgLength > 25 && sample.some((v) => /[.!?]$/.test(v))) return 'example';
+    const avgLength =
+      sample.reduce((sum, v) => sum + v.length, 0) / sample.length;
+    if (avgLength > 25 && sample.some((v) => /[.!?]$/.test(v)))
+      return 'example';
 
     return undefined;
   }
@@ -137,7 +152,14 @@ export class DatasetAnalyzerService {
     extensions: string[],
   ): AnalysisReport['media'][number] {
     if (!source) {
-      return { kind, root: '', totalFiles: 0, matchedByExact: 0, matchedByPrefixGlob: 0, unmatched: 0 };
+      return {
+        kind,
+        root: '',
+        totalFiles: 0,
+        matchedByExact: 0,
+        matchedByPrefixGlob: 0,
+        unmatched: 0,
+      };
     }
 
     let matchedByExact = 0;

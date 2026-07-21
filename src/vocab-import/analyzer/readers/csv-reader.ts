@@ -28,7 +28,11 @@ export interface CsvReadResult extends RawTable {
 
 export function readCsv(filePath: string): CsvReadResult {
   const buffer = fs.readFileSync(filePath);
-  const hasBom = buffer.length >= 3 && buffer[0] === 0xef && buffer[1] === 0xbb && buffer[2] === 0xbf;
+  const hasBom =
+    buffer.length >= 3 &&
+    buffer[0] === 0xef &&
+    buffer[1] === 0xbb &&
+    buffer[2] === 0xbf;
 
   const text = buffer.toString('utf-8');
   const firstLine = text.split(/\r?\n/, 1)[0] ?? '';
