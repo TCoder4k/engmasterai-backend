@@ -6,19 +6,30 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { LoginDTO, RegisterDTO } from './dto';
+import { GoogleAuthDTO, GoogleLinkDTO, LoginDTO, RegisterDTO } from './dto';
 import * as argon from 'argon2';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
-import { UserRole } from '@prisma/client';
+import { AuthProvider, Prisma, UserRole } from '@prisma/client';
 import { TokenBlacklistService } from './token-blacklist.service';
 import { RefreshTokenService } from './refresh-token.service';
 import { extractBearerToken } from './utils/extract-bearer-token';
+import { sha256Hex } from './utils/hash.util';
 import {
   AuthEventLogger,
   AuthLogContext,
 } from './logging/auth-event-logger.service';
-import { emailHashPrefix } from './rate-limit/rate-limit-key.util';
+import {
+  emailHashPrefix,
+  googleLinkComboKey,
+} from './rate-limit/rate-limit-key.util';
+import {
+  GoogleTokenVerifierService,
+  VerifiedGoogleIdentity,
+} from './google/google-token-verifier.service';
+import { RateLimiterService } from './rate-limit/rate-limiter.service';
+import { RateLimitExceededException } from './exceptions/rate-limit-exceeded.exception';
+import { AccountLinkRequiredException } from './exceptions/account-link-required.exception';
 
 export interface AuthResult {
   message: string;
@@ -40,6 +51,13 @@ export interface RefreshResult {
   refreshCookieValue: string;
 }
 
+// Type-safe narrowing for Prisma's unique-constraint-violation error, used
+// by the Sprint 02A concurrent-first-login and already-linked-identity race
+// handling below — avoids an unsafe `.code` access on a caught `unknown`.
+const isUniqueConstraintViolation = (error: unknown): boolean =>
+  error instanceof Prisma.PrismaClientKnownRequestError &&
+  error.code === 'P2002';
+
 @Injectable()
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
@@ -51,6 +69,8 @@ export class AuthService {
     private tokenBlacklistService: TokenBlacklistService,
     private refreshTokenService: RefreshTokenService,
     private authEventLogger: AuthEventLogger,
+    private googleTokenVerifier: GoogleTokenVerifierService,
+    private rateLimiterService: RateLimiterService,
   ) {}
 
   async register(
@@ -82,17 +102,6 @@ export class AuthService {
         },
       });
 
-      // Generate access token
-      const { accessToken } = await this.signJwtToken(
-        user.id,
-        user.email,
-        user.role,
-      );
-      const refreshCookieValue = await this.issueRefreshCookieValue(
-        user.id,
-        userAgent,
-      );
-
       this.authEventLogger.log('auth.register.succeeded', {
         requestId: logContext.requestId,
         route,
@@ -102,17 +111,7 @@ export class AuthService {
         ipHash: logContext.ipHash,
       });
 
-      return {
-        message: 'Registration successful',
-        user: {
-          id: user.id,
-          name: user.name,
-          email: user.email,
-          role: user.role,
-        },
-        accessToken,
-        refreshCookieValue,
-      };
+      return this.issueSession(user, userAgent, 'Registration successful');
     } catch (error) {
       if (error instanceof ServiceUnavailableException) throw error;
 
@@ -188,6 +187,16 @@ export class AuthService {
       throw new ForbiddenException('Invalid credentials or unauthorized role');
     }
 
+    // A Google-only account (Sprint 02A) has no local password. Collapsed
+    // onto the exact same generic failure as every other branch here —
+    // never a distinct "this account uses Google" message — so an
+    // unauthenticated caller can't use this to enumerate how an account
+    // was created.
+    if (!user.password) {
+      logFailure();
+      throw new ForbiddenException('Invalid credentials');
+    }
+
     // Verify password
     const passwordMatched = await argon.verify(user.password, dto.password);
 
@@ -195,17 +204,6 @@ export class AuthService {
       logFailure();
       throw new ForbiddenException('Invalid credentials');
     }
-
-    // Generate access token + a new refresh session
-    const { accessToken } = await this.signJwtToken(
-      user.id,
-      user.email,
-      user.role,
-    );
-    const refreshCookieValue = await this.issueRefreshCookieValue(
-      user.id,
-      userAgent,
-    );
 
     this.authEventLogger.log('auth.login.succeeded', {
       requestId: logContext.requestId,
@@ -216,17 +214,312 @@ export class AuthService {
       ipHash: logContext.ipHash,
     });
 
-    return {
-      message: 'Login successful',
-      user: {
-        id: user.id,
-        name: user.name,
-        email: user.email,
+    return this.issueSession(user, userAgent, 'Login successful');
+  }
+
+  /**
+   * POST /auth/google — Google is only an identity provider here. Every
+   * downstream decision uses fields from `verified` (the backend-verified
+   * token payload) only; nothing from the raw request body is ever trusted.
+   * Never auto-links an existing local account on an email match — see
+   * docs/adr/004-google-auth.md's account-linking policy.
+   */
+  async google(
+    dto: GoogleAuthDTO,
+    userAgent: string | null,
+    logContext: AuthLogContext,
+  ): Promise<AuthResult> {
+    const startedAt = Date.now();
+    const route = 'POST /auth/google';
+
+    let verified: VerifiedGoogleIdentity;
+    try {
+      verified = await this.googleTokenVerifier.verify(dto.credential);
+    } catch (error) {
+      // Feature disabled (503) is not a credential failure — nothing to log.
+      if (error instanceof ServiceUnavailableException) throw error;
+      this.authEventLogger.log('auth.google.failed', {
+        requestId: logContext.requestId,
+        route,
+        durationMs: Date.now() - startedAt,
+        ipHash: logContext.ipHash,
+        failureCategory: 'invalid_google_token',
+      });
+      throw error;
+    }
+
+    const emailHash = emailHashPrefix(verified.email);
+    const subjectHash = sha256Hex(verified.sub).slice(0, 16);
+
+    const existingIdentity = await this.findGoogleIdentity(verified.sub);
+    if (existingIdentity) {
+      this.authEventLogger.log('auth.google.succeeded', {
+        requestId: logContext.requestId,
+        route,
+        durationMs: Date.now() - startedAt,
+        userId: existingIdentity.user.id,
+        role: existingIdentity.user.role,
+        ipHash: logContext.ipHash,
+        provider: 'google',
+      });
+      return this.issueSession(
+        existingIdentity.user,
+        userAgent,
+        'Google sign-in successful',
+      );
+    }
+
+    const existingUserByEmail = await this.prismaService.user.findUnique({
+      where: { email: verified.email },
+    });
+    if (existingUserByEmail) {
+      this.authEventLogger.log('auth.google.link_required', {
+        requestId: logContext.requestId,
+        route,
+        durationMs: Date.now() - startedAt,
+        ipHash: logContext.ipHash,
+        emailHash,
+        provider: 'google',
+        providerSubjectHash: subjectHash,
+      });
+      throw new AccountLinkRequiredException(verified.email);
+    }
+
+    try {
+      const user = await this.createGoogleUser(verified);
+      this.authEventLogger.log('auth.google.account_created', {
+        requestId: logContext.requestId,
+        route,
+        durationMs: Date.now() - startedAt,
+        userId: user.id,
         role: user.role,
-      },
-      accessToken,
-      refreshCookieValue,
+        ipHash: logContext.ipHash,
+        provider: 'google',
+      });
+      return this.issueSession(
+        user,
+        userAgent,
+        'Google account created and signed in successfully',
+      );
+    } catch (error) {
+      if (!isUniqueConstraintViolation(error)) throw error;
+
+      // Concurrent first-login race for the same Google identity: exactly
+      // one attempt wins the unique constraint. Re-resolve from scratch
+      // rather than assuming which constraint fired.
+      const raceIdentity = await this.findGoogleIdentity(verified.sub);
+      if (raceIdentity) {
+        this.authEventLogger.log('auth.google.succeeded', {
+          requestId: logContext.requestId,
+          route,
+          durationMs: Date.now() - startedAt,
+          userId: raceIdentity.user.id,
+          role: raceIdentity.user.role,
+          ipHash: logContext.ipHash,
+          provider: 'google',
+        });
+        return this.issueSession(
+          raceIdentity.user,
+          userAgent,
+          'Google sign-in successful',
+        );
+      }
+
+      // A different collision (e.g. a local registration just took this
+      // email) — never silently proceed; the safe fallback is the same
+      // link-required path a pre-existing account would have taken.
+      this.authEventLogger.log('auth.google.link_required', {
+        requestId: logContext.requestId,
+        route,
+        durationMs: Date.now() - startedAt,
+        ipHash: logContext.ipHash,
+        emailHash,
+        provider: 'google',
+        providerSubjectHash: subjectHash,
+      });
+      throw new AccountLinkRequiredException(verified.email);
+    }
+  }
+
+  /**
+   * POST /auth/google/link — links a Google identity to an existing local
+   * account, gated on proving knowledge of that account's current password.
+   * Re-verifies the Google credential from scratch (never trusts that an
+   * earlier /auth/google call already verified it) and checks a
+   * backend-verified-identity rate-limit bucket before the password check,
+   * since this endpoint is functionally a password-verification oracle.
+   */
+  async linkGoogle(
+    dto: GoogleLinkDTO,
+    userAgent: string | null,
+    logContext: AuthLogContext,
+  ): Promise<AuthResult> {
+    const startedAt = Date.now();
+    const route = 'POST /auth/google/link';
+
+    let verified: VerifiedGoogleIdentity;
+    try {
+      verified = await this.googleTokenVerifier.verify(dto.credential);
+    } catch (error) {
+      if (error instanceof ServiceUnavailableException) throw error;
+      this.authEventLogger.log('auth.google.link_failed', {
+        requestId: logContext.requestId,
+        route,
+        durationMs: Date.now() - startedAt,
+        ipHash: logContext.ipHash,
+        failureCategory: 'invalid_google_token',
+      });
+      throw error;
+    }
+
+    const emailHash = emailHashPrefix(verified.email);
+
+    // Guard-level @RateLimits already checked an IP-only bucket before this
+    // method ran. This second bucket is keyed on the backend-verified
+    // email — never a client-supplied claim — and is only checkable here,
+    // after verification.
+    const comboMax = this.configService.get<number>(
+      'AUTH_GOOGLE_LINK_RATE_LIMIT_MAX',
+    ) as number;
+    const comboWindow = this.configService.get<number>(
+      'AUTH_GOOGLE_LINK_RATE_LIMIT_WINDOW_SECONDS',
+    ) as number;
+    const comboResult = await this.rateLimiterService.checkAndIncrement(
+      googleLinkComboKey(logContext.ipHash, emailHash),
+      comboMax,
+      comboWindow,
+    );
+    if (!comboResult.allowed) {
+      this.authEventLogger.log('auth.rate_limit.exceeded', {
+        requestId: logContext.requestId,
+        route,
+        ipHash: logContext.ipHash,
+        emailHash,
+        failureCategory: 'google-link-combo',
+      });
+      throw new RateLimitExceededException();
+    }
+
+    const logFailure = (): void => {
+      this.authEventLogger.log('auth.google.link_failed', {
+        requestId: logContext.requestId,
+        route,
+        durationMs: Date.now() - startedAt,
+        emailHash,
+        ipHash: logContext.ipHash,
+        failureCategory: 'invalid_credentials',
+      });
     };
+
+    const user = await this.prismaService.user.findUnique({
+      where: { email: verified.email },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        password: true,
+        role: true,
+        emailVerifiedAt: true,
+      },
+    });
+
+    // Unknown email, and a Google-only target account (no password to
+    // verify against) both collapse onto the exact same generic failure —
+    // matching login()'s own enumeration-avoidance treatment.
+    if (!user || !user.password) {
+      logFailure();
+      throw new ForbiddenException('Invalid credentials');
+    }
+
+    const passwordMatched = await argon.verify(user.password, dto.password);
+    if (!passwordMatched) {
+      logFailure();
+      throw new ForbiddenException('Invalid credentials');
+    }
+
+    try {
+      await this.prismaService.authIdentity.create({
+        data: {
+          userId: user.id,
+          provider: AuthProvider.GOOGLE,
+          providerSubject: verified.sub,
+          providerEmail: verified.email,
+        },
+      });
+    } catch (error) {
+      // Double-submit / already-linked race — idempotent success, not a
+      // 500; fall through and issue a session either way.
+      if (!isUniqueConstraintViolation(error)) throw error;
+    }
+
+    if (!user.emailVerifiedAt) {
+      await this.prismaService.user.update({
+        where: { id: user.id },
+        data: { emailVerifiedAt: new Date() },
+      });
+    }
+
+    this.authEventLogger.log('auth.google.identity_linked', {
+      requestId: logContext.requestId,
+      route,
+      durationMs: Date.now() - startedAt,
+      userId: user.id,
+      role: user.role,
+      ipHash: logContext.ipHash,
+      provider: 'google',
+    });
+
+    return this.issueSession(
+      user,
+      userAgent,
+      'Google account linked and signed in successfully',
+    );
+  }
+
+  private async findGoogleIdentity(providerSubject: string) {
+    return this.prismaService.authIdentity.findUnique({
+      where: {
+        provider_providerSubject: {
+          provider: AuthProvider.GOOGLE,
+          providerSubject,
+        },
+      },
+      include: { user: true },
+    });
+  }
+
+  private async createGoogleUser(verified: VerifiedGoogleIdentity): Promise<{
+    id: string;
+    name: string;
+    email: string;
+    role: UserRole;
+  }> {
+    return this.prismaService.$transaction(async (tx) => {
+      const user = await tx.user.create({
+        data: {
+          name: verified.name,
+          email: verified.email,
+          password: null,
+          role: UserRole.USER,
+          avatarUrl: verified.picture ?? null,
+          // The backend has just cryptographically verified email ownership
+          // (email_verified=true on the Google ID token) — see the User
+          // model's emailVerifiedAt doc comment for how a future
+          // email-verification sprint is expected to consume this.
+          emailVerifiedAt: new Date(),
+        },
+        select: { id: true, name: true, email: true, role: true },
+      });
+      await tx.authIdentity.create({
+        data: {
+          userId: user.id,
+          provider: AuthProvider.GOOGLE,
+          providerSubject: verified.sub,
+          providerEmail: verified.email,
+        },
+      });
+      return user;
+    });
   }
 
   private async issueRefreshCookieValue(
@@ -238,6 +531,40 @@ export class AuthService {
       userAgent,
     );
     return this.refreshTokenService.encodeCookieValue(familyId, secret);
+  }
+
+  /**
+   * The single path that turns "we know which User this is" into an issued
+   * session — a JWT access token plus a fresh rotating refresh cookie value.
+   * register(), login(), google(), and linkGoogle() all funnel through this
+   * one method rather than each re-deriving the token/cookie shape.
+   */
+  private async issueSession(
+    user: { id: string; name: string; email: string; role: UserRole },
+    userAgent: string | null,
+    message: string,
+  ): Promise<AuthResult> {
+    const { accessToken } = await this.signJwtToken(
+      user.id,
+      user.email,
+      user.role,
+    );
+    const refreshCookieValue = await this.issueRefreshCookieValue(
+      user.id,
+      userAgent,
+    );
+
+    return {
+      message,
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+      },
+      accessToken,
+      refreshCookieValue,
+    };
   }
 
   //Phát hành token

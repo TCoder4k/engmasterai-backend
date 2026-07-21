@@ -1,7 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
-// Sprint 01C's ten-event taxonomy (docs/sprints/sprint-01C-security-hardening.md).
+// Sprint 01C's ten-event taxonomy (docs/sprints/sprint-01C-security-hardening.md)
+// plus Sprint 02A's six Google-auth events.
 export type AuthEventName =
   | 'auth.login.succeeded'
   | 'auth.login.failed'
@@ -12,7 +13,13 @@ export type AuthEventName =
   | 'auth.refresh.reuse_detected'
   | 'auth.logout.completed'
   | 'auth.rate_limit.exceeded'
-  | 'auth.redis.unavailable';
+  | 'auth.redis.unavailable'
+  | 'auth.google.succeeded'
+  | 'auth.google.failed'
+  | 'auth.google.account_created'
+  | 'auth.google.link_required'
+  | 'auth.google.identity_linked'
+  | 'auth.google.link_failed';
 
 // What the controller derives once per request and threads through to
 // AuthService — never re-derived deeper in the call stack.
@@ -35,6 +42,14 @@ export interface AuthEventFields {
   ipHash?: string;
   familyIdTruncated?: string;
   failureCategory?: string;
+  // Sprint 02A: 'google' — forward-looking, lets ops query "all social
+  // logins" without event-name prefix matching once more providers exist.
+  provider?: string;
+  // sha256Hex(sub).slice(0,16), same truncation convention as
+  // emailHashPrefix — used only when no userId exists yet (e.g. a failed
+  // verification before any user lookup), to correlate repeated failures
+  // from one Google account without ever logging the raw `sub`.
+  providerSubjectHash?: string;
 }
 
 /**

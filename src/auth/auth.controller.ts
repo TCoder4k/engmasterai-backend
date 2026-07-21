@@ -2,7 +2,7 @@ import { Body, Controller, Post, Req, Res, UseGuards } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { ConfigService } from '@nestjs/config';
 import { AuthService } from './auth.service';
-import { LoginDTO, RegisterDTO } from './dto';
+import { GoogleAuthDTO, GoogleLinkDTO, LoginDTO, RegisterDTO } from './dto';
 import {
   DEFAULT_REFRESH_TOKEN_TTL_SECONDS,
   REFRESH_COOKIE_NAME,
@@ -152,6 +152,59 @@ export class AuthController {
     );
     this.setRefreshCookie(res, refreshCookieValue);
     return { accessToken };
+  }
+
+  // POST:.../auth/google
+  // Pre-verification limiting is IP-only — an unverified JWT email claim is
+  // attacker-chosen, never used as a rate-limit key (see
+  // docs/adr/004-google-auth.md). The IP bucket applies to every request.
+  @RateLimits([
+    {
+      kind: 'google-ip',
+      maxConfigKey: 'AUTH_GOOGLE_IP_RATE_LIMIT_MAX',
+      windowConfigKey: 'AUTH_GOOGLE_RATE_LIMIT_WINDOW_SECONDS',
+    },
+  ])
+  @Post('google')
+  async google(
+    @Body() dto: GoogleAuthDTO,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const { refreshCookieValue, ...body } = await this.authService.google(
+      dto,
+      req.headers['user-agent'] ?? null,
+      this.logContext(req),
+    );
+    this.setRefreshCookie(res, refreshCookieValue);
+    return body;
+  }
+
+  // POST:.../auth/google/link
+  // Same IP-only guard-level bucket as /auth/google; AuthService.linkGoogle
+  // additionally checks its own backend-verified-identity bucket once the
+  // credential is verified — this endpoint is a password-verification
+  // oracle and is rate-limited at least as strictly as login.
+  @RateLimits([
+    {
+      kind: 'google-link-ip',
+      maxConfigKey: 'AUTH_GOOGLE_LINK_IP_RATE_LIMIT_MAX',
+      windowConfigKey: 'AUTH_GOOGLE_LINK_RATE_LIMIT_WINDOW_SECONDS',
+    },
+  ])
+  @Post('google/link')
+  async googleLink(
+    @Body() dto: GoogleLinkDTO,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const { refreshCookieValue, ...body } = await this.authService.linkGoogle(
+      dto,
+      req.headers['user-agent'] ?? null,
+      this.logContext(req),
+    );
+    this.setRefreshCookie(res, refreshCookieValue);
+    return body;
   }
 
   //POST:.../auth/logout

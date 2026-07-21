@@ -197,4 +197,91 @@ describe('AuthRateLimitGuard', () => {
 
     expect(rateLimiter.checkAndIncrement).toHaveBeenCalledTimes(1);
   });
+
+  it('google-ip bucket is keyed only on IP — a forged/varying body.email or credential never changes the bucket key', async () => {
+    const policies: RateLimitPolicy[] = [
+      {
+        kind: 'google-ip',
+        maxConfigKey: 'MAX_A',
+        windowConfigKey: 'WINDOW_A',
+      },
+    ];
+    reflector.get.mockReturnValue(policies);
+
+    await guard.canActivate(
+      buildContext({
+        ip: '203.0.113.1',
+        body: { credential: 'forged.credential.one', email: 'a@evil.test' },
+        cookies: {},
+      }),
+    );
+    await guard.canActivate(
+      buildContext({
+        ip: '203.0.113.1',
+        body: { credential: 'forged.credential.two', email: 'b@evil.test' },
+        cookies: {},
+      }),
+    );
+
+    expect(rateLimiter.checkAndIncrement).toHaveBeenCalledTimes(2);
+    const [firstKey] = rateLimiter.checkAndIncrement.mock.calls[0];
+    const [secondKey] = rateLimiter.checkAndIncrement.mock.calls[1];
+    expect(firstKey).toBe(secondKey);
+  });
+
+  it('google-link-ip bucket is likewise keyed only on IP, independent of any request body content', async () => {
+    const policies: RateLimitPolicy[] = [
+      {
+        kind: 'google-link-ip',
+        maxConfigKey: 'MAX_A',
+        windowConfigKey: 'WINDOW_A',
+      },
+    ];
+    reflector.get.mockReturnValue(policies);
+
+    await guard.canActivate(
+      buildContext({
+        ip: '203.0.113.7',
+        body: { credential: 'x', password: 'guess-1' },
+        cookies: {},
+      }),
+    );
+    await guard.canActivate(
+      buildContext({
+        ip: '203.0.113.7',
+        body: { credential: 'y', password: 'guess-2' },
+        cookies: {},
+      }),
+    );
+
+    expect(rateLimiter.checkAndIncrement).toHaveBeenCalledTimes(2);
+    const [firstKey] = rateLimiter.checkAndIncrement.mock.calls[0];
+    const [secondKey] = rateLimiter.checkAndIncrement.mock.calls[1];
+    expect(firstKey).toBe(secondKey);
+  });
+
+  it('google-ip and google-link-ip produce different bucket keys for the same IP (independent buckets)', async () => {
+    reflector.get.mockReturnValue([
+      { kind: 'google-ip', maxConfigKey: 'MAX_A', windowConfigKey: 'WINDOW_A' },
+    ]);
+    await guard.canActivate(
+      buildContext({ ip: '198.51.100.9', body: {}, cookies: {} }),
+    );
+    const [googleKey] = rateLimiter.checkAndIncrement.mock.calls[0];
+
+    rateLimiter.checkAndIncrement.mockClear();
+    reflector.get.mockReturnValue([
+      {
+        kind: 'google-link-ip',
+        maxConfigKey: 'MAX_A',
+        windowConfigKey: 'WINDOW_A',
+      },
+    ]);
+    await guard.canActivate(
+      buildContext({ ip: '198.51.100.9', body: {}, cookies: {} }),
+    );
+    const [googleLinkKey] = rateLimiter.checkAndIncrement.mock.calls[0];
+
+    expect(googleKey).not.toBe(googleLinkKey);
+  });
 });

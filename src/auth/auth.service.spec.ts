@@ -10,6 +10,8 @@ import {
   AuthEventLogger,
   AuthLogContext,
 } from './logging/auth-event-logger.service';
+import { GoogleTokenVerifierService } from './google/google-token-verifier.service';
+import { RateLimiterService } from './rate-limit/rate-limiter.service';
 
 const testLogContext: AuthLogContext = {
   requestId: 'test-request-id',
@@ -26,6 +28,8 @@ describe('AuthService — logout', () => {
   let authEventLogger: jest.Mocked<AuthEventLogger>;
   let blacklist: jest.Mocked<TokenBlacklistService>;
   let refreshTokenService: jest.Mocked<RefreshTokenService>;
+  let googleTokenVerifier: jest.Mocked<GoogleTokenVerifierService>;
+  let rateLimiterService: jest.Mocked<RateLimiterService>;
   let prisma: PrismaService;
 
   const validAuthHeader = 'Bearer valid.jwt.token';
@@ -59,6 +63,14 @@ describe('AuthService — logout', () => {
       log: jest.fn(),
     } as unknown as jest.Mocked<AuthEventLogger>;
 
+    googleTokenVerifier = {
+      verify: jest.fn(),
+    } as unknown as jest.Mocked<GoogleTokenVerifierService>;
+
+    rateLimiterService = {
+      checkAndIncrement: jest.fn(),
+    } as unknown as jest.Mocked<RateLimiterService>;
+
     prisma = {} as PrismaService;
 
     service = new AuthService(
@@ -68,6 +80,8 @@ describe('AuthService — logout', () => {
       blacklist,
       refreshTokenService,
       authEventLogger,
+      googleTokenVerifier,
+      rateLimiterService,
     );
   });
 

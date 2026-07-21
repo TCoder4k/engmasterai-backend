@@ -139,4 +139,52 @@ describe('env.validation', () => {
     });
     expect(error).toBeUndefined();
   });
+
+  describe('Sprint 02A — GOOGLE_AUTH_ENABLED / GOOGLE_CLIENT_ID', () => {
+    it('defaults GOOGLE_AUTH_ENABLED to false and boots with zero Google config', () => {
+      const { error, value } = validate(baseDevEnv);
+      expect(error).toBeUndefined();
+      expect(
+        (value as unknown as Record<string, unknown>).GOOGLE_AUTH_ENABLED,
+      ).toBe(false);
+    });
+
+    it('passes when GOOGLE_AUTH_ENABLED is false and GOOGLE_CLIENT_ID is present anyway', () => {
+      const { error } = validate({
+        ...baseDevEnv,
+        GOOGLE_AUTH_ENABLED: false,
+        GOOGLE_CLIENT_ID: 'some-id.apps.googleusercontent.com',
+      });
+      expect(error).toBeUndefined();
+    });
+
+    it('fails when GOOGLE_AUTH_ENABLED is true and GOOGLE_CLIENT_ID is missing', () => {
+      const { error } = validate({
+        ...baseDevEnv,
+        GOOGLE_AUTH_ENABLED: true,
+      });
+      expect(error?.message).toMatch(/GOOGLE_CLIENT_ID/);
+    });
+
+    it('fails when GOOGLE_AUTH_ENABLED is true and GOOGLE_CLIENT_ID is empty', () => {
+      const { error } = validate({
+        ...baseDevEnv,
+        GOOGLE_AUTH_ENABLED: true,
+        GOOGLE_CLIENT_ID: '',
+      });
+      expect(error?.message).toMatch(/GOOGLE_CLIENT_ID/);
+    });
+
+    it('succeeds when GOOGLE_AUTH_ENABLED is true and GOOGLE_CLIENT_ID is set', () => {
+      const { error, value } = validate({
+        ...baseDevEnv,
+        GOOGLE_AUTH_ENABLED: true,
+        GOOGLE_CLIENT_ID: 'some-id.apps.googleusercontent.com',
+      });
+      expect(error).toBeUndefined();
+      expect(
+        (value as unknown as Record<string, unknown>).GOOGLE_AUTH_ENABLED,
+      ).toBe(true);
+    });
+  });
 });

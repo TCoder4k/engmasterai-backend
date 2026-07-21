@@ -13,7 +13,14 @@ export type RateLimitBucketKind =
   | 'register-ip'
   | 'register-combo'
   | 'refresh-family'
-  | 'refresh-ip';
+  | 'refresh-ip'
+  // Sprint 02A. IP-only — an unverified JWT email claim is attacker-chosen,
+  // not a stable identity, so there is no google-combo/google-link-combo
+  // guard-level kind; /auth/google/link's identity-keyed bucket is checked
+  // separately inside AuthService.linkGoogle() against the
+  // backend-verified email (see docs/adr/004-google-auth.md).
+  | 'google-ip'
+  | 'google-link-ip';
 
 export interface RateLimitPolicy {
   kind: RateLimitBucketKind;

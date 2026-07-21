@@ -70,7 +70,7 @@ enum WordSource {
 model User {
   id        String   @id @default(uuid())
   email     String   @unique
-  password  String
+  password  String? // nullable: Google-only accounts (Sprint 02A) have no local password
   name      String
   avatarUrl String? //can be null
   role      UserRole @default(USER)
@@ -79,10 +79,46 @@ model User {
   level       Int @default(1)
 
   createdAt DateTime @default(now())
+  // Set only when the backend has cryptographically verified email ownership
+  // (currently: a successful Google ID-token verification with
+  // email_verified=true, at account-creation or account-linking time).
+  // Sprint 02A writes this field; nothing reads or branches on it yet — it
+  // exists so a future local-email-verification sprint (02B) inherits
+  // accurate data with no backfill guesswork. NULL for every pre-existing
+  // local account, which is accurate: their email ownership was never
+  // verified.
+  emailVerifiedAt DateTime?
 
   taskProgress LessonTaskProgress[]
+  identities   AuthIdentity[]
 
-  @@map("users") //users dùng cho query sql , còn User dùng cho code 
+  @@map("users") //users dùng cho query sql , còn User dùng cho code
+}
+
+enum AuthProvider {
+  GOOGLE
+}
+
+// One row per external identity provider linked to a User (Sprint 02A). A
+// separate table (not googleId/provider columns on User) so one account can
+// hold multiple provider identities without nullable-column sprawl as more
+// providers are added later.
+model AuthIdentity {
+  id     String @id @default(uuid())
+  userId String
+
+  provider        AuthProvider
+  providerSubject String // Google's `sub` claim — stable, opaque, never the email
+  providerEmail   String // verified email at link time — audit trail only, never a login key
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerSubject])
+  @@index([userId])
+  @@map("auth_identities")
 }
 
 model Course {

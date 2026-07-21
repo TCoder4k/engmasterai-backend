@@ -14,6 +14,8 @@ import { RateLimitExceededException } from '../exceptions/rate-limit-exceeded.ex
 import { hashClientIp } from '../utils/client-ip.util';
 import {
   emailHashPrefix,
+  googleIpKey,
+  googleLinkIpKey,
   loginComboKey,
   loginIpKey,
   refreshFamilyRateLimitKey,
@@ -128,6 +130,10 @@ export class AuthRateLimitGuard implements CanActivate {
         return ctx.familyId ? refreshFamilyRateLimitKey(ctx.familyId) : null;
       case 'refresh-ip':
         return refreshIpKey(ctx.ipHash);
+      case 'google-ip':
+        return googleIpKey(ctx.ipHash);
+      case 'google-link-ip':
+        return googleLinkIpKey(ctx.ipHash);
     }
   }
 }

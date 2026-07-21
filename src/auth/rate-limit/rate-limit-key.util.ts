@@ -1,5 +1,8 @@
 import { sha256Hex } from '../utils/hash.util';
 import {
+  RATE_LIMIT_GOOGLE_IP_PREFIX,
+  RATE_LIMIT_GOOGLE_LINK_COMBO_PREFIX,
+  RATE_LIMIT_GOOGLE_LINK_IP_PREFIX,
   RATE_LIMIT_LOGIN_COMBO_PREFIX,
   RATE_LIMIT_LOGIN_IP_PREFIX,
   RATE_LIMIT_REFRESH_FAMILY_PREFIX,
@@ -34,3 +37,15 @@ export const refreshFamilyRateLimitKey = (familyId: string): string =>
 
 export const refreshIpKey = (ipHash: string): string =>
   `${RATE_LIMIT_REFRESH_IP_PREFIX}${ipHash}`;
+
+export const googleIpKey = (ipHash: string): string =>
+  `${RATE_LIMIT_GOOGLE_IP_PREFIX}${ipHash}`;
+
+export const googleLinkIpKey = (ipHash: string): string =>
+  `${RATE_LIMIT_GOOGLE_LINK_IP_PREFIX}${ipHash}`;
+
+// Checked inside AuthService.linkGoogle() itself (not by AuthRateLimitGuard)
+// — the guard runs before Google verification, so no *backend-verified*
+// email is available to it yet. See auth-redis.constants.ts.
+export const googleLinkComboKey = (ipHash: string, emailHash: string): string =>
+  `${RATE_LIMIT_GOOGLE_LINK_COMBO_PREFIX}${ipHash}:${emailHash}`;

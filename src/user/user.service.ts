@@ -192,6 +192,15 @@ export class UserService {
       throw new NotFoundException('User not found');
     }
 
+    // Google-only accounts (Sprint 02A) have no local password to change.
+    // Safe to be specific here (unlike login()'s generic failure messages) —
+    // the caller already holds a valid session for this exact account.
+    if (!user.password) {
+      throw new BadRequestException(
+        'This account signs in with Google and has no password to change',
+      );
+    }
+
     // Verify current password
     const isPasswordValid = await argon.verify(user.password, currentPassword);
     if (!isPasswordValid) {

@@ -136,6 +136,45 @@ export const envValidationSchema = Joi.object({
     .min(1)
     .max(100000)
     .default(30),
+
+  // Sprint 02A — Google Sign-In is off by default; enabling it requires a
+  // client ID, validated together so a half-configured deployment fails at
+  // boot rather than at the first request to /auth/google.
+  GOOGLE_AUTH_ENABLED: Joi.boolean().default(false),
+  GOOGLE_CLIENT_ID: Joi.string().min(1).when('GOOGLE_AUTH_ENABLED', {
+    is: true,
+    then: Joi.required(),
+    otherwise: Joi.optional(),
+  }),
+
+  AUTH_GOOGLE_IP_RATE_LIMIT_MAX: Joi.number()
+    .integer()
+    .min(1)
+    .max(100000)
+    .default(30),
+  AUTH_GOOGLE_RATE_LIMIT_WINDOW_SECONDS: Joi.number()
+    .integer()
+    .min(1)
+    .max(604800)
+    .default(60),
+  AUTH_GOOGLE_LINK_IP_RATE_LIMIT_MAX: Joi.number()
+    .integer()
+    .min(1)
+    .max(100000)
+    .default(20),
+  AUTH_GOOGLE_LINK_RATE_LIMIT_WINDOW_SECONDS: Joi.number()
+    .integer()
+    .min(1)
+    .max(604800)
+    .default(60),
+  // Verified ip+email combo bucket checked inside AuthService.linkGoogle(),
+  // not by the guard (see AuthRateLimitGuard) — no window var of its own
+  // because it shares AUTH_GOOGLE_LINK_RATE_LIMIT_WINDOW_SECONDS above.
+  AUTH_GOOGLE_LINK_RATE_LIMIT_MAX: Joi.number()
+    .integer()
+    .min(1)
+    .max(100000)
+    .default(5),
 })
   // Cloudinary/other unrelated vars are intentionally out of this sprint's
   // scope (see docs/sprints/sprint-01C-security-hardening.md) — `unknown`

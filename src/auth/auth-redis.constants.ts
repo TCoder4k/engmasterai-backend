@@ -14,6 +14,16 @@ export const RATE_LIMIT_REGISTER_COMBO_PREFIX = 'auth:rl:register:combo:';
 export const RATE_LIMIT_REFRESH_FAMILY_PREFIX = 'auth:rl:refresh:family:';
 export const RATE_LIMIT_REFRESH_IP_PREFIX = 'auth:rl:refresh:ip:';
 
+// Sprint 02A. Deliberately no *_COMBO_PREFIX for plain /auth/google — an
+// unverified JWT email claim is attacker-chosen, not a stable identity, so
+// pre-verification limiting there is IP-only (see docs/adr/004-google-auth.md).
+// /auth/google/link's combo bucket IS keyed on an identity, but only the
+// backend-verified email (checked inside AuthService.linkGoogle(), not by
+// the guard) — never a client-supplied claim.
+export const RATE_LIMIT_GOOGLE_IP_PREFIX = 'auth:rl:google:ip:';
+export const RATE_LIMIT_GOOGLE_LINK_IP_PREFIX = 'auth:rl:google:link:ip:';
+export const RATE_LIMIT_GOOGLE_LINK_COMBO_PREFIX = 'auth:rl:google:link:combo:';
+
 export const accessTokenBlacklistKey = (tokenHash: string): string =>
   `${ACCESS_TOKEN_BLACKLIST_PREFIX}${tokenHash}`;
 

@@ -11,6 +11,7 @@ import { AuthRateLimitGuard } from './guards/auth-rate-limit.guard';
 import { RateLimiterService } from './rate-limit/rate-limiter.service';
 import { AuthEventLogger } from './logging/auth-event-logger.service';
 import { RequestIdMiddleware } from './logging/request-id.middleware';
+import { GoogleTokenVerifierService } from './google/google-token-verifier.service';
 
 // Note: this module deliberately does NOT import/register the Redis
 // connection itself — SharedRedisModule (src/shared/redis/redis.module.ts)
@@ -46,6 +47,7 @@ import { RequestIdMiddleware } from './logging/request-id.middleware';
     RateLimiterService,
     AuthRateLimitGuard,
     AuthEventLogger,
+    GoogleTokenVerifierService,
   ],
   exports: [JwtAuthGuard, RolesGuard, TokenBlacklistService],
 })
