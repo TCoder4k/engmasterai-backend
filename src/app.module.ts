@@ -11,10 +11,15 @@ import { LessonModule } from './lesson/lesson.module';
 import { VocabLibraryModule } from './vocab-library/vocab-library.module';
 import { VocabDeckModule } from './vocab-deck/vocab-deck.module';
 import { VocabWordModule } from './vocab-word/vocab-word.module';
+import { envValidationSchema } from './config/env.validation';
 
 @Module({
   imports: [
-    ConfigModule.forRoot({ isGlobal: true }),
+    ConfigModule.forRoot({
+      isGlobal: true,
+      validationSchema: envValidationSchema,
+      validationOptions: { abortEarly: false, allowUnknown: true },
+    }),
     PrismaModule,
     SharedModule,
     SharedRedisModule,

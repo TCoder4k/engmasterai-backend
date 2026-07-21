@@ -2,6 +2,7 @@ import Redis from 'ioredis';
 import { ConfigService } from '@nestjs/config';
 import { ServiceUnavailableException } from '@nestjs/common';
 import { RefreshTokenService } from './refresh-token.service';
+import { AuthEventLogger } from './logging/auth-event-logger.service';
 
 // `ioredis-mock` does not implement EVAL/Lua scripting (confirmed: no
 // eval/cjson support in its command set), so it cannot exercise the real
@@ -25,6 +26,7 @@ describe('RefreshTokenService (integration — real Redis, strict single-use rot
   const config = {
     get: (_key: string, defaultValue?: string) => defaultValue,
   } as unknown as ConfigService;
+  const authEventLogger = { log: jest.fn() } as unknown as AuthEventLogger;
 
   beforeAll(() => {
     redis = new Redis({
@@ -36,7 +38,7 @@ describe('RefreshTokenService (integration — real Redis, strict single-use rot
 
   beforeEach(async () => {
     await redis.flushdb();
-    service = new RefreshTokenService(redis, config);
+    service = new RefreshTokenService(redis, config, authEventLogger);
   });
 
   afterAll(async () => {
@@ -139,7 +141,11 @@ describe('RefreshTokenService (integration — real Redis, strict single-use rot
       retryStrategy: () => null,
       maxRetriesPerRequest: 1,
     });
-    const brokenService = new RefreshTokenService(brokenRedis, config);
+    const brokenService = new RefreshTokenService(
+      brokenRedis,
+      config,
+      authEventLogger,
+    );
 
     await expect(brokenService.issue('user-6', null)).rejects.toBeInstanceOf(
       ServiceUnavailableException,

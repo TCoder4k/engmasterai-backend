@@ -9,10 +9,16 @@ import { PrismaService } from '../prisma/prisma.service';
 import { LoginDTO, RegisterDTO } from './dto';
 import * as argon from 'argon2';
 import { JwtService } from '@nestjs/jwt';
+import { ConfigService } from '@nestjs/config';
 import { UserRole } from '@prisma/client';
 import { TokenBlacklistService } from './token-blacklist.service';
 import { RefreshTokenService } from './refresh-token.service';
 import { extractBearerToken } from './utils/extract-bearer-token';
+import {
+  AuthEventLogger,
+  AuthLogContext,
+} from './logging/auth-event-logger.service';
+import { emailHashPrefix } from './rate-limit/rate-limit-key.util';
 
 export interface AuthResult {
   message: string;
@@ -41,14 +47,20 @@ export class AuthService {
   constructor(
     private prismaService: PrismaService,
     private jwtService: JwtService,
+    private configService: ConfigService,
     private tokenBlacklistService: TokenBlacklistService,
     private refreshTokenService: RefreshTokenService,
+    private authEventLogger: AuthEventLogger,
   ) {}
 
   async register(
     dto: RegisterDTO,
     userAgent: string | null,
+    logContext: AuthLogContext,
   ): Promise<AuthResult> {
+    const startedAt = Date.now();
+    const route = 'POST /auth/register';
+
     try {
       // Hash password securely
       const hashedPassword = await argon.hash(dto.password);
@@ -81,7 +93,14 @@ export class AuthService {
         userAgent,
       );
 
-      this.logger.log(`Registration succeeded (userId=${user.id})`);
+      this.authEventLogger.log('auth.register.succeeded', {
+        requestId: logContext.requestId,
+        route,
+        durationMs: Date.now() - startedAt,
+        userId: user.id,
+        role: user.role,
+        ipHash: logContext.ipHash,
+      });
 
       return {
         message: 'Registration successful',
@@ -96,15 +115,53 @@ export class AuthService {
       };
     } catch (error) {
       if (error instanceof ServiceUnavailableException) throw error;
+
+      // Sprint 01C: a duplicate email and any other registration failure
+      // collapse onto the same generic `registration_failed` category in
+      // the structured event log — no distinct "email already taken"
+      // category, per the sprint's enumeration-avoidance intent.
+      this.authEventLogger.log('auth.register.failed', {
+        requestId: logContext.requestId,
+        route,
+        durationMs: Date.now() - startedAt,
+        emailHash: emailHashPrefix(dto.email),
+        ipHash: logContext.ipHash,
+        failureCategory: 'registration_failed',
+      });
+
       if (error.code === 'P2002') {
-        this.logger.warn(`Registration failed: email already exists`);
         throw new ForbiddenException('Email already exists');
       }
       this.logger.error('Registration failed', error as Error);
       throw new ForbiddenException('Registration failed');
     }
   }
-  async login(dto: LoginDTO, userAgent: string | null): Promise<AuthResult> {
+
+  async login(
+    dto: LoginDTO,
+    userAgent: string | null,
+    logContext: AuthLogContext,
+  ): Promise<AuthResult> {
+    const startedAt = Date.now();
+    const route = 'POST /auth/login';
+    const emailHash = emailHashPrefix(dto.email);
+
+    // Every login failure branch below (not-found, role-mismatch,
+    // wrong-password) collapses onto the same generic `invalid_credentials`
+    // category — Sprint 01C's enumeration-avoidance requirement: the log
+    // must not let a reader distinguish "no such account" from "wrong
+    // password" from "right password, wrong role".
+    const logFailure = (): void => {
+      this.authEventLogger.log('auth.login.failed', {
+        requestId: logContext.requestId,
+        route,
+        durationMs: Date.now() - startedAt,
+        emailHash,
+        ipHash: logContext.ipHash,
+        failureCategory: 'invalid_credentials',
+      });
+    };
+
     // Find user by email
     const user = await this.prismaService.user.findUnique({
       where: {
@@ -121,13 +178,13 @@ export class AuthService {
 
     // Check if user exists
     if (!user) {
-      this.logger.warn('Login failed: invalid credentials');
+      logFailure();
       throw new ForbiddenException('Invalid credentials');
     }
 
     // Verify role matches
     if (user.role !== dto.role) {
-      this.logger.warn(`Login failed: role mismatch (userId=${user.id})`);
+      logFailure();
       throw new ForbiddenException('Invalid credentials or unauthorized role');
     }
 
@@ -135,7 +192,7 @@ export class AuthService {
     const passwordMatched = await argon.verify(user.password, dto.password);
 
     if (!passwordMatched) {
-      this.logger.warn(`Login failed: invalid credentials (userId=${user.id})`);
+      logFailure();
       throw new ForbiddenException('Invalid credentials');
     }
 
@@ -150,7 +207,14 @@ export class AuthService {
       userAgent,
     );
 
-    this.logger.log(`Login succeeded (userId=${user.id})`);
+    this.authEventLogger.log('auth.login.succeeded', {
+      requestId: logContext.requestId,
+      route,
+      durationMs: Date.now() - startedAt,
+      userId: user.id,
+      role: user.role,
+      ipHash: logContext.ipHash,
+    });
 
     return {
       message: 'Login successful',
@@ -191,7 +255,7 @@ export class AuthService {
     //Ký jwt (đóng dấu vào thẻ)
     const jwtString = await this.jwtService.signAsync(payload, {
       expiresIn: '10m',
-      secret: process.env.JWT_SECRET,
+      secret: this.configService.get<string>('JWT_SECRET'),
     });
     //trả token
     return {
@@ -206,12 +270,24 @@ export class AuthService {
    */
   async refresh(
     refreshCookieValue: string | undefined,
+    logContext: AuthLogContext,
   ): Promise<RefreshResult> {
+    const startedAt = Date.now();
+    const route = 'POST /auth/refresh';
+
     const parsed =
       this.refreshTokenService.parseCookieValue(refreshCookieValue);
     if (!parsed) {
+      this.authEventLogger.log('auth.refresh.failed', {
+        requestId: logContext.requestId,
+        route,
+        durationMs: Date.now() - startedAt,
+        ipHash: logContext.ipHash,
+        failureCategory: 'invalid_refresh_session',
+      });
       throw new UnauthorizedException('Invalid refresh session');
     }
+    const familyIdTruncated = parsed.familyId.slice(0, 8);
 
     const { outcome, secret, userId } = await this.refreshTokenService.rotate(
       parsed.familyId,
@@ -220,9 +296,26 @@ export class AuthService {
 
     if (outcome !== 'ok' || !secret) {
       if (outcome === 'reused') {
-        this.logger.warn(
-          `Refresh rejected: reuse detected (userId=${userId || 'unknown'})`,
-        );
+        // A materially different signal from a plain failure — kept as its
+        // own named event (not folded into `invalid_refresh_session`) even
+        // though the client-facing response is identical either way.
+        this.authEventLogger.log('auth.refresh.reuse_detected', {
+          requestId: logContext.requestId,
+          route,
+          durationMs: Date.now() - startedAt,
+          userId: userId || undefined,
+          ipHash: logContext.ipHash,
+          familyIdTruncated,
+        });
+      } else {
+        this.authEventLogger.log('auth.refresh.failed', {
+          requestId: logContext.requestId,
+          route,
+          durationMs: Date.now() - startedAt,
+          ipHash: logContext.ipHash,
+          familyIdTruncated,
+          failureCategory: 'invalid_refresh_session',
+        });
       }
       throw new UnauthorizedException('Invalid refresh session');
     }
@@ -237,6 +330,14 @@ export class AuthService {
       // issued) — revoke defensively rather than issuing a token for a
       // nonexistent account.
       await this.refreshTokenService.revoke(parsed.familyId);
+      this.authEventLogger.log('auth.refresh.failed', {
+        requestId: logContext.requestId,
+        route,
+        durationMs: Date.now() - startedAt,
+        ipHash: logContext.ipHash,
+        familyIdTruncated,
+        failureCategory: 'invalid_refresh_session',
+      });
       throw new UnauthorizedException('Invalid refresh session');
     }
 
@@ -250,7 +351,15 @@ export class AuthService {
       secret,
     );
 
-    this.logger.log(`Refresh succeeded (userId=${user.id})`);
+    this.authEventLogger.log('auth.refresh.succeeded', {
+      requestId: logContext.requestId,
+      route,
+      durationMs: Date.now() - startedAt,
+      userId: user.id,
+      role: user.role,
+      ipHash: logContext.ipHash,
+      familyIdTruncated,
+    });
 
     return { accessToken, refreshCookieValue: newRefreshCookieValue };
   }
@@ -273,8 +382,12 @@ export class AuthService {
   async logout(
     authorizationHeader: string | undefined,
     refreshCookieValue: string | undefined,
+    logContext: AuthLogContext,
   ): Promise<{ message: string }> {
+    const startedAt = Date.now();
+    const route = 'POST /auth/logout';
     const token = extractBearerToken(authorizationHeader);
+    let userId: string | undefined;
 
     if (token) {
       try {
@@ -286,11 +399,12 @@ export class AuthService {
         const decoded = this.jwtService.verify<{ sub: string; exp: number }>(
           token,
           {
-            secret: process.env.JWT_SECRET,
+            secret: this.configService.get<string>('JWT_SECRET'),
             ignoreExpiration: true,
           },
         );
 
+        userId = decoded?.sub;
         if (decoded?.exp) {
           await this.tokenBlacklistService.addToBlacklist(token, decoded.exp);
         }
@@ -307,11 +421,20 @@ export class AuthService {
 
     const parsed =
       this.refreshTokenService.parseCookieValue(refreshCookieValue);
+    let familyIdTruncated: string | undefined;
     if (parsed) {
+      familyIdTruncated = parsed.familyId.slice(0, 8);
       await this.refreshTokenService.revoke(parsed.familyId);
     }
 
-    this.logger.log('Logout processed');
+    this.authEventLogger.log('auth.logout.completed', {
+      requestId: logContext.requestId,
+      route,
+      durationMs: Date.now() - startedAt,
+      userId,
+      ipHash: logContext.ipHash,
+      familyIdTruncated,
+    });
 
     return {
       message: 'Logout successful',

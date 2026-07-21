@@ -1,4 +1,4 @@
-import { Body, Controller, Post, Req, Res } from '@nestjs/common';
+import { Body, Controller, Post, Req, Res, UseGuards } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { ConfigService } from '@nestjs/config';
 import { AuthService } from './auth.service';
@@ -8,7 +8,17 @@ import {
   REFRESH_COOKIE_NAME,
 } from './refresh-token.constants';
 import { buildRefreshCookieOptions } from './utils/refresh-cookie.util';
+import { AuthRateLimitGuard } from './guards/auth-rate-limit.guard';
+import { RateLimits } from './decorators/rate-limits.decorator';
+import { hashClientIp } from './utils/client-ip.util';
+import type { RequestWithId } from './logging/request-id.middleware';
+import type { AuthLogContext } from './logging/auth-event-logger.service';
 
+// Sprint 01C — every method below that carries @RateLimits([...]) is
+// evaluated by AuthRateLimitGuard (applied once at the class level; it's a
+// no-op for any handler with no @RateLimits metadata, e.g. logout, which is
+// deliberately not rate-limited — see docs/sprints/sprint-01C-security-hardening.md).
+@UseGuards(AuthRateLimitGuard)
 @Controller('auth')
 export class AuthController {
   constructor(
@@ -41,7 +51,26 @@ export class AuthController {
     );
   }
 
+  private logContext(req: Request): AuthLogContext {
+    return {
+      requestId: (req as RequestWithId).requestId,
+      ipHash: hashClientIp(req),
+    };
+  }
+
   //some requests from client
+  @RateLimits([
+    {
+      kind: 'register-ip',
+      maxConfigKey: 'AUTH_REGISTER_RATE_LIMIT_MAX',
+      windowConfigKey: 'AUTH_REGISTER_RATE_LIMIT_WINDOW_SECONDS',
+    },
+    {
+      kind: 'register-combo',
+      maxConfigKey: 'AUTH_REGISTER_EMAIL_RATE_LIMIT_MAX',
+      windowConfigKey: 'AUTH_REGISTER_RATE_LIMIT_WINDOW_SECONDS',
+    },
+  ])
   @Post('register') //register a new user
   //Gọi hàm register để xử lý
   //@Body là decorator nói với Nestjs là dùng để lấy dữ liệu từ request body
@@ -55,12 +84,25 @@ export class AuthController {
     const { refreshCookieValue, ...body } = await this.authService.register(
       dto,
       req.headers['user-agent'] ?? null,
+      this.logContext(req),
     );
     this.setRefreshCookie(res, refreshCookieValue);
     return body;
   }
   //now controller calls service
   //POST:.../auth/login
+  @RateLimits([
+    {
+      kind: 'login-combo',
+      maxConfigKey: 'AUTH_LOGIN_RATE_LIMIT_MAX',
+      windowConfigKey: 'AUTH_LOGIN_RATE_LIMIT_WINDOW_SECONDS',
+    },
+    {
+      kind: 'login-ip',
+      maxConfigKey: 'AUTH_LOGIN_IP_RATE_LIMIT_MAX',
+      windowConfigKey: 'AUTH_LOGIN_RATE_LIMIT_WINDOW_SECONDS',
+    },
+  ])
   @Post('login')
   async login(
     @Body() dto: LoginDTO,
@@ -70,6 +112,7 @@ export class AuthController {
     const { refreshCookieValue, ...body } = await this.authService.login(
       dto,
       req.headers['user-agent'] ?? null,
+      this.logContext(req),
     );
     this.setRefreshCookie(res, refreshCookieValue);
     return body;
@@ -77,8 +120,24 @@ export class AuthController {
 
   // POST:.../auth/refresh
   // Rotates the refresh session (from the httpOnly cookie) and issues a
-  // fresh access token. No guard here — the refresh cookie itself is the
-  // credential being presented, not a bearer access token.
+  // fresh access token. No auth guard here — the refresh cookie itself is
+  // the credential being presented, not a bearer access token. The IP
+  // backstop bucket applies to every request (not only a malformed/missing
+  // cookie) — otherwise a fabricated, valid-looking-but-fake family id on
+  // every request would land in its own empty bucket and never trip the
+  // family-keyed limit (see docs/memory.md's Sprint 01C entry).
+  @RateLimits([
+    {
+      kind: 'refresh-family',
+      maxConfigKey: 'AUTH_REFRESH_RATE_LIMIT_MAX',
+      windowConfigKey: 'AUTH_REFRESH_RATE_LIMIT_WINDOW_SECONDS',
+    },
+    {
+      kind: 'refresh-ip',
+      maxConfigKey: 'AUTH_REFRESH_IP_RATE_LIMIT_MAX',
+      windowConfigKey: 'AUTH_REFRESH_RATE_LIMIT_WINDOW_SECONDS',
+    },
+  ])
   @Post('refresh')
   async refresh(
     @Req() req: Request,
@@ -87,8 +146,10 @@ export class AuthController {
     const cookieValue = (
       req.cookies as Record<string, string | undefined> | undefined
     )?.[REFRESH_COOKIE_NAME];
-    const { accessToken, refreshCookieValue } =
-      await this.authService.refresh(cookieValue);
+    const { accessToken, refreshCookieValue } = await this.authService.refresh(
+      cookieValue,
+      this.logContext(req),
+    );
     this.setRefreshCookie(res, refreshCookieValue);
     return { accessToken };
   }
@@ -106,6 +167,7 @@ export class AuthController {
     const result = await this.authService.logout(
       req.headers.authorization,
       cookieValue,
+      this.logContext(req),
     );
     this.clearRefreshCookie(res);
     return result;

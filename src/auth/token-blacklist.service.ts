@@ -7,6 +7,7 @@ import { InjectRedis } from '@nestjs-modules/ioredis';
 import Redis from 'ioredis';
 import { accessTokenBlacklistKey } from './auth-redis.constants';
 import { sha256Hex } from './utils/hash.util';
+import { AuthEventLogger } from './logging/auth-event-logger.service';
 
 /**
  * Access-token blacklist (Redis-backed).
@@ -26,7 +27,10 @@ import { sha256Hex } from './utils/hash.util';
 export class TokenBlacklistService {
   private readonly logger = new Logger(TokenBlacklistService.name);
 
-  constructor(@InjectRedis() private readonly redis: Redis) {}
+  constructor(
+    @InjectRedis() private readonly redis: Redis,
+    private readonly authEventLogger: AuthEventLogger,
+  ) {}
 
   /**
    * Adds a token to the blacklist for the remainder of its natural lifetime.
@@ -52,6 +56,10 @@ export class TokenBlacklistService {
         'Redis write failed while blacklisting an access token',
         error as Error,
       );
+      this.authEventLogger.log('auth.redis.unavailable', {
+        route: 'POST /auth/logout',
+        failureCategory: 'access_token_blacklist_write_failed',
+      });
       throw new ServiceUnavailableException(
         'Authentication service temporarily unavailable',
       );
@@ -69,6 +77,9 @@ export class TokenBlacklistService {
         'Redis read failed while checking the access-token blacklist',
         error as Error,
       );
+      this.authEventLogger.log('auth.redis.unavailable', {
+        failureCategory: 'access_token_blacklist_read_failed',
+      });
       throw new ServiceUnavailableException(
         'Authentication service temporarily unavailable',
       );

@@ -4,6 +4,16 @@
 export const ACCESS_TOKEN_BLACKLIST_PREFIX = 'auth:atbl:';
 export const REFRESH_FAMILY_PREFIX = 'auth:refresh:family:';
 
+// Rate-limit bucket namespace (Sprint 01C). Every bucket carries its own
+// window TTL (see rate-limit-incr.lua), so there is no separate cleanup job —
+// same convention as the two prefixes above.
+export const RATE_LIMIT_LOGIN_COMBO_PREFIX = 'auth:rl:login:combo:';
+export const RATE_LIMIT_LOGIN_IP_PREFIX = 'auth:rl:login:ip:';
+export const RATE_LIMIT_REGISTER_IP_PREFIX = 'auth:rl:register:ip:';
+export const RATE_LIMIT_REGISTER_COMBO_PREFIX = 'auth:rl:register:combo:';
+export const RATE_LIMIT_REFRESH_FAMILY_PREFIX = 'auth:rl:refresh:family:';
+export const RATE_LIMIT_REFRESH_IP_PREFIX = 'auth:rl:refresh:ip:';
+
 export const accessTokenBlacklistKey = (tokenHash: string): string =>
   `${ACCESS_TOKEN_BLACKLIST_PREFIX}${tokenHash}`;
 

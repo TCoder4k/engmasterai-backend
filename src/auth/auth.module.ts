@@ -1,4 +1,4 @@
-import { Global, Module } from '@nestjs/common';
+import { Global, MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { PrismaModule } from '../prisma/prisma.module';
@@ -7,6 +7,10 @@ import { JwtStrategy } from './strategy';
 import { TokenBlacklistService } from './token-blacklist.service';
 import { RefreshTokenService } from './refresh-token.service';
 import { JwtAuthGuard, RolesGuard } from './guards';
+import { AuthRateLimitGuard } from './guards/auth-rate-limit.guard';
+import { RateLimiterService } from './rate-limit/rate-limiter.service';
+import { AuthEventLogger } from './logging/auth-event-logger.service';
+import { RequestIdMiddleware } from './logging/request-id.middleware';
 
 // Note: this module deliberately does NOT import/register the Redis
 // connection itself — SharedRedisModule (src/shared/redis/redis.module.ts)
@@ -39,7 +43,17 @@ import { JwtAuthGuard, RolesGuard } from './guards';
     RefreshTokenService,
     JwtAuthGuard,
     RolesGuard,
+    RateLimiterService,
+    AuthRateLimitGuard,
+    AuthEventLogger,
   ],
   exports: [JwtAuthGuard, RolesGuard, TokenBlacklistService],
 })
-export class AuthModule {}
+export class AuthModule implements NestModule {
+  configure(consumer: MiddlewareConsumer): void {
+    // Correlation-ID assignment (Sprint 01C) — scoped to this module's own
+    // routes, not applied app-wide (out of scope: a full observability
+    // platform).
+    consumer.apply(RequestIdMiddleware).forRoutes(AuthController);
+  }
+}

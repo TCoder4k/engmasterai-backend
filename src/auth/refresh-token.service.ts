@@ -12,6 +12,7 @@ import { join } from 'path';
 import { refreshFamilyKey } from './auth-redis.constants';
 import { sha256Hex } from './utils/hash.util';
 import { DEFAULT_REFRESH_TOKEN_TTL_SECONDS } from './refresh-token.constants';
+import { AuthEventLogger } from './logging/auth-event-logger.service';
 
 interface RefreshSessionRecord {
   userId: string;
@@ -69,6 +70,7 @@ export class RefreshTokenService {
   constructor(
     @InjectRedis() redis: Redis,
     private readonly config: ConfigService,
+    private readonly authEventLogger: AuthEventLogger,
   ) {
     this.redis = redis as RedisWithRotateCommand;
     this.ttlSeconds = Number(
@@ -139,6 +141,10 @@ export class RefreshTokenService {
         'Redis write failed while issuing a refresh session',
         error as Error,
       );
+      this.authEventLogger.log('auth.redis.unavailable', {
+        route: 'POST /auth/login|register',
+        failureCategory: 'refresh_session_issue_failed',
+      });
       throw new ServiceUnavailableException(
         'Authentication service temporarily unavailable',
       );
@@ -172,6 +178,10 @@ export class RefreshTokenService {
         'Redis EVAL failed while rotating a refresh token',
         error as Error,
       );
+      this.authEventLogger.log('auth.redis.unavailable', {
+        route: 'POST /auth/refresh',
+        failureCategory: 'refresh_token_rotate_failed',
+      });
       throw new ServiceUnavailableException(
         'Authentication service temporarily unavailable',
       );
@@ -197,6 +207,10 @@ export class RefreshTokenService {
         'Redis delete failed while revoking a refresh family',
         error as Error,
       );
+      this.authEventLogger.log('auth.redis.unavailable', {
+        route: 'POST /auth/logout',
+        failureCategory: 'refresh_token_revoke_failed',
+      });
       throw new ServiceUnavailableException(
         'Authentication service temporarily unavailable',
       );

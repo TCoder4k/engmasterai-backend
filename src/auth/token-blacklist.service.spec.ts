@@ -2,6 +2,7 @@ import RedisMock from 'ioredis-mock';
 import type Redis from 'ioredis';
 import { ServiceUnavailableException } from '@nestjs/common';
 import { TokenBlacklistService } from './token-blacklist.service';
+import { AuthEventLogger } from './logging/auth-event-logger.service';
 
 // ioredis-mock ships no TypeScript types of its own; its runtime API
 // mirrors ioredis's real Redis class closely enough (get/set/keys/flushall)
@@ -12,7 +13,8 @@ describe('TokenBlacklistService', () => {
 
   beforeEach(() => {
     redis = new RedisMock() as unknown as Redis;
-    service = new TokenBlacklistService(redis);
+    const authEventLogger = { log: jest.fn() } as unknown as AuthEventLogger;
+    service = new TokenBlacklistService(redis, authEventLogger);
   });
 
   afterEach(async () => {
