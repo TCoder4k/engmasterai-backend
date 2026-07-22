@@ -7,9 +7,6 @@ generator client {
   provider = "prisma-client-js"
 }
 
-
-
-
 //// ===================== ENUMS =====================
 
 enum UserRole {
@@ -78,7 +75,7 @@ model User {
   totalPoints Int @default(0)
   level       Int @default(1)
 
-  createdAt DateTime @default(now())
+  createdAt       DateTime  @default(now())
   // Set only when the backend has cryptographically verified email ownership
   // (currently: a successful Google ID-token verification with
   // email_verified=true, at account-creation or account-linking time).
@@ -89,8 +86,9 @@ model User {
   // verified.
   emailVerifiedAt DateTime?
 
-  taskProgress LessonTaskProgress[]
-  identities   AuthIdentity[]
+  taskProgress            LessonTaskProgress[]
+  identities              AuthIdentity[]
+  emailVerificationTokens EmailVerificationToken[]
 
   @@map("users") //users dùng cho query sql , còn User dùng cho code
 }
@@ -119,6 +117,26 @@ model AuthIdentity {
   @@unique([provider, providerSubject])
   @@index([userId])
   @@map("auth_identities")
+}
+
+// Single-use, expiring, opaque token proving control of a local account's
+// email inbox (Sprint 02B). Only a SHA-256 hash of the token is ever stored
+// — see src/auth/tokens/secure-token.util.ts. Issuing a new token for a user
+// invalidates every previous outstanding one (AuthService.resendVerification/
+// register set every prior unconsumed row's consumedAt before inserting the
+// new row, in the same transaction).
+model EmailVerificationToken {
+  id         String    @id @default(uuid())
+  userId     String
+  tokenHash  String    @unique
+  expiresAt  DateTime
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("email_verification_tokens")
 }
 
 model Course {
@@ -197,6 +215,7 @@ model Question {
 
   @@map("questions")
 }
+
 //Một user có thể có nhiều tiến độ làm bài
 model LessonTaskProgress {
   id            String             @id @default(uuid())
@@ -281,19 +300,19 @@ model VocabDeck {
 }
 
 model VocabWord {
-  id           String       @id @default(uuid())
+  id           String     @id @default(uuid())
   text         String
   ipa          String?
   audioUrl     String?
   imageUrl     String?
   cefrLevel    CefrLevel?
-  synonyms     String[]     @default([])
-  antonyms     String[]     @default([])
-  collocations String[]     @default([])
-  wordFamily   String[]     @default([])
-  source       WordSource   @default(ADMIN)
-  createdAt    DateTime     @default(now())
-  updatedAt    DateTime     @updatedAt
+  synonyms     String[]   @default([])
+  antonyms     String[]   @default([])
+  collocations String[]   @default([])
+  wordFamily   String[]   @default([])
+  source       WordSource @default(ADMIN)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
 
   meanings  VocabWordMeaning[]
   examples  VocabWordExample[]

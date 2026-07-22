@@ -24,6 +24,18 @@ export const RATE_LIMIT_GOOGLE_IP_PREFIX = 'auth:rl:google:ip:';
 export const RATE_LIMIT_GOOGLE_LINK_IP_PREFIX = 'auth:rl:google:link:ip:';
 export const RATE_LIMIT_GOOGLE_LINK_COMBO_PREFIX = 'auth:rl:google:link:combo:';
 
+// Sprint 02B — email verification. Resend's user-scoped bucket is checked
+// inside AuthService.resendVerification() (not the guard), same reasoning
+// as RATE_LIMIT_GOOGLE_LINK_COMBO_PREFIX above.
+export const RATE_LIMIT_EMAIL_VERIFY_RESEND_USER_PREFIX =
+  'auth:rl:email-verify:resend:user:';
+export const RATE_LIMIT_EMAIL_VERIFY_RESEND_IP_PREFIX =
+  'auth:rl:email-verify:resend:ip:';
+export const RATE_LIMIT_EMAIL_VERIFY_IP_PREFIX =
+  'auth:rl:email-verify:verify:ip:';
+export const RATE_LIMIT_EMAIL_VERIFY_TOKEN_PREFIX =
+  'auth:rl:email-verify:verify:token:';
+
 export const accessTokenBlacklistKey = (tokenHash: string): string =>
   `${ACCESS_TOKEN_BLACKLIST_PREFIX}${tokenHash}`;
 

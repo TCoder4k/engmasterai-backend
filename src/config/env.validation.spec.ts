@@ -187,4 +187,86 @@ describe('env.validation', () => {
       ).toBe(true);
     });
   });
+
+  describe('Sprint 02B — EMAIL_ENABLED / transactional mail config', () => {
+    const validEmailConfig = {
+      EMAIL_ENABLED: true,
+      EMAIL_PROVIDER: 'resend',
+      EMAIL_FROM: 'noreply@example.com',
+      EMAIL_FROM_NAME: 'EngMasterAI',
+      EMAIL_PROVIDER_API_KEY: 'test-key',
+      FRONTEND_APP_URL: 'https://app.example.com',
+    };
+
+    it('defaults EMAIL_ENABLED to false and boots with zero mail config', () => {
+      const { error, value } = validate(baseDevEnv);
+      expect(error).toBeUndefined();
+      expect((value as unknown as Record<string, unknown>).EMAIL_ENABLED).toBe(
+        false,
+      );
+    });
+
+    it('passes when EMAIL_ENABLED is false and no mail vars are set at all', () => {
+      const { error } = validate(baseDevEnv);
+      expect(error).toBeUndefined();
+    });
+
+    it('fails when EMAIL_ENABLED is true and EMAIL_PROVIDER is missing', () => {
+      const { EMAIL_PROVIDER, ...rest } = validEmailConfig;
+      void EMAIL_PROVIDER;
+      const { error } = validate({ ...baseDevEnv, ...rest });
+      expect(error?.message).toMatch(/EMAIL_PROVIDER/);
+    });
+
+    it('fails when EMAIL_ENABLED is true and EMAIL_FROM is missing', () => {
+      const { EMAIL_FROM, ...rest } = validEmailConfig;
+      void EMAIL_FROM;
+      const { error } = validate({ ...baseDevEnv, ...rest });
+      expect(error?.message).toMatch(/EMAIL_FROM\b/);
+    });
+
+    it('fails when EMAIL_ENABLED is true and EMAIL_PROVIDER_API_KEY is missing', () => {
+      const { EMAIL_PROVIDER_API_KEY, ...rest } = validEmailConfig;
+      void EMAIL_PROVIDER_API_KEY;
+      const { error } = validate({ ...baseDevEnv, ...rest });
+      expect(error?.message).toMatch(/EMAIL_PROVIDER_API_KEY/);
+    });
+
+    it('fails when EMAIL_ENABLED is true and FRONTEND_APP_URL is missing', () => {
+      const { FRONTEND_APP_URL, ...rest } = validEmailConfig;
+      void FRONTEND_APP_URL;
+      const { error } = validate({ ...baseDevEnv, ...rest });
+      expect(error?.message).toMatch(/FRONTEND_APP_URL/);
+    });
+
+    it('succeeds when EMAIL_ENABLED is true and every required mail var is present', () => {
+      const { error, value } = validate({ ...baseDevEnv, ...validEmailConfig });
+      expect(error).toBeUndefined();
+      expect(
+        (value as unknown as Record<string, unknown>).EMAIL_PROVIDER_TIMEOUT_MS,
+      ).toBe(5000);
+      expect(
+        (value as unknown as Record<string, unknown>)
+          .EMAIL_VERIFICATION_TOKEN_TTL_MINUTES,
+      ).toBe(30);
+    });
+
+    it('defaults FRONTEND_APP_URL to the local dev frontend origin when EMAIL_ENABLED is false', () => {
+      const { error, value } = validate(baseDevEnv);
+      expect(error).toBeUndefined();
+      expect(
+        (value as unknown as Record<string, unknown>).FRONTEND_APP_URL,
+      ).toBe('http://localhost:5174');
+    });
+
+    it('fails when a rate-limit max for email verification is not a positive integer', () => {
+      const { error } = validate({
+        ...baseDevEnv,
+        AUTH_EMAIL_VERIFY_RESEND_USER_RATE_LIMIT_MAX: 0,
+      });
+      expect(error?.message).toMatch(
+        /AUTH_EMAIL_VERIFY_RESEND_USER_RATE_LIMIT_MAX/,
+      );
+    });
+  });
 });

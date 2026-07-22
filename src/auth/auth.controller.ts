@@ -2,13 +2,20 @@ import { Body, Controller, Post, Req, Res, UseGuards } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { ConfigService } from '@nestjs/config';
 import { AuthService } from './auth.service';
-import { GoogleAuthDTO, GoogleLinkDTO, LoginDTO, RegisterDTO } from './dto';
+import {
+  GoogleAuthDTO,
+  GoogleLinkDTO,
+  LoginDTO,
+  RegisterDTO,
+  VerifyEmailDTO,
+} from './dto';
 import {
   DEFAULT_REFRESH_TOKEN_TTL_SECONDS,
   REFRESH_COOKIE_NAME,
 } from './refresh-token.constants';
 import { buildRefreshCookieOptions } from './utils/refresh-cookie.util';
 import { AuthRateLimitGuard } from './guards/auth-rate-limit.guard';
+import { JwtAuthGuard } from './guards';
 import { RateLimits } from './decorators/rate-limits.decorator';
 import { hashClientIp } from './utils/client-ip.util';
 import type { RequestWithId } from './logging/request-id.middleware';
@@ -205,6 +212,52 @@ export class AuthController {
     );
     this.setRefreshCookie(res, refreshCookieValue);
     return body;
+  }
+
+  // POST:.../auth/email-verification/resend
+  // Authenticated — identity comes exclusively from req.user (the verified
+  // JWT subject), never a client-supplied identifier. The class-level
+  // AuthRateLimitGuard evaluates the IP-only bucket below; the user-scoped
+  // bucket is checked inside AuthService.resendVerification() itself, since
+  // req.user isn't populated until JwtAuthGuard runs, which is after this
+  // class-level guard (see rate-limit-key.util.ts).
+  @UseGuards(JwtAuthGuard)
+  @RateLimits([
+    {
+      kind: 'email-verify-resend-ip',
+      maxConfigKey: 'AUTH_EMAIL_VERIFY_RESEND_IP_RATE_LIMIT_MAX',
+      windowConfigKey: 'AUTH_EMAIL_VERIFY_RESEND_RATE_LIMIT_WINDOW_SECONDS',
+    },
+  ])
+  @Post('email-verification/resend')
+  async resendVerification(@Req() req: Request & { user: { userId: string } }) {
+    return this.authService.resendVerification(
+      req.user.userId,
+      this.logContext(req),
+    );
+  }
+
+  // POST:.../auth/email-verification/verify
+  // Public — the opaque token itself is the credential. The frontend email
+  // link always lands on a frontend confirmation page that fires this POST
+  // explicitly; there is no GET route a security scanner's link-prefetch
+  // could use to silently consume a token (see
+  // docs/sprints/sprint-02B-email-verification.md's Frontend Flow).
+  @RateLimits([
+    {
+      kind: 'email-verify-ip',
+      maxConfigKey: 'AUTH_EMAIL_VERIFY_IP_RATE_LIMIT_MAX',
+      windowConfigKey: 'AUTH_EMAIL_VERIFY_RATE_LIMIT_WINDOW_SECONDS',
+    },
+    {
+      kind: 'email-verify-token',
+      maxConfigKey: 'AUTH_EMAIL_VERIFY_TOKEN_RATE_LIMIT_MAX',
+      windowConfigKey: 'AUTH_EMAIL_VERIFY_RATE_LIMIT_WINDOW_SECONDS',
+    },
+  ])
+  @Post('email-verification/verify')
+  async verifyEmail(@Body() dto: VerifyEmailDTO, @Req() req: Request) {
+    return this.authService.verifyEmail(dto, this.logContext(req));
   }
 
   //POST:.../auth/logout

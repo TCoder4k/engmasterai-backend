@@ -20,7 +20,16 @@ export type RateLimitBucketKind =
   // separately inside AuthService.linkGoogle() against the
   // backend-verified email (see docs/adr/004-google-auth.md).
   | 'google-ip'
-  | 'google-link-ip';
+  | 'google-link-ip'
+  // Sprint 02B. 'email-verify-resend-ip' is the only guard-level bucket for
+  // resend — its user-scoped sibling is checked inside
+  // AuthService.resendVerification() for the same reason
+  // google-link-combo is service-level (see rate-limit-key.util.ts).
+  // 'email-verify-token' bounds repeated attempts against one specific
+  // verification link (token-hash-prefix keyed, never the raw token).
+  | 'email-verify-resend-ip'
+  | 'email-verify-ip'
+  | 'email-verify-token';
 
 export interface RateLimitPolicy {
   kind: RateLimitBucketKind;

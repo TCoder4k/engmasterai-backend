@@ -11,6 +11,9 @@ import { Prisma } from '@prisma/client';
 import * as argon from 'argon2';
 
 // Fields safe to return to any caller — never includes `password`.
+// emailVerifiedAt is selected only so toSafeUser() below can derive the
+// boolean `emailVerified` — the raw timestamp itself is never returned to a
+// client (Sprint 02B: avoids leaking exactly when verification happened).
 const SAFE_USER_SELECT = {
   id: true,
   email: true,
@@ -20,7 +23,15 @@ const SAFE_USER_SELECT = {
   totalPoints: true,
   level: true,
   createdAt: true,
+  emailVerifiedAt: true,
 };
+
+type SafeUserRow = Prisma.UserGetPayload<{ select: typeof SAFE_USER_SELECT }>;
+
+const toSafeUser = ({ emailVerifiedAt, ...rest }: SafeUserRow) => ({
+  ...rest,
+  emailVerified: emailVerifiedAt !== null,
+});
 
 const MAX_LIMIT = 100;
 
@@ -46,7 +57,7 @@ export class UserService {
     ]);
 
     return {
-      data: users,
+      data: users.map(toSafeUser),
       meta: {
         total,
         page: page || 1,
@@ -66,7 +77,7 @@ export class UserService {
       throw new NotFoundException(`User with ID ${id} not found`);
     }
 
-    return user;
+    return toSafeUser(user);
   }
 
   async findByEmail(email: string) {
@@ -87,11 +98,12 @@ export class UserService {
     if (dto.avatarUrl !== undefined) data.avatarUrl = dto.avatarUrl;
     if (dto.password) data.password = await argon.hash(dto.password);
 
-    return this.prismaService.user.update({
+    const updated = await this.prismaService.user.update({
       where: { id },
       data,
       select: SAFE_USER_SELECT,
     });
+    return toSafeUser(updated);
   }
 
   // Admin update (PUT /users/:id, ADMIN only). The only path that may write
@@ -111,11 +123,12 @@ export class UserService {
     if (dto.level !== undefined) data.level = dto.level;
     if (dto.password) data.password = await argon.hash(dto.password);
 
-    return this.prismaService.user.update({
+    const updated = await this.prismaService.user.update({
       where: { id },
       data,
       select: SAFE_USER_SELECT,
     });
+    return toSafeUser(updated);
   }
 
   private async assertEmailAvailable(id: string, email?: string) {
@@ -166,11 +179,12 @@ export class UserService {
       const result = await this.cloudinaryService.uploadImage(file);
 
       // Update user avatar URL in database
-      return this.prismaService.user.update({
+      const updated = await this.prismaService.user.update({
         where: { id: userId },
         data: { avatarUrl: result.secure_url },
         select: SAFE_USER_SELECT,
       });
+      return toSafeUser(updated);
     } catch (error) {
       throw new BadRequestException(
         'Failed to upload avatar: ' + error.message,

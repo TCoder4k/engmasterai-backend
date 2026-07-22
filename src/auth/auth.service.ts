@@ -1,12 +1,20 @@
 import {
+  BadRequestException,
   ForbiddenException,
   Injectable,
   Logger,
+  NotFoundException,
   ServiceUnavailableException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { GoogleAuthDTO, GoogleLinkDTO, LoginDTO, RegisterDTO } from './dto';
+import {
+  GoogleAuthDTO,
+  GoogleLinkDTO,
+  LoginDTO,
+  RegisterDTO,
+  VerifyEmailDTO,
+} from './dto';
 import * as argon from 'argon2';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
@@ -15,12 +23,14 @@ import { TokenBlacklistService } from './token-blacklist.service';
 import { RefreshTokenService } from './refresh-token.service';
 import { extractBearerToken } from './utils/extract-bearer-token';
 import { sha256Hex } from './utils/hash.util';
+import { normalizeEmail } from './utils/email.util';
 import {
   AuthEventLogger,
   AuthLogContext,
 } from './logging/auth-event-logger.service';
 import {
   emailHashPrefix,
+  emailVerifyResendUserKey,
   googleLinkComboKey,
 } from './rate-limit/rate-limit-key.util';
 import {
@@ -30,6 +40,9 @@ import {
 import { RateLimiterService } from './rate-limit/rate-limiter.service';
 import { RateLimitExceededException } from './exceptions/rate-limit-exceeded.exception';
 import { AccountLinkRequiredException } from './exceptions/account-link-required.exception';
+import { generateSecureToken } from './tokens/secure-token.util';
+import { TransactionalMailService } from '../mail/transactional-mail.service';
+import { MailSendResult } from '../mail/mail.types';
 
 export interface AuthResult {
   message: string;
@@ -38,12 +51,21 @@ export interface AuthResult {
     name: string;
     email: string;
     role: UserRole;
+    // Derived from emailVerifiedAt !== null — never the raw timestamp
+    // itself (Sprint 02B; avoids leaking exactly when verification
+    // happened to a field every session-issuing response now carries).
+    emailVerified: boolean;
   };
   accessToken: string;
   // Encoded `<familyId>.<secret>` refresh-cookie value. Never part of the
   // JSON response body — the controller sets it as an httpOnly cookie and
   // strips this field before returning the body to the client.
   refreshCookieValue: string;
+  // Only ever set by register() — omitted (undefined) on every other
+  // session-issuing response, since only registration triggers a
+  // verification-email send. 'failed' never exposes provider failure
+  // detail to the client — see TransactionalMailService/MailSendResult.
+  emailDeliveryStatus?: 'sent' | 'failed';
 }
 
 export interface RefreshResult {
@@ -71,6 +93,7 @@ export class AuthService {
     private authEventLogger: AuthEventLogger,
     private googleTokenVerifier: GoogleTokenVerifierService,
     private rateLimiterService: RateLimiterService,
+    private transactionalMailService: TransactionalMailService,
   ) {}
 
   async register(
@@ -81,15 +104,20 @@ export class AuthService {
     const startedAt = Date.now();
     const route = 'POST /auth/register';
 
+    const normalizedEmail = normalizeEmail(dto.email);
+
     try {
       // Hash password securely
       const hashedPassword = await argon.hash(dto.password);
 
-      // Create user with USER role (registration is for learners only)
+      // Create user with USER role (registration is for learners only).
+      // emailVerifiedAt is never set here — local registration always
+      // starts unverified (Sprint 02B security invariant); Prisma's default
+      // (omitted = column default, NULL) already gives this for free.
       const user = await this.prismaService.user.create({
         data: {
           name: dto.name,
-          email: dto.email,
+          email: normalizedEmail,
           password: hashedPassword,
           role: UserRole.USER, // USER role = learner
         },
@@ -98,6 +126,7 @@ export class AuthService {
           name: true,
           email: true,
           role: true,
+          emailVerifiedAt: true,
           createdAt: true,
         },
       });
@@ -111,7 +140,35 @@ export class AuthService {
         ipHash: logContext.ipHash,
       });
 
-      return this.issueSession(user, userAgent, 'Registration successful');
+      // The verification-email send is sequenced strictly after the User
+      // row has committed, and its outcome never affects this method's
+      // return value beyond the informational emailDeliveryStatus field —
+      // a mail-provider failure must never roll back an already-created
+      // account (Sprint 02B Email Sending Failure Semantics). Always
+      // awaited; issueAndSendVerificationEmail's own contract never throws
+      // for an expected failure mode, but the outer try/catch is defense
+      // in depth against a genuine, unexpected error in that path.
+      let emailDeliveryStatus: 'sent' | 'failed' = 'failed';
+      try {
+        const mailResult = await this.issueAndSendVerificationEmail(
+          user,
+          logContext,
+          route,
+        );
+        emailDeliveryStatus = mailResult.success ? 'sent' : 'failed';
+      } catch (mailError) {
+        this.logger.error(
+          'Unexpected error issuing the verification email',
+          mailError as Error,
+        );
+      }
+
+      const session = await this.issueSession(
+        user,
+        userAgent,
+        'Registration successful',
+      );
+      return { ...session, emailDeliveryStatus };
     } catch (error) {
       if (error instanceof ServiceUnavailableException) throw error;
 
@@ -143,7 +200,8 @@ export class AuthService {
   ): Promise<AuthResult> {
     const startedAt = Date.now();
     const route = 'POST /auth/login';
-    const emailHash = emailHashPrefix(dto.email);
+    const normalizedEmail = normalizeEmail(dto.email);
+    const emailHash = emailHashPrefix(normalizedEmail);
 
     // Every login failure branch below (not-found, role-mismatch,
     // wrong-password) collapses onto the same generic `invalid_credentials`
@@ -161,10 +219,12 @@ export class AuthService {
       });
     };
 
-    // Find user by email
+    // Find user by email — normalized (Sprint 02B) so a stored, previously
+    // mixed-case local account still matches a differently-cased login
+    // attempt for the same address.
     const user = await this.prismaService.user.findUnique({
       where: {
-        email: dto.email,
+        email: normalizedEmail,
       },
       select: {
         id: true,
@@ -172,6 +232,7 @@ export class AuthService {
         email: true,
         password: true,
         role: true,
+        emailVerifiedAt: true,
       },
     });
 
@@ -453,10 +514,16 @@ export class AuthService {
     }
 
     if (!user.emailVerifiedAt) {
-      await this.prismaService.user.update({
+      const updated = await this.prismaService.user.update({
         where: { id: user.id },
         data: { emailVerifiedAt: new Date() },
+        select: { emailVerifiedAt: true },
       });
+      // Keep the in-memory object consistent with what was just persisted
+      // — issueSession() below derives AuthResult.user.emailVerified from
+      // this field, and must not report a stale `false` for the exact
+      // moment verification happened.
+      user.emailVerifiedAt = updated.emailVerifiedAt;
     }
 
     this.authEventLogger.log('auth.google.identity_linked', {
@@ -476,6 +543,250 @@ export class AuthService {
     );
   }
 
+  /**
+   * POST /auth/email-verification/verify — public, token-authenticated.
+   * Consumption is atomic (`updateMany` with a WHERE guard clause on
+   * `consumedAt`/`expiresAt`), relying on Postgres's own row-level locking
+   * rather than a new Redis primitive — this is a database-row race, not a
+   * distributed-counter race. A replayed-but-already-successful token gets
+   * a friendly idempotent response (safe: only reachable by someone who
+   * already held a previously-valid token); every other failure collapses
+   * onto one generic message, distinguished only in the log event name.
+   */
+  async verifyEmail(
+    dto: VerifyEmailDTO,
+    logContext: AuthLogContext,
+  ): Promise<{ message: string; alreadyVerified?: boolean }> {
+    const startedAt = Date.now();
+    const route = 'POST /auth/email-verification/verify';
+    const tokenHash = sha256Hex(dto.token);
+
+    const tokenRow = await this.prismaService.emailVerificationToken.findUnique(
+      {
+        where: { tokenHash },
+        select: {
+          userId: true,
+          expiresAt: true,
+          user: { select: { emailVerifiedAt: true } },
+        },
+      },
+    );
+
+    if (!tokenRow) {
+      this.authEventLogger.log('auth.email_verification.invalid', {
+        requestId: logContext.requestId,
+        route,
+        durationMs: Date.now() - startedAt,
+        ipHash: logContext.ipHash,
+        failureCategory: 'invalid_token',
+      });
+      throw new BadRequestException('Invalid or expired verification link.');
+    }
+
+    const now = new Date();
+    const consumeResult =
+      await this.prismaService.emailVerificationToken.updateMany({
+        where: { tokenHash, consumedAt: null, expiresAt: { gt: now } },
+        data: { consumedAt: now },
+      });
+
+    if (consumeResult.count === 0) {
+      if (tokenRow.user.emailVerifiedAt) {
+        this.authEventLogger.log('auth.email_verification.already_verified', {
+          requestId: logContext.requestId,
+          route,
+          durationMs: Date.now() - startedAt,
+          userId: tokenRow.userId,
+          ipHash: logContext.ipHash,
+        });
+        return {
+          message: 'Your email is already verified.',
+          alreadyVerified: true,
+        };
+      }
+
+      const expired = tokenRow.expiresAt.getTime() <= now.getTime();
+      this.authEventLogger.log(
+        expired
+          ? 'auth.email_verification.expired'
+          : 'auth.email_verification.invalid',
+        {
+          requestId: logContext.requestId,
+          route,
+          durationMs: Date.now() - startedAt,
+          userId: tokenRow.userId,
+          ipHash: logContext.ipHash,
+          failureCategory: expired ? 'token_expired' : 'token_consumed',
+        },
+      );
+      throw new BadRequestException('Invalid or expired verification link.');
+    }
+
+    // Idempotent by construction: only writes when not already set, never
+    // rewriting an existing verified timestamp (Sprint 02B invariant).
+    if (!tokenRow.user.emailVerifiedAt) {
+      await this.prismaService.user.update({
+        where: { id: tokenRow.userId },
+        data: { emailVerifiedAt: now },
+      });
+    }
+
+    this.authEventLogger.log('auth.email_verification.completed', {
+      requestId: logContext.requestId,
+      route,
+      durationMs: Date.now() - startedAt,
+      userId: tokenRow.userId,
+      ipHash: logContext.ipHash,
+    });
+
+    return { message: 'Email verified successfully.' };
+  }
+
+  /**
+   * POST /auth/email-verification/resend — authenticated (JwtAuthGuard).
+   * Requiring authentication is what lets this avoid ever being a public,
+   * enumeration-prone endpoint at all — it is only reachable by whoever is
+   * already signed in as the account in question (Sprint 02B Policy C: an
+   * unverified account can always log in normally, so this is always
+   * reachable). The user-scoped rate-limit bucket is checked here, not by
+   * the guard — see rate-limit-key.util.ts's emailVerifyResendUserKey doc
+   * comment for why.
+   */
+  async resendVerification(
+    userId: string,
+    logContext: AuthLogContext,
+  ): Promise<{ message: string; delivered?: boolean }> {
+    const route = 'POST /auth/email-verification/resend';
+
+    const maxPerUser = this.configService.get<number>(
+      'AUTH_EMAIL_VERIFY_RESEND_USER_RATE_LIMIT_MAX',
+    ) as number;
+    const windowSeconds = this.configService.get<number>(
+      'AUTH_EMAIL_VERIFY_RESEND_RATE_LIMIT_WINDOW_SECONDS',
+    ) as number;
+    const rateResult = await this.rateLimiterService.checkAndIncrement(
+      emailVerifyResendUserKey(userId),
+      maxPerUser,
+      windowSeconds,
+    );
+    if (!rateResult.allowed) {
+      this.authEventLogger.log('auth.rate_limit.exceeded', {
+        requestId: logContext.requestId,
+        route,
+        ipHash: logContext.ipHash,
+        userId,
+        failureCategory: 'email-verify-resend-user',
+      });
+      throw new RateLimitExceededException();
+    }
+
+    const user = await this.prismaService.user.findUnique({
+      where: { id: userId },
+      select: { id: true, name: true, email: true, emailVerifiedAt: true },
+    });
+    if (!user) {
+      // An authenticated caller whose account no longer exists (deleted
+      // after the token was issued, within its 10-minute remaining
+      // lifetime) — defensive, not expected in normal operation.
+      throw new NotFoundException('Account not found.');
+    }
+
+    if (user.emailVerifiedAt) {
+      return { message: 'Your email is already verified.' };
+    }
+
+    const result = await this.issueAndSendVerificationEmail(
+      user,
+      logContext,
+      route,
+    );
+
+    return {
+      message: result.success
+        ? 'Verification email sent.'
+        : 'We could not send the verification email right now. Please try again shortly.',
+      delivered: result.success,
+    };
+  }
+
+  /**
+   * Issues a fresh EmailVerificationToken (invalidating every prior
+   * outstanding one for this user) and awaits TransactionalMailService —
+   * shared by register() and resendVerification() so the two flows can't
+   * drift. Never throws for an expected mail-delivery failure; the caller
+   * decides what to do with the returned MailSendResult.
+   */
+  private async issueAndSendVerificationEmail(
+    user: { id: string; name: string; email: string },
+    logContext: AuthLogContext,
+    route: string,
+  ): Promise<MailSendResult> {
+    const { raw } = await this.issueEmailVerificationToken(user.id);
+
+    this.authEventLogger.log('auth.email_verification.requested', {
+      requestId: logContext.requestId,
+      route,
+      userId: user.id,
+      ipHash: logContext.ipHash,
+    });
+
+    const result = await this.transactionalMailService.sendVerificationEmail(
+      user.email,
+      { name: user.name, rawToken: raw },
+    );
+
+    if (result.success) {
+      this.authEventLogger.log('auth.email_verification.sent', {
+        requestId: logContext.requestId,
+        route,
+        userId: user.id,
+        ipHash: logContext.ipHash,
+        durationMs: result.durationMs,
+        provider: 'resend',
+      });
+    } else {
+      this.authEventLogger.log('auth.email_verification.failed', {
+        requestId: logContext.requestId,
+        route,
+        userId: user.id,
+        ipHash: logContext.ipHash,
+        durationMs: result.durationMs,
+        failureCategory: result.failureCategory,
+        provider: 'resend',
+      });
+    }
+
+    return result;
+  }
+
+  /**
+   * Invalidates every previous outstanding EmailVerificationToken for this
+   * user, then creates a fresh one, in a single transaction (Sprint 02B
+   * Token Lifecycle: "issuing a new token invalidates every previous
+   * outstanding token for that user").
+   */
+  private async issueEmailVerificationToken(
+    userId: string,
+  ): Promise<{ raw: string }> {
+    const { raw, hash } = generateSecureToken();
+    const ttlMinutes = this.configService.get<number>(
+      'EMAIL_VERIFICATION_TOKEN_TTL_MINUTES',
+    ) as number;
+    const expiresAt = new Date(Date.now() + ttlMinutes * 60_000);
+
+    await this.prismaService.$transaction([
+      this.prismaService.emailVerificationToken.updateMany({
+        where: { userId, consumedAt: null },
+        data: { consumedAt: new Date() },
+      }),
+      this.prismaService.emailVerificationToken.create({
+        data: { userId, tokenHash: hash, expiresAt },
+      }),
+    ]);
+
+    return { raw };
+  }
+
   private async findGoogleIdentity(providerSubject: string) {
     return this.prismaService.authIdentity.findUnique({
       where: {
@@ -493,6 +804,7 @@ export class AuthService {
     name: string;
     email: string;
     role: UserRole;
+    emailVerifiedAt: Date | null;
   }> {
     return this.prismaService.$transaction(async (tx) => {
       const user = await tx.user.create({
@@ -503,12 +815,17 @@ export class AuthService {
           role: UserRole.USER,
           avatarUrl: verified.picture ?? null,
           // The backend has just cryptographically verified email ownership
-          // (email_verified=true on the Google ID token) — see the User
-          // model's emailVerifiedAt doc comment for how a future
-          // email-verification sprint is expected to consume this.
+          // (email_verified=true on the Google ID token) — consumed by
+          // Sprint 02B's AuthResult.user.emailVerified field.
           emailVerifiedAt: new Date(),
         },
-        select: { id: true, name: true, email: true, role: true },
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          role: true,
+          emailVerifiedAt: true,
+        },
       });
       await tx.authIdentity.create({
         data: {
@@ -540,7 +857,13 @@ export class AuthService {
    * one method rather than each re-deriving the token/cookie shape.
    */
   private async issueSession(
-    user: { id: string; name: string; email: string; role: UserRole },
+    user: {
+      id: string;
+      name: string;
+      email: string;
+      role: UserRole;
+      emailVerifiedAt: Date | null;
+    },
     userAgent: string | null,
     message: string,
   ): Promise<AuthResult> {
@@ -561,6 +884,7 @@ export class AuthService {
         name: user.name,
         email: user.email,
         role: user.role,
+        emailVerified: user.emailVerifiedAt !== null,
       },
       accessToken,
       refreshCookieValue,

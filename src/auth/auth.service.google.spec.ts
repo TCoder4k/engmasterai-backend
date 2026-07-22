@@ -20,6 +20,7 @@ import { RateLimiterService } from './rate-limit/rate-limiter.service';
 import { GoogleTokenInvalidError } from './google/google-token-invalid.error';
 import { AccountLinkRequiredException } from './exceptions/account-link-required.exception';
 import { RateLimitExceededException } from './exceptions/rate-limit-exceeded.exception';
+import { TransactionalMailService } from '../mail/transactional-mail.service';
 
 const testLogContext: AuthLogContext = {
   requestId: 'test-request-id',
@@ -53,6 +54,7 @@ describe('AuthService — google() / linkGoogle()', () => {
   let refreshTokenService: jest.Mocked<RefreshTokenService>;
   let googleTokenVerifier: jest.Mocked<GoogleTokenVerifierService>;
   let rateLimiterService: jest.Mocked<RateLimiterService>;
+  let transactionalMailService: jest.Mocked<TransactionalMailService>;
   let prisma: {
     user: {
       findUnique: jest.Mock;
@@ -71,6 +73,7 @@ describe('AuthService — google() / linkGoogle()', () => {
     name: verifiedIdentity.name,
     email: verifiedIdentity.email,
     role: UserRole.USER,
+    emailVerifiedAt: new Date(),
   };
 
   beforeEach(() => {
@@ -110,6 +113,10 @@ describe('AuthService — google() / linkGoogle()', () => {
         .mockResolvedValue({ allowed: true, count: 1 }),
     } as unknown as jest.Mocked<RateLimiterService>;
 
+    transactionalMailService = {
+      sendVerificationEmail: jest.fn(),
+    } as unknown as jest.Mocked<TransactionalMailService>;
+
     prisma = {
       user: {
         findUnique: jest.fn(),
@@ -137,6 +144,7 @@ describe('AuthService — google() / linkGoogle()', () => {
       authEventLogger,
       googleTokenVerifier,
       rateLimiterService,
+      transactionalMailService,
     );
   });
 
@@ -327,6 +335,7 @@ describe('AuthService — google() / linkGoogle()', () => {
     it('links the identity and issues a session when the password matches', async () => {
       prisma.user.findUnique.mockResolvedValue(localUser);
       prisma.authIdentity.create.mockResolvedValue({});
+      prisma.user.update.mockResolvedValue({ emailVerifiedAt: new Date() });
 
       const result = await service.linkGoogle(
         { credential: 'valid.jwt.token', password: 'correct-password' },
@@ -357,6 +366,35 @@ describe('AuthService — google() / linkGoogle()', () => {
       expect(authEventLogger.log).toHaveBeenCalledWith(
         'auth.google.identity_linked',
         expect.objectContaining({ userId: localUser.id }),
+      );
+    });
+
+    it('correct password returns the exact standard issueSession() contract — the same shape every other session-issuing flow returns', async () => {
+      prisma.user.findUnique.mockResolvedValue(localUser);
+      prisma.authIdentity.create.mockResolvedValue({});
+      prisma.user.update.mockResolvedValue({ emailVerifiedAt: new Date() });
+
+      const result = await service.linkGoogle(
+        { credential: 'valid.jwt.token', password: 'correct-password' },
+        null,
+        testLogContext,
+      );
+
+      expect(result).toEqual({
+        message: 'Google account linked and signed in successfully',
+        user: {
+          id: localUser.id,
+          name: localUser.name,
+          email: localUser.email,
+          role: localUser.role,
+          emailVerified: true,
+        },
+        accessToken: 'signed.jwt.token',
+        refreshCookieValue: 'family-1.secret-1',
+      });
+      expect(refreshTokenService.issue).toHaveBeenCalledWith(
+        localUser.id,
+        null,
       );
     });
 
@@ -408,6 +446,7 @@ describe('AuthService — google() / linkGoogle()', () => {
     it('treats an already-linked identity (double submit) as an idempotent success, not a 500', async () => {
       prisma.user.findUnique.mockResolvedValue(localUser);
       prisma.authIdentity.create.mockRejectedValue(uniqueConstraintError());
+      prisma.user.update.mockResolvedValue({ emailVerifiedAt: new Date() });
 
       const result = await service.linkGoogle(
         { credential: 'valid.jwt.token', password: 'correct-password' },

@@ -2,6 +2,7 @@ import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { OAuth2Client } from 'google-auth-library';
 import { GoogleTokenInvalidError } from './google-token-invalid.error';
+import { normalizeEmail } from '../utils/email.util';
 
 export interface VerifiedGoogleIdentity {
   sub: string;
@@ -64,7 +65,10 @@ export class GoogleTokenVerifierService {
 
     return {
       sub: payload.sub,
-      email: payload.email.toLowerCase().trim(),
+      // Sprint 02B: routed through the same centralized normalizeEmail()
+      // every other lookup/write path uses, rather than a second,
+      // independent inline implementation of the same rule.
+      email: normalizeEmail(payload.email),
       name: payload.name ?? payload.email,
       picture: payload.picture,
     };

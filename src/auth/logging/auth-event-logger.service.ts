@@ -2,7 +2,8 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
 // Sprint 01C's ten-event taxonomy (docs/sprints/sprint-01C-security-hardening.md)
-// plus Sprint 02A's six Google-auth events.
+// plus Sprint 02A's six Google-auth events plus Sprint 02B's seven
+// email-verification events (docs/sprints/sprint-02B-email-verification.md).
 export type AuthEventName =
   | 'auth.login.succeeded'
   | 'auth.login.failed'
@@ -19,7 +20,14 @@ export type AuthEventName =
   | 'auth.google.account_created'
   | 'auth.google.link_required'
   | 'auth.google.identity_linked'
-  | 'auth.google.link_failed';
+  | 'auth.google.link_failed'
+  | 'auth.email_verification.requested'
+  | 'auth.email_verification.sent'
+  | 'auth.email_verification.failed'
+  | 'auth.email_verification.completed'
+  | 'auth.email_verification.invalid'
+  | 'auth.email_verification.expired'
+  | 'auth.email_verification.already_verified';
 
 // What the controller derives once per request and threads through to
 // AuthService — never re-derived deeper in the call stack.

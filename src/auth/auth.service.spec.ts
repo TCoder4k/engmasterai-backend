@@ -12,6 +12,7 @@ import {
 } from './logging/auth-event-logger.service';
 import { GoogleTokenVerifierService } from './google/google-token-verifier.service';
 import { RateLimiterService } from './rate-limit/rate-limiter.service';
+import { TransactionalMailService } from '../mail/transactional-mail.service';
 
 const testLogContext: AuthLogContext = {
   requestId: 'test-request-id',
@@ -30,6 +31,7 @@ describe('AuthService — logout', () => {
   let refreshTokenService: jest.Mocked<RefreshTokenService>;
   let googleTokenVerifier: jest.Mocked<GoogleTokenVerifierService>;
   let rateLimiterService: jest.Mocked<RateLimiterService>;
+  let transactionalMailService: jest.Mocked<TransactionalMailService>;
   let prisma: PrismaService;
 
   const validAuthHeader = 'Bearer valid.jwt.token';
@@ -71,6 +73,10 @@ describe('AuthService — logout', () => {
       checkAndIncrement: jest.fn(),
     } as unknown as jest.Mocked<RateLimiterService>;
 
+    transactionalMailService = {
+      sendVerificationEmail: jest.fn(),
+    } as unknown as jest.Mocked<TransactionalMailService>;
+
     prisma = {} as PrismaService;
 
     service = new AuthService(
@@ -82,6 +88,7 @@ describe('AuthService — logout', () => {
       authEventLogger,
       googleTokenVerifier,
       rateLimiterService,
+      transactionalMailService,
     );
   });
 

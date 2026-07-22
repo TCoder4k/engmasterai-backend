@@ -12,6 +12,7 @@ import { RateLimiterService } from './rate-limit/rate-limiter.service';
 import { AuthEventLogger } from './logging/auth-event-logger.service';
 import { RequestIdMiddleware } from './logging/request-id.middleware';
 import { GoogleTokenVerifierService } from './google/google-token-verifier.service';
+import { MailModule } from '../mail/mail.module';
 
 // Note: this module deliberately does NOT import/register the Redis
 // connection itself — SharedRedisModule (src/shared/redis/redis.module.ts)
@@ -35,7 +36,7 @@ import { GoogleTokenVerifierService } from './google/google-token-verifier.servi
 // already uses for the same class of cross-cutting-infrastructure problem.
 @Global()
 @Module({
-  imports: [PrismaModule, JwtModule.register({})],
+  imports: [PrismaModule, JwtModule.register({}), MailModule],
   controllers: [AuthController],
   providers: [
     AuthService,

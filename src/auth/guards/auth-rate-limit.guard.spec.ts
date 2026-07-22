@@ -284,4 +284,96 @@ describe('AuthRateLimitGuard', () => {
 
     expect(googleKey).not.toBe(googleLinkKey);
   });
+
+  it('email-verify-resend-ip bucket is keyed only on IP', async () => {
+    reflector.get.mockReturnValue([
+      {
+        kind: 'email-verify-resend-ip',
+        maxConfigKey: 'MAX_A',
+        windowConfigKey: 'WINDOW_A',
+      },
+    ]);
+
+    await guard.canActivate(
+      buildContext({ ip: '203.0.113.5', body: {}, cookies: {} }),
+    );
+
+    expect(rateLimiter.checkAndIncrement).toHaveBeenCalledTimes(1);
+  });
+
+  it('email-verify-ip bucket is keyed only on IP, independent of the submitted token', async () => {
+    reflector.get.mockReturnValue([
+      {
+        kind: 'email-verify-ip',
+        maxConfigKey: 'MAX_A',
+        windowConfigKey: 'WINDOW_A',
+      },
+    ]);
+
+    await guard.canActivate(
+      buildContext({
+        ip: '203.0.113.5',
+        body: { token: 'token-a' },
+        cookies: {},
+      }),
+    );
+    await guard.canActivate(
+      buildContext({
+        ip: '203.0.113.5',
+        body: { token: 'token-b' },
+        cookies: {},
+      }),
+    );
+
+    const [firstKey] = rateLimiter.checkAndIncrement.mock.calls[0];
+    const [secondKey] = rateLimiter.checkAndIncrement.mock.calls[1];
+    expect(firstKey).toBe(secondKey);
+  });
+
+  it('email-verify-token bucket is keyed on a hash of the submitted token, never the raw token itself, and differs per token', async () => {
+    reflector.get.mockReturnValue([
+      {
+        kind: 'email-verify-token',
+        maxConfigKey: 'MAX_A',
+        windowConfigKey: 'WINDOW_A',
+      },
+    ]);
+
+    await guard.canActivate(
+      buildContext({
+        ip: '203.0.113.5',
+        body: { token: 'token-a' },
+        cookies: {},
+      }),
+    );
+    await guard.canActivate(
+      buildContext({
+        ip: '203.0.113.5',
+        body: { token: 'token-b' },
+        cookies: {},
+      }),
+    );
+
+    const [firstKey] = rateLimiter.checkAndIncrement.mock.calls[0] as [string];
+    const [secondKey] = rateLimiter.checkAndIncrement.mock.calls[1] as [string];
+    expect(firstKey).not.toBe(secondKey);
+    expect(firstKey).not.toContain('token-a');
+    expect(secondKey).not.toContain('token-b');
+  });
+
+  it('email-verify-token bucket is skipped (no key derivable) when the body has no token', async () => {
+    reflector.get.mockReturnValue([
+      {
+        kind: 'email-verify-token',
+        maxConfigKey: 'MAX_A',
+        windowConfigKey: 'WINDOW_A',
+      },
+    ]);
+
+    await guard.canActivate(
+      buildContext({ ip: '203.0.113.5', body: {}, cookies: {} }),
+    );
+
+    expect(rateLimiter.checkAndIncrement).not.toHaveBeenCalled();
+  });
 });

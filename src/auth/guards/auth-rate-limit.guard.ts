@@ -14,6 +14,9 @@ import { RateLimitExceededException } from '../exceptions/rate-limit-exceeded.ex
 import { hashClientIp } from '../utils/client-ip.util';
 import {
   emailHashPrefix,
+  emailVerifyIpKey,
+  emailVerifyResendIpKey,
+  emailVerifyTokenKey,
   googleIpKey,
   googleLinkIpKey,
   loginComboKey,
@@ -22,6 +25,7 @@ import {
   refreshIpKey,
   registerComboKey,
   registerIpKey,
+  tokenHashPrefix,
 } from '../rate-limit/rate-limit-key.util';
 import { AuthEventLogger } from '../logging/auth-event-logger.service';
 import type { RequestWithId } from '../logging/request-id.middleware';
@@ -57,9 +61,15 @@ export class AuthRateLimitGuard implements CanActivate {
     const ipHash = hashClientIp(req);
     const email = this.extractEmail(req);
     const familyId = this.extractFamilyId(req);
+    const token = this.extractToken(req);
 
     for (const policy of policies) {
-      const key = this.buildKey(policy.kind, { ipHash, email, familyId });
+      const key = this.buildKey(policy.kind, {
+        ipHash,
+        email,
+        familyId,
+        token,
+      });
       // A bucket with no derivable key for this request (e.g. a
       // login-combo policy with no email in the body) simply doesn't apply
       // to this request — the other policies still do.
@@ -109,9 +119,20 @@ export class AuthRateLimitGuard implements CanActivate {
     return parsed?.familyId;
   }
 
+  private extractToken(req: Request): string | undefined {
+    const body = req.body as Record<string, unknown> | undefined;
+    const token = body?.token;
+    return typeof token === 'string' && token.length > 0 ? token : undefined;
+  }
+
   private buildKey(
     kind: RateLimitBucketKind,
-    ctx: { ipHash: string; email?: string; familyId?: string },
+    ctx: {
+      ipHash: string;
+      email?: string;
+      familyId?: string;
+      token?: string;
+    },
   ): string | null {
     switch (kind) {
       case 'login-combo':
@@ -134,6 +155,14 @@ export class AuthRateLimitGuard implements CanActivate {
         return googleIpKey(ctx.ipHash);
       case 'google-link-ip':
         return googleLinkIpKey(ctx.ipHash);
+      case 'email-verify-resend-ip':
+        return emailVerifyResendIpKey(ctx.ipHash);
+      case 'email-verify-ip':
+        return emailVerifyIpKey(ctx.ipHash);
+      case 'email-verify-token':
+        return ctx.token
+          ? emailVerifyTokenKey(tokenHashPrefix(ctx.token))
+          : null;
     }
   }
 }
