@@ -269,4 +269,71 @@ describe('env.validation', () => {
       );
     });
   });
+
+  describe('Sprint 02C — forgot password / password reset', () => {
+    it('defaults PASSWORD_RESET_TOKEN_TTL_MINUTES to 30 and boots with zero password-reset-specific config', () => {
+      const { error, value } = validate(baseDevEnv);
+      expect(error).toBeUndefined();
+      expect(
+        (value as unknown as Record<string, unknown>)
+          .PASSWORD_RESET_TOKEN_TTL_MINUTES,
+      ).toBe(30);
+    });
+
+    it('defaults PASSWORD_RESET_GOOGLE_NOTICE_ENABLED to true', () => {
+      const { error, value } = validate(baseDevEnv);
+      expect(error).toBeUndefined();
+      expect(
+        (value as unknown as Record<string, unknown>)
+          .PASSWORD_RESET_GOOGLE_NOTICE_ENABLED,
+      ).toBe(true);
+    });
+
+    it('accepts PASSWORD_RESET_GOOGLE_NOTICE_ENABLED=false explicitly', () => {
+      const { error, value } = validate({
+        ...baseDevEnv,
+        PASSWORD_RESET_GOOGLE_NOTICE_ENABLED: false,
+      });
+      expect(error).toBeUndefined();
+      expect(
+        (value as unknown as Record<string, unknown>)
+          .PASSWORD_RESET_GOOGLE_NOTICE_ENABLED,
+      ).toBe(false);
+    });
+
+    it('reuses EMAIL_ENABLED directly — no separate PASSWORD_RESET_ENABLED flag exists', () => {
+      const { error, value } = validate(baseDevEnv);
+      expect(error).toBeUndefined();
+      expect(
+        (value as unknown as Record<string, unknown>).PASSWORD_RESET_ENABLED,
+      ).toBeUndefined();
+    });
+
+    it('applies the documented defaults for every forgot/reset rate-limit var', () => {
+      const { error, value } = validate(baseDevEnv);
+      expect(error).toBeUndefined();
+      const v = value as unknown as Record<string, unknown>;
+      expect(v.AUTH_PASSWORD_FORGOT_IP_RATE_LIMIT_MAX).toBe(10);
+      expect(v.AUTH_PASSWORD_FORGOT_EMAIL_RATE_LIMIT_MAX).toBe(3);
+      expect(v.AUTH_PASSWORD_FORGOT_RATE_LIMIT_WINDOW_SECONDS).toBe(3600);
+      expect(v.AUTH_PASSWORD_RESET_IP_RATE_LIMIT_MAX).toBe(20);
+      expect(v.AUTH_PASSWORD_RESET_RATE_LIMIT_WINDOW_SECONDS).toBe(300);
+    });
+
+    it('fails when a password-reset rate-limit max is not a positive integer', () => {
+      const { error } = validate({
+        ...baseDevEnv,
+        AUTH_PASSWORD_RESET_IP_RATE_LIMIT_MAX: 0,
+      });
+      expect(error?.message).toMatch(/AUTH_PASSWORD_RESET_IP_RATE_LIMIT_MAX/);
+    });
+
+    it('fails when PASSWORD_RESET_TOKEN_TTL_MINUTES is out of bounds', () => {
+      const { error } = validate({
+        ...baseDevEnv,
+        PASSWORD_RESET_TOKEN_TTL_MINUTES: 0,
+      });
+      expect(error?.message).toMatch(/PASSWORD_RESET_TOKEN_TTL_MINUTES/);
+    });
+  });
 });

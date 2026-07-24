@@ -3,10 +3,12 @@ import type { Request, Response } from 'express';
 import { ConfigService } from '@nestjs/config';
 import { AuthService } from './auth.service';
 import {
+  ForgotPasswordDTO,
   GoogleAuthDTO,
   GoogleLinkDTO,
   LoginDTO,
   RegisterDTO,
+  ResetPasswordDTO,
   VerifyEmailDTO,
 } from './dto';
 import {
@@ -258,6 +260,50 @@ export class AuthController {
   @Post('email-verification/verify')
   async verifyEmail(@Body() dto: VerifyEmailDTO, @Req() req: Request) {
     return this.authService.verifyEmail(dto, this.logContext(req));
+  }
+
+  // POST:.../auth/password/forgot
+  // Public — never reveals account existence, password-having status,
+  // provider type, or mail-delivery outcome (Sprint 02C). Combo bucket is
+  // keyed on the submitted email's hash — unlike Google's claim, this is
+  // the literal request input, not an unverified token claim, so a
+  // guard-level combo bucket is safe here (see rate-limit-key.util.ts).
+  @RateLimits([
+    {
+      kind: 'password-forgot-ip',
+      maxConfigKey: 'AUTH_PASSWORD_FORGOT_IP_RATE_LIMIT_MAX',
+      windowConfigKey: 'AUTH_PASSWORD_FORGOT_RATE_LIMIT_WINDOW_SECONDS',
+    },
+    {
+      kind: 'password-forgot-combo',
+      maxConfigKey: 'AUTH_PASSWORD_FORGOT_EMAIL_RATE_LIMIT_MAX',
+      windowConfigKey: 'AUTH_PASSWORD_FORGOT_RATE_LIMIT_WINDOW_SECONDS',
+    },
+  ])
+  @Post('password/forgot')
+  async forgotPassword(@Body() dto: ForgotPasswordDTO, @Req() req: Request) {
+    return this.authService.forgotPassword(dto, this.logContext(req));
+  }
+
+  // POST:.../auth/password/reset
+  // Public, token-authenticated — no session issued (see Session-Revocation
+  // Policy). IP-only bucket: no token-hash bucket (256-bit token space
+  // already makes brute force infeasible) and no combo bucket (newPassword
+  // is set, never verified against a stored guess).
+  @RateLimits([
+    {
+      kind: 'password-reset-ip',
+      maxConfigKey: 'AUTH_PASSWORD_RESET_IP_RATE_LIMIT_MAX',
+      windowConfigKey: 'AUTH_PASSWORD_RESET_RATE_LIMIT_WINDOW_SECONDS',
+    },
+  ])
+  @Post('password/reset')
+  async resetPassword(@Body() dto: ResetPasswordDTO, @Req() req: Request) {
+    return this.authService.resetPassword(
+      dto,
+      req.headers['user-agent'] ?? null,
+      this.logContext(req),
+    );
   }
 
   //POST:.../auth/logout

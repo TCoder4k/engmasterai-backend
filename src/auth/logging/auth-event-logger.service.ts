@@ -2,8 +2,9 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
 // Sprint 01C's ten-event taxonomy (docs/sprints/sprint-01C-security-hardening.md)
-// plus Sprint 02A's six Google-auth events plus Sprint 02B's seven
-// email-verification events (docs/sprints/sprint-02B-email-verification.md).
+// plus Sprint 02A's six Google-auth events, Sprint 02B's seven
+// email-verification events, and Sprint 02C's twelve password-reset events
+// (docs/sprints/sprint-02C-password-recovery.md).
 export type AuthEventName =
   | 'auth.login.succeeded'
   | 'auth.login.failed'
@@ -27,7 +28,21 @@ export type AuthEventName =
   | 'auth.email_verification.completed'
   | 'auth.email_verification.invalid'
   | 'auth.email_verification.expired'
-  | 'auth.email_verification.already_verified';
+  | 'auth.email_verification.already_verified'
+  | 'auth.password_reset.requested'
+  | 'auth.password_reset.completed'
+  | 'auth.password_reset.failed'
+  | 'auth.password_reset.invalid'
+  | 'auth.password_reset.expired'
+  | 'auth.password_reset.sessions_revoked'
+  | 'auth.password_reset.reuse_rejected'
+  // Alert-worthy: Redis was unavailable at the post-commit revocation step —
+  // the password changed but old sessions may still be live (ADR 006).
+  | 'auth.password_reset.revocation_failed'
+  | 'auth.password_reset.notice_sent'
+  | 'auth.password_reset.notice_failed'
+  | 'auth.password_reset.google_only_notice_sent'
+  | 'auth.password_reset.google_only_notice_failed';
 
 // What the controller derives once per request and threads through to
 // AuthService — never re-derived deeper in the call stack.
@@ -58,6 +73,12 @@ export interface AuthEventFields {
   // verification before any user lookup), to correlate repeated failures
   // from one Google account without ever logging the raw `sub`.
   providerSubjectHash?: string;
+  // Sprint 02C, Revision 3: sha256Hex(User-Agent header).slice(0,16), same
+  // truncation convention as the fields above — populated on
+  // auth.password_reset.completed for audit purposes. The raw header is
+  // never logged. country/device-family were considered and deliberately
+  // deferred (no GeoIP/UA-parsing dependency exists in this codebase).
+  userAgentHash?: string;
 }
 
 /**

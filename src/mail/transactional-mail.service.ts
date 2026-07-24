@@ -43,4 +43,50 @@ export class TransactionalMailService {
 
     return this.provider.send(rendered, to);
   }
+
+  async sendPasswordResetEmail(
+    to: string,
+    variables: { name: string; rawToken: string },
+  ): Promise<MailSendResult> {
+    const frontendAppUrl = this.config.get<string>(
+      'FRONTEND_APP_URL',
+    ) as string;
+    const expiresInMinutes = this.config.get<number>(
+      'PASSWORD_RESET_TOKEN_TTL_MINUTES',
+    ) as number;
+
+    const resetUrl = `${frontendAppUrl}/reset-password?token=${encodeURIComponent(variables.rawToken)}`;
+
+    const rendered = this.renderer.render('password-reset', {
+      name: variables.name,
+      resetUrl,
+      expiresInMinutes,
+    });
+
+    return this.provider.send(rendered, to);
+  }
+
+  /** See "Google-Only Account Policy" — no link, no token, purely informational. */
+  async sendGoogleOnlyPasswordResetNotice(
+    to: string,
+    variables: { name: string },
+  ): Promise<MailSendResult> {
+    const rendered = this.renderer.render('google-only-password-reset-notice', {
+      name: variables.name,
+    });
+
+    return this.provider.send(rendered, to);
+  }
+
+  /** See "Security Notice Email" — best-effort, sent after a successful reset. */
+  async sendPasswordResetSuccessNotice(
+    to: string,
+    variables: { name: string },
+  ): Promise<MailSendResult> {
+    const rendered = this.renderer.render('password-reset-success', {
+      name: variables.name,
+    });
+
+    return this.provider.send(rendered, to);
+  }
 }

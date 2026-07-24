@@ -21,6 +21,9 @@ import {
   googleLinkIpKey,
   loginComboKey,
   loginIpKey,
+  passwordForgotComboKey,
+  passwordForgotIpKey,
+  passwordResetIpKey,
   refreshFamilyRateLimitKey,
   refreshIpKey,
   registerComboKey,
@@ -163,6 +166,14 @@ export class AuthRateLimitGuard implements CanActivate {
         return ctx.token
           ? emailVerifyTokenKey(tokenHashPrefix(ctx.token))
           : null;
+      case 'password-forgot-ip':
+        return passwordForgotIpKey(ctx.ipHash);
+      case 'password-forgot-combo':
+        return ctx.email
+          ? passwordForgotComboKey(ctx.ipHash, emailHashPrefix(ctx.email))
+          : null;
+      case 'password-reset-ip':
+        return passwordResetIpKey(ctx.ipHash);
     }
   }
 }

@@ -9,10 +9,12 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import {
+  ForgotPasswordDTO,
   GoogleAuthDTO,
   GoogleLinkDTO,
   LoginDTO,
   RegisterDTO,
+  ResetPasswordDTO,
   VerifyEmailDTO,
 } from './dto';
 import * as argon from 'argon2';
@@ -40,6 +42,7 @@ import {
 import { RateLimiterService } from './rate-limit/rate-limiter.service';
 import { RateLimitExceededException } from './exceptions/rate-limit-exceeded.exception';
 import { AccountLinkRequiredException } from './exceptions/account-link-required.exception';
+import { PasswordReuseException } from './exceptions/password-reuse.exception';
 import { generateSecureToken } from './tokens/secure-token.util';
 import { TransactionalMailService } from '../mail/transactional-mail.service';
 import { MailSendResult } from '../mail/mail.types';
@@ -707,6 +710,323 @@ export class AuthService {
         : 'We could not send the verification email right now. Please try again shortly.',
       delivered: result.success,
     };
+  }
+
+  /**
+   * POST /auth/password/forgot — public, never reveals account existence,
+   * password-having status, provider type, or mail-delivery outcome (Sprint
+   * 02C). Always resolves to the same generic message; every branch below
+   * (nonexistent email, Google-only account, real send) does a comparable
+   * amount of awaited work so response timing isn't a side channel either
+   * (see simulateMailLatency()).
+   */
+  async forgotPassword(
+    dto: ForgotPasswordDTO,
+    logContext: AuthLogContext,
+  ): Promise<{ message: string }> {
+    const route = 'POST /auth/password/forgot';
+    const GENERIC_MESSAGE =
+      'If an account exists for this email, a password reset link has been sent.';
+    const normalizedEmail = normalizeEmail(dto.email);
+    const emailHash = emailHashPrefix(normalizedEmail);
+
+    this.authEventLogger.log('auth.password_reset.requested', {
+      requestId: logContext.requestId,
+      route,
+      ipHash: logContext.ipHash,
+      emailHash,
+    });
+
+    const user = await this.prismaService.user.findUnique({
+      where: { email: normalizedEmail },
+      select: { id: true, name: true, email: true, password: true },
+    });
+
+    if (!user) {
+      await this.simulateMailLatency();
+      return { message: GENERIC_MESSAGE };
+    }
+
+    // Google-only account (Sprint 02A) — never issue a PasswordResetToken;
+    // see "Google-Only Account Policy". The instructional-email branch is
+    // an explicit, togglable refinement (Revision 3) — the API response is
+    // identical either way.
+    if (!user.password) {
+      const noticeEnabled = this.configService.get<boolean>(
+        'PASSWORD_RESET_GOOGLE_NOTICE_ENABLED',
+      );
+      if (noticeEnabled) {
+        const result =
+          await this.transactionalMailService.sendGoogleOnlyPasswordResetNotice(
+            user.email,
+            { name: user.name },
+          );
+        this.authEventLogger.log(
+          result.success
+            ? 'auth.password_reset.google_only_notice_sent'
+            : 'auth.password_reset.google_only_notice_failed',
+          {
+            requestId: logContext.requestId,
+            route,
+            userId: user.id,
+            ipHash: logContext.ipHash,
+            durationMs: result.durationMs,
+            failureCategory: result.success
+              ? undefined
+              : result.failureCategory,
+            provider: 'resend',
+          },
+        );
+      } else {
+        await this.simulateMailLatency();
+      }
+      return { message: GENERIC_MESSAGE };
+    }
+
+    const { raw } = await this.issuePasswordResetToken(user.id);
+    const result = await this.transactionalMailService.sendPasswordResetEmail(
+      user.email,
+      { name: user.name, rawToken: raw },
+    );
+    // A failed send never changes the response — see "The generic response
+    // is preserved even when the underlying mail send fails" in the sprint
+    // doc. No distinct 'sent' event is logged on success, matching the
+    // pre-existing asymmetry with email verification (only failure is
+    // logged as its own event for this flow).
+    if (!result.success) {
+      this.authEventLogger.log('auth.password_reset.failed', {
+        requestId: logContext.requestId,
+        route,
+        userId: user.id,
+        ipHash: logContext.ipHash,
+        durationMs: result.durationMs,
+        failureCategory: result.failureCategory,
+        provider: 'resend',
+      });
+    }
+
+    return { message: GENERIC_MESSAGE };
+  }
+
+  /**
+   * POST /auth/password/reset — public, token-authenticated. Consumption of
+   * PasswordResetToken/EmailVerificationToken and the password update
+   * happen in one Postgres transaction; Redis session revocation and the
+   * best-effort success-notice email both happen strictly AFTER that
+   * transaction commits — Postgres and Redis are never one atomic unit (see
+   * "Reset Transaction & Cross-Token Invalidation", ADR 006 Revision 2).
+   */
+  async resetPassword(
+    dto: ResetPasswordDTO,
+    userAgent: string | null,
+    logContext: AuthLogContext,
+  ): Promise<{ message: string }> {
+    const startedAt = Date.now();
+    const route = 'POST /auth/password/reset';
+    const tokenHash = sha256Hex(dto.token);
+    const now = new Date();
+
+    const tokenRow = await this.prismaService.passwordResetToken.findUnique({
+      where: { tokenHash },
+      select: {
+        userId: true,
+        expiresAt: true,
+        consumedAt: true,
+        user: {
+          select: { id: true, name: true, email: true, password: true },
+        },
+      },
+    });
+
+    // Invalid, expired, consumed, and (defense-in-depth) a token somehow
+    // existing for a Google-only account all collapse onto the same generic
+    // 400 — no idempotent-success softening for replay (a replayed reset
+    // token is a materially stronger attack signal than a replayed
+    // verification click), distinguished only in the log event name.
+    const expired =
+      !!tokenRow &&
+      tokenRow.consumedAt === null &&
+      tokenRow.expiresAt.getTime() <= now.getTime();
+    const invalid =
+      !tokenRow ||
+      tokenRow.consumedAt !== null ||
+      expired ||
+      !tokenRow.user.password;
+
+    if (invalid) {
+      this.authEventLogger.log(
+        expired ? 'auth.password_reset.expired' : 'auth.password_reset.invalid',
+        {
+          requestId: logContext.requestId,
+          route,
+          durationMs: Date.now() - startedAt,
+          userId: tokenRow?.userId,
+          ipHash: logContext.ipHash,
+          failureCategory: !tokenRow
+            ? 'invalid_token'
+            : expired
+              ? 'token_expired'
+              : 'token_consumed',
+        },
+      );
+      throw new BadRequestException('Invalid or expired reset link.');
+    }
+
+    const user = tokenRow.user as {
+      id: string;
+      name: string;
+      email: string;
+      password: string;
+    };
+
+    // Password-reuse rejection (Revision 3) — checked BEFORE consuming
+    // anything, so the token remains valid for an immediate retry with a
+    // different password. Bounded only by the token's own expiresAt and the
+    // existing password-reset-ip rate-limit bucket — no separate limiter,
+    // since holding a valid token already grants the ability to set the
+    // password to any value (see "Password Reuse Rejection").
+    const isSamePassword = await argon.verify(user.password, dto.newPassword);
+    if (isSamePassword) {
+      this.authEventLogger.log('auth.password_reset.reuse_rejected', {
+        requestId: logContext.requestId,
+        route,
+        durationMs: Date.now() - startedAt,
+        userId: user.id,
+        ipHash: logContext.ipHash,
+      });
+      throw new PasswordReuseException();
+    }
+
+    const hashedPassword = await argon.hash(dto.newPassword);
+
+    // Invariant 1 (ADR 006): a successful reset invalidates every
+    // outstanding authentication proof except the newly chosen password —
+    // every remaining PasswordResetToken (Invariant 2 defense-in-depth, not
+    // only the one just presented) and every outstanding
+    // EmailVerificationToken, in the same transaction as the password write.
+    await this.prismaService.$transaction([
+      this.prismaService.user.update({
+        where: { id: user.id },
+        data: { password: hashedPassword },
+      }),
+      this.prismaService.passwordResetToken.updateMany({
+        where: { userId: user.id, consumedAt: null },
+        data: { consumedAt: now },
+      }),
+      this.prismaService.emailVerificationToken.updateMany({
+        where: { userId: user.id, consumedAt: null },
+        data: { consumedAt: now },
+      }),
+    ]);
+
+    this.authEventLogger.log('auth.password_reset.completed', {
+      requestId: logContext.requestId,
+      route,
+      durationMs: Date.now() - startedAt,
+      userId: user.id,
+      ipHash: logContext.ipHash,
+      userAgentHash: userAgent ? sha256Hex(userAgent).slice(0, 16) : undefined,
+    });
+
+    // Redis revocation is best-effort from this point on — the password
+    // change above is already durably committed and must not be rolled
+    // back by an unrelated Redis outage (ADR 006's documented residual
+    // risk). A failure here is an alert-worthy incident, not a request
+    // failure: the API still returns its normal success response.
+    try {
+      await this.refreshTokenService.revokeAllForUser(user.id);
+      this.authEventLogger.log('auth.password_reset.sessions_revoked', {
+        requestId: logContext.requestId,
+        route,
+        userId: user.id,
+        ipHash: logContext.ipHash,
+      });
+    } catch (error) {
+      if (!(error instanceof ServiceUnavailableException)) throw error;
+      this.authEventLogger.log('auth.password_reset.revocation_failed', {
+        requestId: logContext.requestId,
+        route,
+        userId: user.id,
+        ipHash: logContext.ipHash,
+        failureCategory: 'refresh_token_revoke_all_failed',
+      });
+    }
+
+    // Best-effort security notice — never blocks or changes the response
+    // above regardless of outcome (see "Security Notice Email").
+    try {
+      const noticeResult =
+        await this.transactionalMailService.sendPasswordResetSuccessNotice(
+          user.email,
+          { name: user.name },
+        );
+      this.authEventLogger.log(
+        noticeResult.success
+          ? 'auth.password_reset.notice_sent'
+          : 'auth.password_reset.notice_failed',
+        {
+          requestId: logContext.requestId,
+          route,
+          userId: user.id,
+          ipHash: logContext.ipHash,
+          durationMs: noticeResult.durationMs,
+          failureCategory: noticeResult.success
+            ? undefined
+            : noticeResult.failureCategory,
+          provider: 'resend',
+        },
+      );
+    } catch (error) {
+      this.logger.error(
+        'Unexpected error sending the password-reset success notice',
+        error as Error,
+      );
+    }
+
+    return {
+      message:
+        'Password has been reset successfully. Please log in with your new password.',
+    };
+  }
+
+  /**
+   * Invalidates every previous outstanding PasswordResetToken for this user,
+   * then creates a fresh one, in a single transaction — Invariant 2 (ADR
+   * 006): at most one active token per user, enforced going forward.
+   */
+  private async issuePasswordResetToken(
+    userId: string,
+  ): Promise<{ raw: string }> {
+    const { raw, hash } = generateSecureToken();
+    const ttlMinutes = this.configService.get<number>(
+      'PASSWORD_RESET_TOKEN_TTL_MINUTES',
+    ) as number;
+    const expiresAt = new Date(Date.now() + ttlMinutes * 60_000);
+
+    await this.prismaService.$transaction([
+      this.prismaService.passwordResetToken.updateMany({
+        where: { userId, consumedAt: null },
+        data: { consumedAt: new Date() },
+      }),
+      this.prismaService.passwordResetToken.create({
+        data: { userId, tokenHash: hash, expiresAt },
+      }),
+    ]);
+
+    return { raw };
+  }
+
+  // Stands in for the awaited network call a real
+  // TransactionalMailService.send() would make, so a no-op branch
+  // (nonexistent email, or a Google-only account with the instructional
+  // notice disabled) takes comparable wall-clock time to a branch that
+  // actually sends — see forgotPassword()'s timing-safety requirement.
+  // Sized to ResendMailProvider's observed P50 for a fetch-based HTTP call.
+  private async simulateMailLatency(): Promise<void> {
+    const SIMULATED_MAIL_LATENCY_MS = 200;
+    await new Promise((resolve) =>
+      setTimeout(resolve, SIMULATED_MAIL_LATENCY_MS),
+    );
   }
 
   /**

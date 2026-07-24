@@ -4,6 +4,14 @@
 export const ACCESS_TOKEN_BLACKLIST_PREFIX = 'auth:atbl:';
 export const REFRESH_FAMILY_PREFIX = 'auth:refresh:family:';
 
+// Sprint 02C / ADR 006 — a per-user index over that user's live refresh
+// families, alongside the existing per-family keys above. Enables
+// RefreshTokenService.revokeAllForUser(), used by password reset. issue()
+// SADDs, revoke() SREMs, revokeAllForUser() SMEMBERS+DEL+DEL. This SET has no
+// TTL of its own (a family's own key expiring without a matching SREM just
+// leaves a harmless stale member — DEL on a missing key is a no-op).
+export const REFRESH_USER_INDEX_PREFIX = 'auth:refresh:user:';
+
 // Rate-limit bucket namespace (Sprint 01C). Every bucket carries its own
 // window TTL (see rate-limit-incr.lua), so there is no separate cleanup job —
 // same convention as the two prefixes above.
@@ -36,8 +44,18 @@ export const RATE_LIMIT_EMAIL_VERIFY_IP_PREFIX =
 export const RATE_LIMIT_EMAIL_VERIFY_TOKEN_PREFIX =
   'auth:rl:email-verify:verify:token:';
 
+// Sprint 02C — forgot password / password reset.
+export const RATE_LIMIT_PASSWORD_FORGOT_IP_PREFIX =
+  'auth:rl:password:forgot:ip:';
+export const RATE_LIMIT_PASSWORD_FORGOT_COMBO_PREFIX =
+  'auth:rl:password:forgot:combo:';
+export const RATE_LIMIT_PASSWORD_RESET_IP_PREFIX = 'auth:rl:password:reset:ip:';
+
 export const accessTokenBlacklistKey = (tokenHash: string): string =>
   `${ACCESS_TOKEN_BLACKLIST_PREFIX}${tokenHash}`;
 
 export const refreshFamilyKey = (familyId: string): string =>
   `${REFRESH_FAMILY_PREFIX}${familyId}`;
+
+export const refreshUserIndexKey = (userId: string): string =>
+  `${REFRESH_USER_INDEX_PREFIX}${userId}`;

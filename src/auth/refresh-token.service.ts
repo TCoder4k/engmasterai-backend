@@ -9,7 +9,7 @@ import { ConfigService } from '@nestjs/config';
 import { randomBytes, randomUUID } from 'crypto';
 import { readFileSync } from 'fs';
 import { join } from 'path';
-import { refreshFamilyKey } from './auth-redis.constants';
+import { refreshFamilyKey, refreshUserIndexKey } from './auth-redis.constants';
 import { sha256Hex } from './utils/hash.util';
 import { DEFAULT_REFRESH_TOKEN_TTL_SECONDS } from './refresh-token.constants';
 import { AuthEventLogger } from './logging/auth-event-logger.service';
@@ -136,6 +136,9 @@ export class RefreshTokenService {
         'EX',
         this.ttlSeconds,
       );
+      // ADR 006: keep the per-user index in sync so a later password reset
+      // can revoke every family this user has live, not just one.
+      await this.redis.sadd(refreshUserIndexKey(userId), familyId);
     } catch (error) {
       this.logger.error(
         'Redis write failed while issuing a refresh session',
@@ -201,7 +204,18 @@ export class RefreshTokenService {
   /** Deletes a family outright — used by logout. Idempotent (a missing key is a no-op). */
   async revoke(familyId: string): Promise<void> {
     try {
-      await this.redis.del(refreshFamilyKey(familyId));
+      // Read first so the per-user index (ADR 006) can be kept in sync too —
+      // the record is the only place that names which user this family
+      // belongs to. A missing/unparsable record just skips the SREM; the
+      // DEL below is still attempted and is itself a no-op if already gone.
+      const raw = await this.redis.get(refreshFamilyKey(familyId));
+      const pipeline = this.redis.pipeline();
+      pipeline.del(refreshFamilyKey(familyId));
+      if (raw) {
+        const { userId } = JSON.parse(raw) as RefreshSessionRecord;
+        pipeline.srem(refreshUserIndexKey(userId), familyId);
+      }
+      await pipeline.exec();
     } catch (error) {
       this.logger.error(
         'Redis delete failed while revoking a refresh family',
@@ -210,6 +224,46 @@ export class RefreshTokenService {
       this.authEventLogger.log('auth.redis.unavailable', {
         route: 'POST /auth/logout',
         failureCategory: 'refresh_token_revoke_failed',
+      });
+      throw new ServiceUnavailableException(
+        'Authentication service temporarily unavailable',
+      );
+    }
+  }
+
+  /**
+   * Revokes every refresh-token family belonging to a user in one call — the
+   * "log out of every device" primitive (ADR 006), used by password reset.
+   * Not reused by logout() itself, which only ever revokes the one family
+   * tied to its own request cookie.
+   *
+   * Throws `ServiceUnavailableException` on Redis failure, same fail-closed
+   * convention as every other method here. Callers for whom a fully
+   * completed, unrelated action (e.g. a password change already committed to
+   * Postgres) must not be undone by this failure are expected to catch it
+   * explicitly and degrade to a logged, alert-worthy event rather than
+   * propagating a 503 — see `AuthService.resetPassword()` and ADR 006's
+   * documented residual risk.
+   */
+  async revokeAllForUser(userId: string): Promise<void> {
+    try {
+      const familyIds = await this.redis.smembers(refreshUserIndexKey(userId));
+      if (familyIds.length > 0) {
+        const pipeline = this.redis.pipeline();
+        for (const familyId of familyIds) {
+          pipeline.del(refreshFamilyKey(familyId));
+        }
+        await pipeline.exec();
+      }
+      await this.redis.del(refreshUserIndexKey(userId));
+    } catch (error) {
+      this.logger.error(
+        'Redis operation failed while revoking every refresh session for a user',
+        error as Error,
+      );
+      this.authEventLogger.log('auth.redis.unavailable', {
+        route: 'POST /auth/password/reset',
+        failureCategory: 'refresh_token_revoke_all_failed',
       });
       throw new ServiceUnavailableException(
         'Authentication service temporarily unavailable',

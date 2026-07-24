@@ -89,6 +89,7 @@ model User {
   taskProgress            LessonTaskProgress[]
   identities              AuthIdentity[]
   emailVerificationTokens EmailVerificationToken[]
+  passwordResetTokens     PasswordResetToken[]
 
   @@map("users") //users dùng cho query sql , còn User dùng cho code
 }
@@ -137,6 +138,29 @@ model EmailVerificationToken {
 
   @@index([userId])
   @@map("email_verification_tokens")
+}
+
+// Single-use, expiring, opaque token proving legitimate password-reset intent
+// (Sprint 02C). Same generation/hashing/consumption mechanics as
+// EmailVerificationToken (see src/auth/tokens/secure-token.util.ts) but a
+// separate table — the two token types carry different operational policies
+// (reset triggers full session revocation and treats replay as a security
+// signal; verification does neither). A successful reset consumes every
+// outstanding row for the user (not only the one presented) and, per ADR 006
+// Invariant 1, also consumes every outstanding EmailVerificationToken row for
+// that user in the same transaction.
+model PasswordResetToken {
+  id         String    @id @default(uuid())
+  userId     String
+  tokenHash  String    @unique
+  expiresAt  DateTime
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("password_reset_tokens")
 }
 
 model Course {

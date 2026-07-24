@@ -29,7 +29,15 @@ export type RateLimitBucketKind =
   // verification link (token-hash-prefix keyed, never the raw token).
   | 'email-verify-resend-ip'
   | 'email-verify-ip'
-  | 'email-verify-token';
+  | 'email-verify-token'
+  // Sprint 02C. 'password-forgot-combo' is keyed on the submitted email's
+  // hash (already-normalized via emailHashPrefix's own trim+lowercase) —
+  // unlike Google's claim, this is the literal request input, not an
+  // unverified token claim, so a guard-level combo bucket is safe here.
+  // 'password-reset-ip' is deliberately IP-only — see rate-limit-key.util.ts.
+  | 'password-forgot-ip'
+  | 'password-forgot-combo'
+  | 'password-reset-ip';
 
 export interface RateLimitPolicy {
   kind: RateLimitBucketKind;

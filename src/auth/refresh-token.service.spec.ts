@@ -133,6 +133,84 @@ describe('RefreshTokenService (integration — real Redis, strict single-use rot
     expect(followUp.outcome).toBe('missing');
   });
 
+  // Sprint 02C / ADR 006 — the per-user index enabling revokeAllForUser().
+  describe('per-user session index (ADR 006)', () => {
+    it('issue() adds the new family to the per-user index SET', async () => {
+      const { familyId } = await service.issue('user-7', null);
+      const members = await redis.smembers('auth:refresh:user:user-7');
+      expect(members).toEqual([familyId]);
+    });
+
+    it('revoke() removes the family from the per-user index SET too', async () => {
+      const { familyId } = await service.issue('user-8', null);
+      await service.revoke(familyId);
+      const members = await redis.smembers('auth:refresh:user:user-8');
+      expect(members).toEqual([]);
+    });
+
+    it('revoke() on an already-gone family is still idempotent (no record to read, SREM skipped)', async () => {
+      await expect(service.revoke('no-such-family')).resolves.not.toThrow();
+    });
+
+    it('revokeAllForUser() deletes every family for that user and clears the index', async () => {
+      const a = await service.issue('user-9', 'agent-a');
+      const b = await service.issue('user-9', 'agent-b');
+      const c = await service.issue('user-9', 'agent-c');
+
+      await service.revokeAllForUser('user-9');
+
+      expect(await redis.get(`auth:refresh:family:${a.familyId}`)).toBeNull();
+      expect(await redis.get(`auth:refresh:family:${b.familyId}`)).toBeNull();
+      expect(await redis.get(`auth:refresh:family:${c.familyId}`)).toBeNull();
+      expect(await redis.smembers('auth:refresh:user:user-9')).toEqual([]);
+
+      // Every revoked family fails a subsequent rotate() as "missing", not
+      // silently succeeding.
+      expect((await service.rotate(a.familyId, a.secret)).outcome).toBe(
+        'missing',
+      );
+    });
+
+    it('revokeAllForUser() does not touch another user\'s sessions', async () => {
+      const mine = await service.issue('user-10', null);
+      const other = await service.issue('user-11', null);
+
+      await service.revokeAllForUser('user-10');
+
+      expect(await redis.get(`auth:refresh:family:${mine.familyId}`)).toBeNull();
+      expect(
+        await redis.get(`auth:refresh:family:${other.familyId}`),
+      ).not.toBeNull();
+    });
+
+    it('revokeAllForUser() for a user with no sessions is a harmless no-op', async () => {
+      await expect(
+        service.revokeAllForUser('user-with-no-sessions'),
+      ).resolves.not.toThrow();
+    });
+
+    it('revokeAllForUser() surfaces a Redis failure as ServiceUnavailableException, never silently succeeding', async () => {
+      const brokenRedis = new Redis({
+        host: '127.0.0.1',
+        port: 65535,
+        lazyConnect: true,
+        retryStrategy: () => null,
+        maxRetriesPerRequest: 1,
+      });
+      const brokenService = new RefreshTokenService(
+        brokenRedis,
+        config,
+        authEventLogger,
+      );
+
+      await expect(
+        brokenService.revokeAllForUser('user-12'),
+      ).rejects.toBeInstanceOf(ServiceUnavailableException);
+
+      brokenRedis.disconnect();
+    });
+  });
+
   it('a Redis connection failure surfaces as ServiceUnavailableException, not a silent pass', async () => {
     const brokenRedis = new Redis({
       host: '127.0.0.1',

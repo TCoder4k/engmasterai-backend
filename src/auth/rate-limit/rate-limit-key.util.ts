@@ -9,6 +9,9 @@ import {
   RATE_LIMIT_GOOGLE_LINK_IP_PREFIX,
   RATE_LIMIT_LOGIN_COMBO_PREFIX,
   RATE_LIMIT_LOGIN_IP_PREFIX,
+  RATE_LIMIT_PASSWORD_FORGOT_COMBO_PREFIX,
+  RATE_LIMIT_PASSWORD_FORGOT_IP_PREFIX,
+  RATE_LIMIT_PASSWORD_RESET_IP_PREFIX,
   RATE_LIMIT_REFRESH_FAMILY_PREFIX,
   RATE_LIMIT_REFRESH_IP_PREFIX,
   RATE_LIMIT_REGISTER_COMBO_PREFIX,
@@ -75,3 +78,19 @@ export const emailVerifyIpKey = (ipHash: string): string =>
 
 export const emailVerifyTokenKey = (tokenHash: string): string =>
   `${RATE_LIMIT_EMAIL_VERIFY_TOKEN_PREFIX}${tokenHash}`;
+
+// Sprint 02C — checked directly by AuthRateLimitGuard (both keys are
+// derivable pre-verification: IP always, and the submitted email is present
+// in the forgot-password body itself — unlike /auth/google, there's no
+// unverified-JWT-claim concern here since the email is the literal input,
+// not an attacker-controlled claim being decoded early).
+export const passwordForgotIpKey = (ipHash: string): string =>
+  `${RATE_LIMIT_PASSWORD_FORGOT_IP_PREFIX}${ipHash}`;
+
+export const passwordForgotComboKey = (
+  ipHash: string,
+  emailHash: string,
+): string => `${RATE_LIMIT_PASSWORD_FORGOT_COMBO_PREFIX}${ipHash}:${emailHash}`;
+
+export const passwordResetIpKey = (ipHash: string): string =>
+  `${RATE_LIMIT_PASSWORD_RESET_IP_PREFIX}${ipHash}`;

@@ -376,4 +376,99 @@ describe('AuthRateLimitGuard', () => {
 
     expect(rateLimiter.checkAndIncrement).not.toHaveBeenCalled();
   });
+
+  // Sprint 02C — forgot password / password reset.
+  it('password-forgot-ip bucket is keyed only on IP', async () => {
+    reflector.get.mockReturnValue([
+      {
+        kind: 'password-forgot-ip',
+        maxConfigKey: 'MAX_A',
+        windowConfigKey: 'WINDOW_A',
+      },
+    ]);
+
+    await guard.canActivate(
+      buildContext({
+        ip: '203.0.113.9',
+        body: { email: 'a@example.test' },
+        cookies: {},
+      }),
+    );
+    await guard.canActivate(
+      buildContext({
+        ip: '203.0.113.9',
+        body: { email: 'b@example.test' },
+        cookies: {},
+      }),
+    );
+
+    expect(rateLimiter.checkAndIncrement).toHaveBeenCalledTimes(2);
+    const [firstKey] = rateLimiter.checkAndIncrement.mock.calls[0];
+    const [secondKey] = rateLimiter.checkAndIncrement.mock.calls[1];
+    expect(firstKey).toBe(secondKey);
+  });
+
+  it('password-forgot-combo bucket is keyed on IP + the normalized email hash, and is skipped when no email is present', async () => {
+    reflector.get.mockReturnValue([
+      {
+        kind: 'password-forgot-combo',
+        maxConfigKey: 'MAX_A',
+        windowConfigKey: 'WINDOW_A',
+      },
+    ]);
+
+    await guard.canActivate(
+      buildContext({
+        ip: '203.0.113.10',
+        body: { email: '  Jane@Example.COM ' },
+        cookies: {},
+      }),
+    );
+    await guard.canActivate(
+      buildContext({
+        ip: '203.0.113.10',
+        body: { email: 'jane@example.com' },
+        cookies: {},
+      }),
+    );
+    await guard.canActivate(
+      buildContext({ ip: '203.0.113.10', body: {}, cookies: {} }),
+    );
+
+    // Same normalized email + same IP -> same key (trim/lowercase collapse).
+    expect(rateLimiter.checkAndIncrement).toHaveBeenCalledTimes(2);
+    const [firstKey] = rateLimiter.checkAndIncrement.mock.calls[0];
+    const [secondKey] = rateLimiter.checkAndIncrement.mock.calls[1];
+    expect(firstKey).toBe(secondKey);
+  });
+
+  it('password-reset-ip bucket is keyed only on IP, independent of the presented token', async () => {
+    reflector.get.mockReturnValue([
+      {
+        kind: 'password-reset-ip',
+        maxConfigKey: 'MAX_A',
+        windowConfigKey: 'WINDOW_A',
+      },
+    ]);
+
+    await guard.canActivate(
+      buildContext({
+        ip: '203.0.113.11',
+        body: { token: 'token-a', newPassword: 'guess-1' },
+        cookies: {},
+      }),
+    );
+    await guard.canActivate(
+      buildContext({
+        ip: '203.0.113.11',
+        body: { token: 'token-b', newPassword: 'guess-2' },
+        cookies: {},
+      }),
+    );
+
+    expect(rateLimiter.checkAndIncrement).toHaveBeenCalledTimes(2);
+    const [firstKey] = rateLimiter.checkAndIncrement.mock.calls[0];
+    const [secondKey] = rateLimiter.checkAndIncrement.mock.calls[1];
+    expect(firstKey).toBe(secondKey);
+  });
 });

@@ -34,15 +34,39 @@ export interface RenderedEmail {
   text: string;
 }
 
-// Closed union of template identifiers. This sprint implements exactly one;
-// designed to grow (password-reset, welcome, security-alert, ...) without
-// changing TransactionalMailService's or MailProvider's contracts.
-export type EmailTemplateId = 'email-verification';
+// Closed union of template identifiers. Sprint 02B implemented the first;
+// Sprint 02C adds the three password-reset-flow templates below — the
+// contract was designed to grow this way without changing
+// TransactionalMailService's or MailProvider's own shapes.
+export type EmailTemplateId =
+  | 'email-verification'
+  | 'password-reset'
+  | 'google-only-password-reset-notice'
+  | 'password-reset-success';
 
 export interface EmailVerificationTemplateVariables {
   name: string;
   verifyUrl: string;
   expiresInMinutes: number;
+}
+
+export interface PasswordResetTemplateVariables {
+  name: string;
+  resetUrl: string;
+  expiresInMinutes: number;
+}
+
+// No link, no token — purely informational (Sprint 02C, "Google-Only
+// Account Policy"). Sent to a mailbox already Google-verified at
+// account-creation time; safe by construction (see the sprint doc).
+export interface GoogleOnlyPasswordResetNoticeTemplateVariables {
+  name: string;
+}
+
+// Best-effort, sent after a successful reset (Sprint 02C, "Security Notice
+// Email") — no reset/undo link, since it is not itself actionable.
+export interface PasswordResetSuccessTemplateVariables {
+  name: string;
 }
 
 /**

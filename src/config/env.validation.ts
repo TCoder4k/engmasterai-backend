@@ -267,6 +267,54 @@ export const envValidationSchema = Joi.object({
     .min(1)
     .max(604800)
     .default(900),
+
+  // Sprint 02C — forgot password / password reset. No feature flag of its
+  // own; reuses EMAIL_ENABLED directly (see docs/sprints/sprint-02C-...md's
+  // Endpoint Contracts — the two global modes are governed by that one
+  // switch, never a separate PASSWORD_RESET_ENABLED).
+  PASSWORD_RESET_TOKEN_TTL_MINUTES: Joi.number()
+    .integer()
+    .min(5)
+    .max(1440)
+    .default(30),
+
+  // Forgot: guard-level IP bucket + a normalized-email-hash combo bucket.
+  AUTH_PASSWORD_FORGOT_IP_RATE_LIMIT_MAX: Joi.number()
+    .integer()
+    .min(1)
+    .max(100000)
+    .default(10),
+  AUTH_PASSWORD_FORGOT_EMAIL_RATE_LIMIT_MAX: Joi.number()
+    .integer()
+    .min(1)
+    .max(100000)
+    .default(3),
+  AUTH_PASSWORD_FORGOT_RATE_LIMIT_WINDOW_SECONDS: Joi.number()
+    .integer()
+    .min(1)
+    .max(604800)
+    .default(3600),
+
+  // Reset: guard-level IP bucket only — no token-hash bucket (256-bit token
+  // space already makes brute force infeasible) and no combo bucket (the
+  // endpoint sets newPassword, it never verifies a guess against one).
+  AUTH_PASSWORD_RESET_IP_RATE_LIMIT_MAX: Joi.number()
+    .integer()
+    .min(1)
+    .max(100000)
+    .default(20),
+  AUTH_PASSWORD_RESET_RATE_LIMIT_WINDOW_SECONDS: Joi.number()
+    .integer()
+    .min(1)
+    .max(604800)
+    .default(300),
+
+  // Revision 3 — the escape hatch documented in ADR 006 / the sprint doc's
+  // "Google-Only Account Policy": true sends a distinct instructional email
+  // to a Google-only account's own verified mailbox; false silently ignores
+  // such requests instead (no mail call at all), for deployments prioritizing
+  // minimal outbound email. Either way the API response is unaffected.
+  PASSWORD_RESET_GOOGLE_NOTICE_ENABLED: Joi.boolean().default(true),
 })
   // Cloudinary/other unrelated vars are intentionally out of this sprint's
   // scope (see docs/sprints/sprint-01C-security-hardening.md) — `unknown`
