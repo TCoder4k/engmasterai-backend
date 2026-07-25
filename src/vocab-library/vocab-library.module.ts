@@ -3,11 +3,14 @@ import { VocabLibraryController } from './vocab-library.controller';
 import { VocabLibraryService } from './vocab-library.service';
 import { PrismaModule } from '../prisma/prisma.module';
 
-// VocabLibraryService is intentionally not exported — nothing outside this
-// module consumes it yet. Add the export the moment a real caller needs it.
+// VocabLibraryService is now exported (Sprint 04D — Learning Engine):
+// reused by LearningService as the library-progress endpoint's visibility
+// gate (findOnePublished), the same reuse pattern already established for
+// VocabWordService/VocabDeckService.
 @Module({
   imports: [PrismaModule],
   controllers: [VocabLibraryController],
   providers: [VocabLibraryService],
+  exports: [VocabLibraryService],
 })
 export class VocabLibraryModule {}

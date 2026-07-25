@@ -62,6 +62,32 @@ enum WordSource {
   AI
 }
 
+// Sprint 04 — Learning Engine (SRS). See docs/adr/007-learning-engine-srs.md.
+enum LearningState {
+  NEW
+  LEARNING
+  REVIEW
+  RELEARNING
+  MASTERED
+  // SUSPENDED deliberately omitted — no code path sets it in Sprint 04;
+  // added via its own migration if a future "stop reviewing this word"
+  // feature is designed.
+}
+
+enum ReviewRating {
+  AGAIN
+  HARD
+  GOOD
+  EASY
+}
+
+enum PracticeSource {
+  FLASHCARD
+  DICTATION
+  REVIEW
+  // GAMES deliberately absent — Games never submits SRS reviews (Sprint 04 scope).
+}
+
 //// ===================== MODELS =====================
 //
 model User {
@@ -86,10 +112,19 @@ model User {
   // verified.
   emailVerifiedAt DateTime?
 
+  // Sprint 04 (Learning Engine): set at most once from a client-supplied
+  // bootstrap value (see LearningService) — never re-derived per request,
+  // so a user can't reset their daily new-word quota by spoofing a
+  // different timezone on each call. NULL means "not yet learned" and all
+  // day-bucketing falls back to UTC.
+  timezone String?
+
   taskProgress            LessonTaskProgress[]
   identities              AuthIdentity[]
   emailVerificationTokens EmailVerificationToken[]
   passwordResetTokens     PasswordResetToken[]
+  wordProgress            UserWordProgress[]
+  wordReviewLogs          WordReviewLog[]
 
   @@map("users") //users dùng cho query sql , còn User dùng cho code
 }
@@ -342,6 +377,13 @@ model VocabWord {
   examples  VocabWordExample[]
   deckWords VocabDeckWord[]
 
+  // Sprint 04 (Learning Engine) — Restrict (the default; see the models
+  // below), not Cascade: a word with any learning history cannot be
+  // deleted at all. VocabWordService.remove() has an explicit pre-check
+  // for this; these relations are the defense-in-depth backstop.
+  progressRows UserWordProgress[]
+  reviewLogs   WordReviewLog[]
+
   @@index([text])
   @@map("vocab_words")
 }
@@ -387,4 +429,108 @@ model VocabDeckWord {
   @@unique([deckId, wordId])
   @@index([wordId])
   @@map("vocab_deck_words")
+}
+
+// Sprint 04 — Learning Engine (SRS). One row per (user, word): the
+// authoritative, backend-owned scheduling state. See
+// docs/adr/007-learning-engine-srs.md and
+// docs/sprints/sprint-04-learning-engine.md for the full design rationale
+// (algorithm choice, ownership decision, mastery definition).
+model UserWordProgress {
+  id     String @id @default(uuid())
+  userId String
+  wordId String
+
+  state        LearningState @default(NEW)
+  easeFactor   Float         @default(2.5)
+  intervalDays Int           @default(0)
+  repetitions  Int           @default(0)
+  lapses       Int           @default(0)
+
+  lastReviewedAt DateTime?
+  nextReviewAt   DateTime  @default(now())
+  firstLearnedAt DateTime?
+  masteredAt     DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  // Optimistic-concurrency guard — every write increments this; a write
+  // whose `where` includes a stale version affects zero rows and is
+  // surfaced as a 409, never silently overwritten. See LearningService.
+  version Int @default(0)
+
+  user User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // Restrict (default, explicit here for clarity): a word with any
+  // progress cannot be deleted. VocabWordService.remove() pre-checks this
+  // explicitly for a clearer error message; this is the DB-level backstop.
+  word VocabWord @relation(fields: [wordId], references: [id], onDelete: Restrict)
+
+  reviewLogs WordReviewLog[]
+
+  @@unique([userId, wordId])
+  @@index([userId, nextReviewAt])
+  @@index([userId, state])
+  @@index([wordId])
+  @@map("user_word_progress")
+}
+
+// Sprint 04 — Learning Engine (SRS). Append-only: every review a user
+// submits gets one row here, and no field is ever edited or deleted after
+// creation (enforced by convention in LearningService, not a DB trigger —
+// the same trust-the-service-layer posture as EmailVerificationToken's
+// consumedAt-not-delete pattern). The full before/after snapshot on this
+// row is what makes an idempotent replay of the same clientReviewId return
+// the *original* recorded outcome rather than whatever UserWordProgress
+// happens to look like by the time the replay arrives — see
+// LearningService's idempotency design.
+model WordReviewLog {
+  id         String @id @default(uuid())
+  userId     String
+  wordId     String
+  progressId String
+
+  rating ReviewRating
+
+  previousState        LearningState
+  newState             LearningState
+  previousIntervalDays Int
+  newIntervalDays      Int
+  previousDueAt        DateTime
+  newDueAt             DateTime
+  newEaseFactor        Float
+  newRepetitions       Int
+  newLapses            Int
+  // The UserWordProgress.version value immediately after this review
+  // committed — part of the response snapshot, not a live lookup.
+  resultVersion Int
+
+  practiceMode PracticeSource
+  // Client-supplied correlation id — analytics only, never trusted for
+  // scheduling or idempotency.
+  sessionId String?
+  // The idempotency key. Scoped per-user (see the @@unique below, not a
+  // bare global @unique) so one user's key space can never collide with
+  // another's.
+  clientReviewId String
+  // Persisted (nullable) for future analytics/FSRS-fitting use — never
+  // read by the scheduler; response time does not influence scheduling.
+  responseTimeMs Int?
+
+  // Bumped only if the scheduler's interval/ease math changes, so a future
+  // migration (e.g. to FSRS) can distinguish reviews scheduled under the
+  // old algorithm from new ones.
+  algorithmVersion Int      @default(1)
+  reviewedAt       DateTime @default(now())
+
+  user     User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // Restrict (default, explicit here for clarity): deleting a word with any
+  // review history would otherwise silently erase append-only audit/
+  // analytics/FSRS-migration data — the exact bug this relation prevents.
+  word     VocabWord        @relation(fields: [wordId], references: [id], onDelete: Restrict)
+  progress UserWordProgress @relation(fields: [progressId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, clientReviewId])
+  @@index([userId, reviewedAt])
+  @@index([wordId])
+  @@map("word_review_logs")
 }

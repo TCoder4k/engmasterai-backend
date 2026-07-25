@@ -11,6 +11,7 @@ import { LessonModule } from './lesson/lesson.module';
 import { VocabLibraryModule } from './vocab-library/vocab-library.module';
 import { VocabDeckModule } from './vocab-deck/vocab-deck.module';
 import { VocabWordModule } from './vocab-word/vocab-word.module';
+import { LearningModule } from './learning/learning.module';
 import { envValidationSchema } from './config/env.validation';
 
 @Module({
@@ -30,6 +31,7 @@ import { envValidationSchema } from './config/env.validation';
     VocabLibraryModule,
     VocabDeckModule,
     VocabWordModule,
+    LearningModule,
   ],
 })
 export class AppModule {}

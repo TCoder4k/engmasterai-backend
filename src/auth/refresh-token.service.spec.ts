@@ -10,6 +10,11 @@ import { AuthEventLogger } from './logging/auth-event-logger.service';
 // docker-compose.yml's real Redis instance instead, on a dedicated logical
 // DB (15) that is flushed before/after so it never touches dev data on DB 0.
 // Requires `docker-compose up -d` from engmasterai-backend/.
+//
+// NOTE (Sprint 04D): like `learning.service.spec.ts`, this is a real-backend
+// INTEGRATION test despite its `.spec.ts` name and `src/` location — `npm
+// run test` needs Redis up for this file specifically. Recorded as a
+// pre-existing example of the same classification gap; see docs/memory.md.
 const TEST_REDIS_DB = 15;
 
 interface StoredFamilyRecord {

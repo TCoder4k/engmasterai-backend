@@ -324,8 +324,13 @@ export class VocabWordService {
   }
 
   // 400 while attached to any deck — detaching is the explicit, guarded
-  // path for removing a bank word decks depend on. P2003 catch as a race
-  // backstop (same pattern as VocabLibraryService.remove).
+  // path for removing a bank word decks depend on. 400 while any learning
+  // history exists (Sprint 04 — Learning Engine) — deleting a word with
+  // recorded UserWordProgress/WordReviewLog rows would silently destroy
+  // append-only review history (the Restrict relations on both models are
+  // the DB-level backstop for this; see docs/adr/007-learning-engine-srs.md).
+  // P2003 catch as a race backstop for both guards (same pattern as
+  // VocabLibraryService.remove).
   async remove(id: string): Promise<void> {
     await this.findOneOrThrow(id);
 
@@ -339,12 +344,22 @@ export class VocabWordService {
       );
     }
 
+    const progressCount = await this.prismaService.userWordProgress.count({
+      where: { wordId: id },
+    });
+
+    if (progressCount > 0) {
+      throw new BadRequestException(
+        'Cannot delete a word with recorded learning history. Archive it instead.',
+      );
+    }
+
     try {
       await this.prismaService.vocabWord.delete({ where: { id } });
     } catch (error) {
       if (error.code === 'P2003') {
         throw new BadRequestException(
-          'Cannot delete a word that is attached to a deck. Detach it from all decks first.',
+          'Cannot delete a word that is attached to a deck or has recorded learning history.',
         );
       }
       throw error;
