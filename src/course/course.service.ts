@@ -16,8 +16,19 @@ const PUBLIC_SELECT = {
   thumbnail: true,
   isPublished: true,
   createdAt: true,
+  // Sprint 05: student-facing surfaces (the Grammar module landing page)
+  // need a real lesson count per course. Filtered to published lessons —
+  // a student must never be told a course has 12 lessons when 4 of them
+  // are drafts they cannot open. Counting here keeps the landing page at
+  // one request instead of one lesson fetch per card.
+  _count: {
+    select: { lessons: { where: { isPublished: true } } },
+  },
 };
 
+// Unchanged semantics: admins count drafts too. This override must stay
+// explicit — MANAGE_SELECT spreads PUBLIC_SELECT, so without it the admin
+// course screens would silently start hiding draft lessons from their counts.
 const MANAGE_SELECT = {
   ...PUBLIC_SELECT,
   _count: {

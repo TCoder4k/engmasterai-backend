@@ -44,6 +44,23 @@ export async function sweepTestFixtures(): Promise<void> {
     await prisma.vocabLibrary.deleteMany({
       where: { name: { startsWith: TEST_FIXTURE_PREFIX } },
     });
+
+    // Sprint 05 added course/lesson fixtures (course.e2e-spec.ts). Lessons
+    // first — Lesson.course is a required relation with no cascade, so a
+    // course with lessons cannot be deleted. Matching on the parent course's
+    // title as well as the lesson's own means a lesson still gets swept even
+    // if a future test forgets to namespace its title.
+    await prisma.lesson.deleteMany({
+      where: {
+        OR: [
+          { title: { startsWith: TEST_FIXTURE_PREFIX } },
+          { course: { title: { startsWith: TEST_FIXTURE_PREFIX } } },
+        ],
+      },
+    });
+    await prisma.course.deleteMany({
+      where: { title: { startsWith: TEST_FIXTURE_PREFIX } },
+    });
   } finally {
     await prisma.$disconnect();
   }
