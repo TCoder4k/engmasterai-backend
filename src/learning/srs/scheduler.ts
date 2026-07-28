@@ -75,7 +75,10 @@ export interface PreviewIntervals {
 // word's lifetime rather than staying at the intended, exact tenths/
 // hundredths precision this algorithm's constants are defined in.
 const clampEase = (ease: number): number =>
-  Math.min(MAX_EASE_FACTOR, Math.max(MIN_EASE_FACTOR, Math.round(ease * 100) / 100));
+  Math.min(
+    MAX_EASE_FACTOR,
+    Math.max(MIN_EASE_FACTOR, Math.round(ease * 100) / 100),
+  );
 
 // Pure UTC arithmetic, deliberately — server-authoritative day-granularity
 // scheduling has no DST to account for as long as it never touches local
@@ -190,12 +193,18 @@ export function next(
         // First-ever graduation. EASY skips the conservative 1-day
         // graduating step in favor of a larger, confidence-signaling
         // first interval.
-        intervalDays = rating === 'EASY' ? EASY_GRADUATING_INTERVAL_DAYS : GRADUATING_INTERVAL_DAYS;
+        intervalDays =
+          rating === 'EASY'
+            ? EASY_GRADUATING_INTERVAL_DAYS
+            : GRADUATING_INTERVAL_DAYS;
       } else if (rating === 'GOOD' && priorRepetitions === 1) {
         // Classic SM-2 second-interval constant — GOOD only.
         intervalDays = SECOND_INTERVAL_DAYS;
       } else {
-        const multiplier = rating === 'EASY' ? easeFactor * EASY_INTERVAL_BONUS_MULTIPLIER : easeFactor;
+        const multiplier =
+          rating === 'EASY'
+            ? easeFactor * EASY_INTERVAL_BONUS_MULTIPLIER
+            : easeFactor;
         intervalDays = Math.round(intervalDays * multiplier);
       }
 
@@ -231,7 +240,10 @@ export function next(
  * that Again/Hard genuinely produce the same interval for a new word
  * rather than hiding it.
  */
-export function previewIntervals(progress: ProgressSnapshot, now: Date = new Date()): PreviewIntervals {
+export function previewIntervals(
+  progress: ProgressSnapshot,
+  now: Date = new Date(),
+): PreviewIntervals {
   return {
     again: next(progress, 'AGAIN', now).intervalDays,
     hard: next(progress, 'HARD', now).intervalDays,

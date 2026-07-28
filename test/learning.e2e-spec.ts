@@ -49,53 +49,92 @@ describe('Learning Engine (e2e) — Sprint 04B: due queue + rating API', () => {
     prisma = app.get(PrismaService);
 
     const library = await prisma.vocabLibrary.create({
-      data: { name: testFixtureName('Learning E2E Library'), description: 'fixture', orderIndex: 0, isPublished: true },
+      data: {
+        name: testFixtureName('Learning E2E Library'),
+        description: 'fixture',
+        orderIndex: 0,
+        isPublished: true,
+      },
     });
     libraryId = library.id;
 
     const deck = await prisma.vocabDeck.create({
-      data: { libraryId, name: testFixtureName('Learning E2E Deck'), orderIndex: 0, isPublished: true },
+      data: {
+        libraryId,
+        name: testFixtureName('Learning E2E Deck'),
+        orderIndex: 0,
+        isPublished: true,
+      },
     });
     deckId = deck.id;
 
     const word = await prisma.vocabWord.create({
-      data: { text: testFixtureName('learning-e2e-word'), meanings: { create: [{ meaning: 'a fixture word', orderIndex: 0 }] } },
+      data: {
+        text: testFixtureName('learning-e2e-word'),
+        meanings: { create: [{ meaning: 'a fixture word', orderIndex: 0 }] },
+      },
     });
     wordId = word.id;
-    await prisma.vocabDeckWord.create({ data: { deckId, wordId, orderIndex: 0 } });
+    await prisma.vocabDeckWord.create({
+      data: { deckId, wordId, orderIndex: 0 },
+    });
 
     const hiddenDeck = await prisma.vocabDeck.create({
-      data: { libraryId, name: testFixtureName('Learning E2E Hidden Deck'), orderIndex: 1, isPublished: false },
+      data: {
+        libraryId,
+        name: testFixtureName('Learning E2E Hidden Deck'),
+        orderIndex: 1,
+        isPublished: false,
+      },
     });
     hiddenDeckId = hiddenDeck.id;
     const hiddenWord = await prisma.vocabWord.create({
-      data: { text: testFixtureName('learning-e2e-hidden-word'), meanings: { create: [{ meaning: 'hidden', orderIndex: 0 }] } },
+      data: {
+        text: testFixtureName('learning-e2e-hidden-word'),
+        meanings: { create: [{ meaning: 'hidden', orderIndex: 0 }] },
+      },
     });
     hiddenWordId = hiddenWord.id;
-    await prisma.vocabDeckWord.create({ data: { deckId: hiddenDeckId, wordId: hiddenWordId, orderIndex: 0 } });
+    await prisma.vocabDeckWord.create({
+      data: { deckId: hiddenDeckId, wordId: hiddenWordId, orderIndex: 0 },
+    });
   }, 30000);
 
   afterAll(async () => {
     if (createdUserEmails.length > 0) {
-      await prisma.user.deleteMany({ where: { email: { in: createdUserEmails } } });
+      await prisma.user.deleteMany({
+        where: { email: { in: createdUserEmails } },
+      });
     }
-    await prisma.vocabDeckWord.deleteMany({ where: { deckId: { in: [deckId, hiddenDeckId] } } });
-    await prisma.vocabWord.deleteMany({ where: { id: { in: [wordId, hiddenWordId] } } });
-    await prisma.vocabDeck.deleteMany({ where: { id: { in: [deckId, hiddenDeckId] } } });
+    await prisma.vocabDeckWord.deleteMany({
+      where: { deckId: { in: [deckId, hiddenDeckId] } },
+    });
+    await prisma.vocabWord.deleteMany({
+      where: { id: { in: [wordId, hiddenWordId] } },
+    });
+    await prisma.vocabDeck.deleteMany({
+      where: { id: { in: [deckId, hiddenDeckId] } },
+    });
     await prisma.vocabLibrary.delete({ where: { id: libraryId } });
     await app.close();
   }, 30000);
 
   describe('auth gating', () => {
     it('GET /learning/reviews/due 401s without a token', async () => {
-      const res = await request(app.getHttpServer()).get('/learning/reviews/due');
+      const res = await request(app.getHttpServer()).get(
+        '/learning/reviews/due',
+      );
       expect(res.status).toBe(401);
     });
 
     it('POST /learning/words/:wordId/review 401s without a token', async () => {
       const res = await request(app.getHttpServer())
         .post(`/learning/words/${wordId}/review`)
-        .send({ rating: 'GOOD', practiceMode: 'FLASHCARD', clientReviewId: randomUUID() });
+        .send({
+          rating: 'GOOD',
+          practiceMode: 'FLASHCARD',
+          clientReviewId: randomUUID(),
+        });
       expect(res.status).toBe(401);
     });
   });
@@ -106,7 +145,11 @@ describe('Learning Engine (e2e) — Sprint 04B: due queue + rating API', () => {
       const res = await request(app.getHttpServer())
         .post(`/learning/words/${wordId}/review`)
         .set('Authorization', `Bearer ${token}`)
-        .send({ rating: 'NOT_A_RATING', practiceMode: 'FLASHCARD', clientReviewId: randomUUID() });
+        .send({
+          rating: 'NOT_A_RATING',
+          practiceMode: 'FLASHCARD',
+          clientReviewId: randomUUID(),
+        });
       expect(res.status).toBe(400);
     });
 
@@ -124,7 +167,11 @@ describe('Learning Engine (e2e) — Sprint 04B: due queue + rating API', () => {
       const res = await request(app.getHttpServer())
         .post(`/learning/words/${randomUUID()}/review`)
         .set('Authorization', `Bearer ${token}`)
-        .send({ rating: 'GOOD', practiceMode: 'FLASHCARD', clientReviewId: randomUUID() });
+        .send({
+          rating: 'GOOD',
+          practiceMode: 'FLASHCARD',
+          clientReviewId: randomUUID(),
+        });
       expect(res.status).toBe(404);
     });
   });
@@ -135,17 +182,31 @@ describe('Learning Engine (e2e) — Sprint 04B: due queue + rating API', () => {
       const res = await request(app.getHttpServer())
         .post(`/learning/words/${wordId}/review`)
         .set('Authorization', `Bearer ${token}`)
-        .send({ rating: 'GOOD', practiceMode: 'FLASHCARD', clientReviewId: randomUUID() });
+        .send({
+          rating: 'GOOD',
+          practiceMode: 'FLASHCARD',
+          clientReviewId: randomUUID(),
+        });
 
       expect(res.status).toBe(201);
-      expect(res.body).toMatchObject({ state: 'REVIEW', intervalDays: 1, repetitions: 1, lapses: 0, version: 1 });
+      expect(res.body).toMatchObject({
+        state: 'REVIEW',
+        intervalDays: 1,
+        repetitions: 1,
+        lapses: 0,
+        version: 1,
+      });
       expect(res.body.nextReviewAt).toEqual(expect.any(String));
     });
 
     it('retrying the same clientReviewId over HTTP returns the identical original response, not a re-derived one', async () => {
       const token = await registerAndLogin();
       const clientReviewId = randomUUID();
-      const body = { rating: 'GOOD', practiceMode: 'FLASHCARD', clientReviewId };
+      const body = {
+        rating: 'GOOD',
+        practiceMode: 'FLASHCARD',
+        clientReviewId,
+      };
 
       const first = await request(app.getHttpServer())
         .post(`/learning/words/${wordId}/review`)
@@ -156,7 +217,11 @@ describe('Learning Engine (e2e) — Sprint 04B: due queue + rating API', () => {
       await request(app.getHttpServer())
         .post(`/learning/words/${wordId}/review`)
         .set('Authorization', `Bearer ${token}`)
-        .send({ rating: 'EASY', practiceMode: 'FLASHCARD', clientReviewId: randomUUID() });
+        .send({
+          rating: 'EASY',
+          practiceMode: 'FLASHCARD',
+          clientReviewId: randomUUID(),
+        });
 
       const replay = await request(app.getHttpServer())
         .post(`/learning/words/${wordId}/review`)
@@ -190,11 +255,19 @@ describe('Learning Engine (e2e) — Sprint 04B: due queue + rating API', () => {
         request(app.getHttpServer())
           .post(`/learning/words/${wordId}/review`)
           .set('Authorization', `Bearer ${token}`)
-          .send({ rating: 'GOOD', practiceMode: 'FLASHCARD', clientReviewId: randomUUID() }),
+          .send({
+            rating: 'GOOD',
+            practiceMode: 'FLASHCARD',
+            clientReviewId: randomUUID(),
+          }),
         request(app.getHttpServer())
           .post(`/learning/words/${wordId}/review`)
           .set('Authorization', `Bearer ${token}`)
-          .send({ rating: 'GOOD', practiceMode: 'FLASHCARD', clientReviewId: randomUUID() }),
+          .send({
+            rating: 'GOOD',
+            practiceMode: 'FLASHCARD',
+            clientReviewId: randomUUID(),
+          }),
       ]);
       expect(r1.status).toBe(201);
       expect(r2.status).toBe(201);
@@ -204,7 +277,9 @@ describe('Learning Engine (e2e) — Sprint 04B: due queue + rating API', () => {
 
   describe('word progress (outside the due queue)', () => {
     it('401s without a token', async () => {
-      const res = await request(app.getHttpServer()).get(`/learning/words/${wordId}/progress`);
+      const res = await request(app.getHttpServer()).get(
+        `/learning/words/${wordId}/progress`,
+      );
       expect(res.status).toBe(401);
     });
 
@@ -215,7 +290,12 @@ describe('Learning Engine (e2e) — Sprint 04B: due queue + rating API', () => {
         .set('Authorization', `Bearer ${token}`);
       expect(res.status).toBe(200);
       expect(res.body.progress).toBeNull();
-      expect(res.body.previewIntervals).toEqual({ again: 1, hard: 1, good: 1, easy: 4 });
+      expect(res.body.previewIntervals).toEqual({
+        again: 1,
+        hard: 1,
+        good: 1,
+        easy: 4,
+      });
     });
   });
 
@@ -227,10 +307,17 @@ describe('Learning Engine (e2e) — Sprint 04B: due queue + rating API', () => {
         .set('Authorization', `Bearer ${token}`);
 
       expect(res.status).toBe(200);
-      const item = res.body.data.find((i: { word: { id: string } }) => i.word.id === wordId);
+      const item = res.body.data.find(
+        (i: { word: { id: string } }) => i.word.id === wordId,
+      );
       expect(item).toBeDefined();
       expect(item.isNew).toBe(true);
-      expect(item.previewIntervals).toEqual({ again: 1, hard: 1, good: 1, easy: 4 });
+      expect(item.previewIntervals).toEqual({
+        again: 1,
+        hard: 1,
+        good: 1,
+        easy: 4,
+      });
     });
 
     it('excludes a word on an unpublished deck', async () => {
@@ -240,7 +327,11 @@ describe('Learning Engine (e2e) — Sprint 04B: due queue + rating API', () => {
         .set('Authorization', `Bearer ${token}`);
 
       expect(res.status).toBe(200);
-      expect(res.body.data.some((i: { word: { id: string } }) => i.word.id === hiddenWordId)).toBe(false);
+      expect(
+        res.body.data.some(
+          (i: { word: { id: string } }) => i.word.id === hiddenWordId,
+        ),
+      ).toBe(false);
     });
 
     it('rejects an out-of-range limit with 400', async () => {
@@ -254,7 +345,9 @@ describe('Learning Engine (e2e) — Sprint 04B: due queue + rating API', () => {
 
   describe('deck/library progress (Sprint 04D)', () => {
     it('GET /learning/decks/:deckId/progress 401s without a token', async () => {
-      const res = await request(app.getHttpServer()).get(`/learning/decks/${deckId}/progress`);
+      const res = await request(app.getHttpServer()).get(
+        `/learning/decks/${deckId}/progress`,
+      );
       expect(res.status).toBe(401);
     });
 
@@ -283,19 +376,34 @@ describe('Learning Engine (e2e) — Sprint 04B: due queue + rating API', () => {
       await request(app.getHttpServer())
         .post(`/learning/words/${wordId}/review`)
         .set('Authorization', `Bearer ${token}`)
-        .send({ rating: 'GOOD', practiceMode: 'FLASHCARD', clientReviewId: randomUUID() });
+        .send({
+          rating: 'GOOD',
+          practiceMode: 'FLASHCARD',
+          clientReviewId: randomUUID(),
+        });
 
       const deckRes = await request(app.getHttpServer())
         .get(`/learning/decks/${deckId}/progress`)
         .set('Authorization', `Bearer ${token}`);
-      expect(deckRes.body).toMatchObject({ totalWords: 1, newWords: 0, reviewWords: 1, startedPercent: 100 });
+      expect(deckRes.body).toMatchObject({
+        totalWords: 1,
+        newWords: 0,
+        reviewWords: 1,
+        startedPercent: 100,
+      });
 
       const libraryRes = await request(app.getHttpServer())
         .get(`/learning/libraries/${libraryId}/progress`)
         .set('Authorization', `Bearer ${token}`);
       expect(libraryRes.status).toBe(200);
-      const deckEntry = libraryRes.body.decks.find((d: { deckId: string }) => d.deckId === deckId);
-      expect(deckEntry).toMatchObject({ totalWords: 1, newWords: 0, reviewWords: 1 });
+      const deckEntry = libraryRes.body.decks.find(
+        (d: { deckId: string }) => d.deckId === deckId,
+      );
+      expect(deckEntry).toMatchObject({
+        totalWords: 1,
+        newWords: 0,
+        reviewWords: 1,
+      });
     });
 
     it('404s for a deck that is itself unpublished', async () => {
@@ -313,7 +421,9 @@ describe('Learning Engine (e2e) — Sprint 04B: due queue + rating API', () => {
         .set('Authorization', `Bearer ${token}`);
 
       expect(res.status).toBe(200);
-      const row = res.body.data.find((r: { libraryId: string }) => r.libraryId === libraryId);
+      const row = res.body.data.find(
+        (r: { libraryId: string }) => r.libraryId === libraryId,
+      );
       expect(row).toMatchObject({
         deckCount: 1, // the hidden deck is excluded
         totalWords: 1,
@@ -324,7 +434,9 @@ describe('Learning Engine (e2e) — Sprint 04B: due queue + rating API', () => {
     });
 
     it('GET /learning/libraries/progress 401s without a token', async () => {
-      const res = await request(app.getHttpServer()).get('/learning/libraries/progress');
+      const res = await request(app.getHttpServer()).get(
+        '/learning/libraries/progress',
+      );
       expect(res.status).toBe(401);
     });
   });
@@ -357,7 +469,9 @@ describe('Learning Engine (e2e) — Sprint 04B: due queue + rating API', () => {
     });
 
     it('the student library list contains no test-namespace content beyond this suite’s own fixtures', async () => {
-      const res = await request(app.getHttpServer()).get('/vocab/libraries?limit=100');
+      const res = await request(app.getHttpServer()).get(
+        '/vocab/libraries?limit=100',
+      );
       expect(res.status).toBe(200);
 
       // Anything prefixed that is NOT one of this suite's live fixtures is

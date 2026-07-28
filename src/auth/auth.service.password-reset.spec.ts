@@ -1,6 +1,9 @@
 /* eslint-disable @typescript-eslint/unbound-method -- jest.fn() mock references, not real unbound methods */
 import * as argon from 'argon2';
-import { BadRequestException, ServiceUnavailableException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { AuthService } from './auth.service';
@@ -61,14 +64,18 @@ describe('AuthService — password reset (Sprint 02C)', () => {
       get: jest.fn((key: string) => configValues[key]),
     } as unknown as jest.Mocked<ConfigService>;
 
-    authEventLogger = { log: jest.fn() } as unknown as jest.Mocked<AuthEventLogger>;
+    authEventLogger = {
+      log: jest.fn(),
+    } as unknown as jest.Mocked<AuthEventLogger>;
 
     refreshTokenService = {
       revokeAllForUser: jest.fn().mockResolvedValue(undefined),
     } as unknown as jest.Mocked<RefreshTokenService>;
 
     rateLimiterService = {
-      checkAndIncrement: jest.fn().mockResolvedValue({ allowed: true, count: 1 }),
+      checkAndIncrement: jest
+        .fn()
+        .mockResolvedValue({ allowed: true, count: 1 }),
     } as unknown as jest.Mocked<RateLimiterService>;
 
     transactionalMailService = {
@@ -167,7 +174,10 @@ describe('AuthService — password reset (Sprint 02C)', () => {
         password: 'argon2-hash',
       });
 
-      await service.forgotPassword({ email: 'jane@example.com' }, testLogContext);
+      await service.forgotPassword(
+        { email: 'jane@example.com' },
+        testLogContext,
+      );
 
       expect(prisma.passwordResetToken.updateMany).toHaveBeenCalledWith({
         where: { userId: 'user-1', consumedAt: null },
@@ -262,7 +272,10 @@ describe('AuthService — password reset (Sprint 02C)', () => {
         password: 'argon2-hash',
       });
 
-      await service.forgotPassword({ email: 'jane@example.com' }, testLogContext);
+      await service.forgotPassword(
+        { email: 'jane@example.com' },
+        testLogContext,
+      );
 
       const sentTo = transactionalMailService.sendPasswordResetEmail.mock
         .calls[0][1] as { rawToken: string };
@@ -427,7 +440,14 @@ describe('AuthService — password reset (Sprint 02C)', () => {
 
     it('defense-in-depth: rejects a token that somehow exists for a Google-only (password===null) account', async () => {
       prisma.passwordResetToken.findUnique.mockResolvedValue(
-        validTokenRow({ user: { id: 'user-1', name: 'Jane', email: 'jane@example.com', password: null } }),
+        validTokenRow({
+          user: {
+            id: 'user-1',
+            name: 'Jane',
+            email: 'jane@example.com',
+            password: null,
+          },
+        }),
       );
 
       await expect(

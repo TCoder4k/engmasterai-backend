@@ -105,27 +105,35 @@ describe('Course module (e2e) — Sprint 05: published-lesson counts', () => {
     await prisma.lesson.deleteMany({ where: { courseId } });
     await prisma.course.deleteMany({ where: { id: courseId } });
     if (createdUserEmails.length) {
-      await prisma.user.deleteMany({ where: { email: { in: createdUserEmails } } });
+      await prisma.user.deleteMany({
+        where: { email: { in: createdUserEmails } },
+      });
     }
     await app.close();
   });
 
   describe('GET /courses (public)', () => {
     it('counts only published lessons', async () => {
-      const res = await request(app.getHttpServer()).get('/courses?limit=100&type=GRAMMAR').expect(200);
+      const res = await request(app.getHttpServer())
+        .get('/courses?limit=100&type=GRAMMAR')
+        .expect(200);
 
-      const course = (res.body as { data: { id: string; _count: { lessons: number } }[] }).data.find(
-        (row) => row.id === courseId,
-      );
+      const course = (
+        res.body as { data: { id: string; _count: { lessons: number } }[] }
+      ).data.find((row) => row.id === courseId);
       expect(course).toBeDefined();
       // Three lessons exist; one is a draft.
       expect(course!._count.lessons).toBe(2);
     });
 
     it('returns the same filtered count on the single-course endpoint', async () => {
-      const res = await request(app.getHttpServer()).get(`/courses/${courseId}`).expect(200);
+      const res = await request(app.getHttpServer())
+        .get(`/courses/${courseId}`)
+        .expect(200);
 
-      expect((res.body as { _count: { lessons: number } })._count.lessons).toBe(2);
+      expect((res.body as { _count: { lessons: number } })._count.lessons).toBe(
+        2,
+      );
     });
 
     it('reports zero rather than omitting the count for a course with no published lessons', async () => {
@@ -139,8 +147,12 @@ describe('Course module (e2e) — Sprint 05: published-lesson counts', () => {
       });
 
       try {
-        const res = await request(app.getHttpServer()).get(`/courses/${empty.id}`).expect(200);
-        expect((res.body as { _count: { lessons: number } })._count.lessons).toBe(0);
+        const res = await request(app.getHttpServer())
+          .get(`/courses/${empty.id}`)
+          .expect(200);
+        expect(
+          (res.body as { _count: { lessons: number } })._count.lessons,
+        ).toBe(0);
       } finally {
         await prisma.course.delete({ where: { id: empty.id } });
       }
@@ -154,9 +166,9 @@ describe('Course module (e2e) — Sprint 05: published-lesson counts', () => {
         .set('Authorization', `Bearer ${adminToken}`)
         .expect(200);
 
-      const course = (res.body as { data: { id: string; _count: { lessons: number } }[] }).data.find(
-        (row) => row.id === courseId,
-      );
+      const course = (
+        res.body as { data: { id: string; _count: { lessons: number } }[] }
+      ).data.find((row) => row.id === courseId);
       expect(course).toBeDefined();
       // MANAGE_SELECT spreads PUBLIC_SELECT, so this asserts the explicit
       // override is still in place — without it admins would lose sight of
@@ -167,12 +179,16 @@ describe('Course module (e2e) — Sprint 05: published-lesson counts', () => {
 
   describe('fixture containment (Sprint 04D regression guard)', () => {
     it('keeps every fixture inside the test namespace', async () => {
-      const course = await prisma.course.findUnique({ where: { id: courseId } });
+      const course = await prisma.course.findUnique({
+        where: { id: courseId },
+      });
       expect(course!.title.startsWith(TEST_FIXTURE_PREFIX)).toBe(true);
 
       const lessons = await prisma.lesson.findMany({ where: { courseId } });
       expect(lessons).toHaveLength(3);
-      lessons.forEach((lesson) => expect(lesson.title.startsWith(TEST_FIXTURE_PREFIX)).toBe(true));
+      lessons.forEach((lesson) =>
+        expect(lesson.title.startsWith(TEST_FIXTURE_PREFIX)).toBe(true),
+      );
     });
 
     it('a student listing returns no course outside the test namespace beyond real content', async () => {

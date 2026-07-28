@@ -22,7 +22,12 @@ export interface DueQueueWordDto {
   cefrLevel: string | null;
   audioUrl: string | null;
   imageUrl: string | null;
-  meanings: { id: string; partOfSpeech: string | null; meaning: string; orderIndex: number }[];
+  meanings: {
+    id: string;
+    partOfSpeech: string | null;
+    meaning: string;
+    orderIndex: number;
+  }[];
 }
 
 export interface DueQueueItemDto {

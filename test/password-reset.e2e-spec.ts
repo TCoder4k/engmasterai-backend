@@ -10,7 +10,11 @@ import type Redis from 'ioredis';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { REFRESH_COOKIE_NAME } from '../src/auth/refresh-token.constants';
-import { MAIL_PROVIDER, MailProvider, RenderedEmail } from '../src/mail/mail.types';
+import {
+  MAIL_PROVIDER,
+  MailProvider,
+  RenderedEmail,
+} from '../src/mail/mail.types';
 
 // Sprint 02C e2e coverage. Requires `docker-compose up -d` (Postgres +
 // Redis) from engmasterai-backend/, same convention as auth.e2e-spec.ts.
@@ -71,7 +75,8 @@ describe('Password Reset (e2e) — Sprint 02C: forgot/reset, cross-token invalid
   // extracting the wrong token entirely. Distinguish by URL shape.
   const findResetEmail = (email: string): CapturedEmail | undefined =>
     capturedEmails.find(
-      (e) => e.to === email && e.rendered.html.includes('/reset-password?token='),
+      (e) =>
+        e.to === email && e.rendered.html.includes('/reset-password?token='),
     );
 
   const registerUser = async () => {
@@ -135,7 +140,8 @@ describe('Password Reset (e2e) — Sprint 02C: forgot/reset, cross-token invalid
         .send({ email });
       expect(forgotRes.status).toBe(201);
       expect(forgotRes.body).toEqual({
-        message: 'If an account exists for this email, a password reset link has been sent.',
+        message:
+          'If an account exists for this email, a password reset link has been sent.',
       });
 
       const resetEmail = findResetEmail(email);
@@ -169,9 +175,7 @@ describe('Password Reset (e2e) — Sprint 02C: forgot/reset, cross-token invalid
       await request(app.getHttpServer())
         .post('/auth/password/forgot')
         .send({ email });
-      const rawToken = extractResetToken(
-        findResetEmail(email)!.rendered,
-      );
+      const rawToken = extractResetToken(findResetEmail(email)!.rendered);
 
       capturedEmails = [];
       await request(app.getHttpServer())
@@ -220,7 +224,8 @@ describe('Password Reset (e2e) — Sprint 02C: forgot/reset, cross-token invalid
 
       expect(res.status).toBe(201);
       expect(res.body).toEqual({
-        message: 'If an account exists for this email, a password reset link has been sent.',
+        message:
+          'If an account exists for this email, a password reset link has been sent.',
       });
 
       const tokenCount = await prisma.passwordResetToken.count({
@@ -238,7 +243,10 @@ describe('Password Reset (e2e) — Sprint 02C: forgot/reset, cross-token invalid
     it('rejects an unknown token with a generic 400', async () => {
       const res = await request(app.getHttpServer())
         .post('/auth/password/reset')
-        .send({ token: 'this-token-does-not-exist', newPassword: 'irrelevant123' });
+        .send({
+          token: 'this-token-does-not-exist',
+          newPassword: 'irrelevant123',
+        });
       expect(res.status).toBe(400);
     });
 
@@ -247,9 +255,7 @@ describe('Password Reset (e2e) — Sprint 02C: forgot/reset, cross-token invalid
       await request(app.getHttpServer())
         .post('/auth/password/forgot')
         .send({ email });
-      const rawToken = extractResetToken(
-        findResetEmail(email)!.rendered,
-      );
+      const rawToken = extractResetToken(findResetEmail(email)!.rendered);
 
       const first = await request(app.getHttpServer())
         .post('/auth/password/reset')
@@ -269,9 +275,7 @@ describe('Password Reset (e2e) — Sprint 02C: forgot/reset, cross-token invalid
       await request(app.getHttpServer())
         .post('/auth/password/forgot')
         .send({ email });
-      const rawToken = extractResetToken(
-        findResetEmail(email)!.rendered,
-      );
+      const rawToken = extractResetToken(findResetEmail(email)!.rendered);
 
       const reuseAttempt = await request(app.getHttpServer())
         .post('/auth/password/reset')
@@ -283,7 +287,10 @@ describe('Password Reset (e2e) — Sprint 02C: forgot/reset, cross-token invalid
 
       const retry = await request(app.getHttpServer())
         .post('/auth/password/reset')
-        .send({ token: rawToken, newPassword: 'a-genuinely-different-password' });
+        .send({
+          token: rawToken,
+          newPassword: 'a-genuinely-different-password',
+        });
       expect(retry.status).toBe(201);
     });
   });
@@ -302,9 +309,7 @@ describe('Password Reset (e2e) — Sprint 02C: forgot/reset, cross-token invalid
       await request(app.getHttpServer())
         .post('/auth/password/forgot')
         .send({ email });
-      const rawToken = extractResetToken(
-        findResetEmail(email)!.rendered,
-      );
+      const rawToken = extractResetToken(findResetEmail(email)!.rendered);
       await request(app.getHttpServer())
         .post('/auth/password/reset')
         .send({ token: rawToken, newPassword: 'cross-token-new-password-1' });
@@ -336,9 +341,7 @@ describe('Password Reset (e2e) — Sprint 02C: forgot/reset, cross-token invalid
       await request(app.getHttpServer())
         .post('/auth/password/forgot')
         .send({ email });
-      const rawToken = extractResetToken(
-        findResetEmail(email)!.rendered,
-      );
+      const rawToken = extractResetToken(findResetEmail(email)!.rendered);
       await request(app.getHttpServer())
         .post('/auth/password/reset')
         .send({ token: rawToken, newPassword: 'multi-device-new-password-2' });
@@ -361,9 +364,7 @@ describe('Password Reset (e2e) — Sprint 02C: forgot/reset, cross-token invalid
       await request(app.getHttpServer())
         .post('/auth/password/forgot')
         .send({ email });
-      const rawToken = extractResetToken(
-        findResetEmail(email)!.rendered,
-      );
+      const rawToken = extractResetToken(findResetEmail(email)!.rendered);
 
       const user = await prisma.user.findUniqueOrThrow({ where: { email } });
       const tokenRow = await prisma.passwordResetToken.findFirst({
@@ -379,18 +380,16 @@ describe('Password Reset (e2e) — Sprint 02C: forgot/reset, cross-token invalid
       await request(app.getHttpServer())
         .post('/auth/password/forgot')
         .send({ email });
-      const rawToken = extractResetToken(
-        findResetEmail(email)!.rendered,
-      );
+      const rawToken = extractResetToken(findResetEmail(email)!.rendered);
       await request(app.getHttpServer())
         .post('/auth/password/reset')
         .send({ token: rawToken, newPassword: 'no-raw-secrets-password-3' });
 
       const user = await prisma.user.findUniqueOrThrow({ where: { email } });
       expect(user.password).not.toBe('no-raw-secrets-password-3');
-      expect(await argon.verify(user.password!, 'no-raw-secrets-password-3')).toBe(
-        true,
-      );
+      expect(
+        await argon.verify(user.password!, 'no-raw-secrets-password-3'),
+      ).toBe(true);
     });
   });
 
@@ -404,7 +403,10 @@ describe('Password Reset (e2e) — Sprint 02C: forgot/reset, cross-token invalid
       for (let i = 0; i < 21; i++) {
         const res = await request(app.getHttpServer())
           .post('/auth/password/reset')
-          .send({ token: `rate-limit-probe-${i}`, newPassword: 'irrelevant123' });
+          .send({
+            token: `rate-limit-probe-${i}`,
+            newPassword: 'irrelevant123',
+          });
         lastStatus = res.status;
         if (lastStatus === 429) break;
       }

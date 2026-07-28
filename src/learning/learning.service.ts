@@ -7,7 +7,10 @@ import { VocabLibraryService } from '../vocab-library/vocab-library.service';
 import { LearningEventLogger } from './logging/learning-event-logger.service';
 import { SubmitReviewDto } from './dto/submit-review.dto';
 import { QueryDueReviewsDto } from './dto/query-due-reviews.dto';
-import { IdempotencyKeyReusedException, ReviewVersionConflictException } from './learning.exceptions';
+import {
+  IdempotencyKeyReusedException,
+  ReviewVersionConflictException,
+} from './learning.exceptions';
 import {
   next as schedulerNext,
   previewIntervals,
@@ -54,7 +57,8 @@ const DUE_QUEUE_WORD_SELECT = {
 class RetrySignal extends Error {}
 
 const isUniqueConstraintViolation = (error: unknown): boolean =>
-  error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002';
+  error instanceof Prisma.PrismaClientKnownRequestError &&
+  error.code === 'P2002';
 
 @Injectable()
 export class LearningService {
@@ -67,14 +71,22 @@ export class LearningService {
   ) {}
 
   // GET /learning/reviews/due (sprint plan §8).
-  async getDueReviews(userId: string, query: QueryDueReviewsDto): Promise<DueQueueResponseDto> {
-    const user = await this.prisma.user.findUniqueOrThrow({ where: { id: userId } });
+  async getDueReviews(
+    userId: string,
+    query: QueryDueReviewsDto,
+  ): Promise<DueQueueResponseDto> {
+    const user = await this.prisma.user.findUniqueOrThrow({
+      where: { id: userId },
+    });
 
     // One-time bootstrap only, never re-applied once set — closes the
     // "reset my daily new-word quota by spoofing tz" gap (§8/§16).
     let timezone = user.timezone;
     if (!timezone && query.tz) {
-      await this.prisma.user.update({ where: { id: userId }, data: { timezone: query.tz } });
+      await this.prisma.user.update({
+        where: { id: userId },
+        data: { timezone: query.tz },
+      });
       timezone = query.tz;
     }
     const effectiveTz = timezone ?? 'UTC';
@@ -86,9 +98,15 @@ export class LearningService {
     const now = new Date();
     const startOfToday = startOfDayInTimeZone(now, effectiveTz);
 
-    const visible = await this.getVisibleWordIdsWithDeck(query.deckId, query.libraryId);
+    const visible = await this.getVisibleWordIdsWithDeck(
+      query.deckId,
+      query.libraryId,
+    );
     if (visible.length === 0) {
-      this.eventLogger.log('learning.queue.loaded', { userId, totalReturned: 0 });
+      this.eventLogger.log('learning.queue.loaded', {
+        userId,
+        totalReturned: 0,
+      });
       return { data: [] };
     }
     const visibleWordIds = visible.map((v) => v.wordId);
@@ -103,7 +121,9 @@ export class LearningService {
         nextReviewAt: { lte: now },
       },
       orderBy: { nextReviewAt: 'asc' }, // overdue-first falls out of this ordering alone
-      take: scopedToOneDeckOrLibrary ? limit : limit * QUEUE_CANDIDATE_SCAN_MULTIPLIER,
+      take: scopedToOneDeckOrLibrary
+        ? limit
+        : limit * QUEUE_CANDIDATE_SCAN_MULTIPLIER,
     });
 
     const dueRowsFinal = scopedToOneDeckOrLibrary
@@ -182,7 +202,10 @@ export class LearningService {
     }));
 
     const data = [...dueItems, ...newItems];
-    this.eventLogger.log('learning.queue.loaded', { userId, totalReturned: data.length });
+    this.eventLogger.log('learning.queue.loaded', {
+      userId,
+      totalReturned: data.length,
+    });
     return { data };
   }
 
@@ -216,7 +239,10 @@ export class LearningService {
     const now = new Date();
 
     if (!row) {
-      return { progress: null, previewIntervals: previewIntervals(DEFAULT_NEW_PROGRESS, now) };
+      return {
+        progress: null,
+        previewIntervals: previewIntervals(DEFAULT_NEW_PROGRESS, now),
+      };
     }
 
     return {
@@ -233,7 +259,10 @@ export class LearningService {
   }
 
   // GET /learning/decks/:deckId/progress (sprint plan §13, Sprint 04D).
-  async getDeckProgress(userId: string, deckId: string): Promise<DeckProgressDto> {
+  async getDeckProgress(
+    userId: string,
+    deckId: string,
+  ): Promise<DeckProgressDto> {
     await this.vocabDeckService.findOnePublished(deckId, { userId }); // 404s if not currently visible
     const visible = await this.getVisibleWordIdsWithDeck(deckId);
     const summary = await this.computeProgressSummary(
@@ -248,7 +277,10 @@ export class LearningService {
   // request — computed from one shared word-visibility query, not N+1
   // per-deck round trips (a real concern: the TOEIC 600 library alone has
   // 50 decks).
-  async getLibraryProgress(userId: string, libraryId: string): Promise<LibraryProgressDto> {
+  async getLibraryProgress(
+    userId: string,
+    libraryId: string,
+  ): Promise<LibraryProgressDto> {
     await this.vocabLibraryService.findOnePublished(libraryId); // 404s if not currently visible
 
     // Raw (non-deduped) pairs for the per-deck breakdown — a word shared
@@ -257,7 +289,10 @@ export class LearningService {
     // set, so that same shared word is only counted once at that level.
     const pairs = await this.getVisibleDeckWordPairs(undefined, libraryId);
     const distinctWordIds = [...new Set(pairs.map((p) => p.wordId))];
-    const librarySummary = await this.computeProgressSummary(userId, distinctWordIds);
+    const librarySummary = await this.computeProgressSummary(
+      userId,
+      distinctWordIds,
+    );
 
     const deckIds = [...new Set(pairs.map((p) => p.deckId))];
     const wordIdsByDeck = new Map<string, string[]>();
@@ -277,7 +312,9 @@ export class LearningService {
 
     const decks: DeckProgressDto[] = deckIds.map((deckId) => {
       const wordIds = wordIdsByDeck.get(deckId) ?? [];
-      const rows = wordIds.map((id) => progressByWordId.get(id)).filter((r): r is NonNullable<typeof r> => Boolean(r));
+      const rows = wordIds
+        .map((id) => progressByWordId.get(id))
+        .filter((r): r is NonNullable<typeof r> => Boolean(r));
       return { deckId, ...this.summarizeProgressRows(wordIds.length, rows) };
     });
 
@@ -285,9 +322,15 @@ export class LearningService {
   }
 
   // POST /learning/words/:wordId/review (sprint plan §9/§10/§11).
-  async submitReview(userId: string, wordId: string, dto: SubmitReviewDto): Promise<ReviewResponseDto> {
+  async submitReview(
+    userId: string,
+    wordId: string,
+    dto: SubmitReviewDto,
+  ): Promise<ReviewResponseDto> {
     const existingLog = await this.prisma.wordReviewLog.findUnique({
-      where: { userId_clientReviewId: { userId, clientReviewId: dto.clientReviewId } },
+      where: {
+        userId_clientReviewId: { userId, clientReviewId: dto.clientReviewId },
+      },
     });
 
     if (existingLog) {
@@ -296,7 +339,11 @@ export class LearningService {
         existingLog.rating !== dto.rating ||
         existingLog.practiceMode !== dto.practiceMode
       ) {
-        this.eventLogger.log('learning.review.idempotency_conflict', { userId, wordId, rating: dto.rating });
+        this.eventLogger.log('learning.review.idempotency_conflict', {
+          userId,
+          wordId,
+          rating: dto.rating,
+        });
         throw new IdempotencyKeyReusedException();
       }
       this.eventLogger.log('learning.review.idempotent_replay', {
@@ -336,7 +383,9 @@ export class LearningService {
           try {
             // Relies on the model's own @default values (state NEW,
             // easeFactor 2.5, intervalDays 0, ...) — never duplicated here.
-            progress = await tx.userWordProgress.create({ data: { userId, wordId } });
+            progress = await tx.userWordProgress.create({
+              data: { userId, wordId },
+            });
             isNewlyCreated = true;
           } catch (error) {
             if (isUniqueConstraintViolation(error)) {
@@ -366,7 +415,8 @@ export class LearningService {
             version: { increment: 1 },
           },
         });
-        if (updateResult.count === 0) throw new ReviewVersionConflictException();
+        if (updateResult.count === 0)
+          throw new ReviewVersionConflictException();
 
         const resultVersion = progress.version + 1;
         const log = await tx.wordReviewLog.create({
@@ -396,7 +446,11 @@ export class LearningService {
           this.eventLogger.log('learning.progress.created', { userId, wordId });
         }
         if (before.state !== 'MASTERED' && result.state === 'MASTERED') {
-          this.eventLogger.log('learning.progress.mastered', { userId, wordId, intervalDays: result.intervalDays });
+          this.eventLogger.log('learning.progress.mastered', {
+            userId,
+            wordId,
+            intervalDays: result.intervalDays,
+          });
         }
         if (result.state === 'RELEARNING' && before.state !== 'RELEARNING') {
           this.eventLogger.log('learning.progress.lapsed', { userId, wordId });
@@ -421,7 +475,11 @@ export class LearningService {
         return this.attemptReview(userId, wordId, dto, 2); // exactly one retry, then give up — §11
       }
       if (error instanceof ReviewVersionConflictException) {
-        this.eventLogger.log('learning.review.version_conflict', { userId, wordId, rating: dto.rating });
+        this.eventLogger.log('learning.review.version_conflict', {
+          userId,
+          wordId,
+          rating: dto.rating,
+        });
       }
       throw error;
     }
@@ -598,7 +656,8 @@ export class LearningService {
     // transition in the same commit (see attemptReview) — so state !=
     // 'NEW' is guaranteed for every row returned here.
     for (const row of rows) {
-      if (row.state === 'LEARNING' || row.state === 'RELEARNING') learningWords += 1;
+      if (row.state === 'LEARNING' || row.state === 'RELEARNING')
+        learningWords += 1;
       else if (row.state === 'REVIEW') reviewWords += 1;
       else if (row.state === 'MASTERED') masteredWords += 1;
       if (row.nextReviewAt <= now) dueWords += 1;
@@ -607,7 +666,9 @@ export class LearningService {
     const newWords = totalWords - rows.length;
     // floor, not round — matches the sprint plan's own worked example
     // (15 total, 8 new -> 46%, not 47%).
-    const startedPercent = Math.floor(((totalWords - newWords) / totalWords) * 100);
+    const startedPercent = Math.floor(
+      ((totalWords - newWords) / totalWords) * 100,
+    );
     // masteredPercent is a direct quality signal (unlike startedPercent,
     // which only measures exposure) — same floor convention for consistency.
     const masteredPercent = Math.floor((masteredWords / totalWords) * 100);
@@ -631,7 +692,9 @@ export class LearningService {
   // specific library. Fixed query count regardless of how many libraries
   // exist: one deck-count groupBy, one visible-pairs fetch, one progress
   // fetch — never one query per library.
-  async getLibrariesProgress(userId: string): Promise<LibrarySummaryProgressDto[]> {
+  async getLibrariesProgress(
+    userId: string,
+  ): Promise<LibrarySummaryProgressDto[]> {
     const libraries = await this.prisma.vocabLibrary.findMany({
       where: { isPublished: true },
       select: { id: true },
@@ -641,16 +704,29 @@ export class LearningService {
 
     const deckCounts = await this.prisma.vocabDeck.groupBy({
       by: ['libraryId'],
-      where: { isPublished: true, libraryId: { in: libraries.map((l) => l.id) } },
+      where: {
+        isPublished: true,
+        libraryId: { in: libraries.map((l) => l.id) },
+      },
       _count: { _all: true },
     });
-    const deckCountByLibrary = new Map(deckCounts.map((d) => [d.libraryId, d._count._all]));
+    const deckCountByLibrary = new Map(
+      deckCounts.map((d) => [d.libraryId, d._count._all]),
+    );
 
     // One visibility query covering every published library at once, not
     // one per library — same "raw pairs, then partition in memory"
     // technique getLibraryProgress already uses for its per-deck breakdown.
     const pairs = await this.prisma.vocabDeckWord.findMany({
-      where: { deck: { isPublished: true, library: { isPublished: true, id: { in: libraries.map((l) => l.id) } } } },
+      where: {
+        deck: {
+          isPublished: true,
+          library: {
+            isPublished: true,
+            id: { in: libraries.map((l) => l.id) },
+          },
+        },
+      },
       select: { wordId: true, deck: { select: { libraryId: true } } },
     });
 
@@ -673,7 +749,9 @@ export class LearningService {
 
     return libraries.map((library) => {
       const wordIds = [...(wordIdsByLibrary.get(library.id) ?? [])];
-      const rows = wordIds.map((id) => progressByWordId.get(id)).filter((r): r is NonNullable<typeof r> => Boolean(r));
+      const rows = wordIds
+        .map((id) => progressByWordId.get(id))
+        .filter((r): r is NonNullable<typeof r> => Boolean(r));
       return {
         libraryId: library.id,
         deckCount: deckCountByLibrary.get(library.id) ?? 0,

@@ -29,7 +29,8 @@ export class ReviewVersionConflictException extends HttpException {
       {
         statusCode: HttpStatus.CONFLICT,
         code: 'VERSION_CONFLICT',
-        message: 'This word was updated by another request. Refetch its current state and try again.',
+        message:
+          'This word was updated by another request. Refetch its current state and try again.',
       },
       HttpStatus.CONFLICT,
     );

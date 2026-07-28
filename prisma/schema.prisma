@@ -23,6 +23,14 @@ enum CourseType {
 enum LessonTaskType {
   VIDEO
   QUIZ
+  // @deprecated Sprint 06B — these two are QUESTION types (see QuestionType
+  // below), not task types; they leaked into this enum before the Lesson
+  // Quiz Engine existed. Zero rows and zero code references as of Sprint
+  // 06B. Kept rather than dropped — removing a Postgres enum value is
+  // disruptive and buys nothing since nothing reads them. A quiz task is
+  // always `QUIZ`; a question's own `type` says whether it's multiple
+  // choice, true/false, fill-blank or ordering. "Quiz is one kind of
+  // LessonTask; LessonTask is not a synonym for Quiz."
   ARRANGE
   TRUE_FALSE
 }
@@ -31,6 +39,47 @@ enum TaskProgressStatus {
   NOT_STARTED
   IN_PROGRESS
   COMPLETED
+}
+
+// Sprint 06B — Lesson Quiz Engine. Deliberately NOT open-ended: only types
+// that can actually be graded (grade-question.ts) AND rendered (a per-type
+// input component) may exist here, so no row can ever carry a type the
+// student UI cannot display. Extensibility lives in code, not the schema —
+// see grade-question.ts's GRADERS registry, which makes "add an enum value
+// without a grader" a compile error, not a runtime 500 in front of a
+// student. Adding a reserved type later is one grader + one input
+// component + one `ALTER TYPE ... ADD VALUE` migration.
+//
+// RESERVED (not implemented — add together with their grader, never
+// before): MATCHING, DRAG_DROP, IMAGE_CHOICE, AUDIO_CHOICE, SHORT_ANSWER.
+enum QuestionType {
+  MULTIPLE_CHOICE
+  TRUE_FALSE
+  FILL_BLANK
+  ORDERING
+}
+
+enum QuestionDifficulty {
+  EASY
+  MEDIUM
+  HARD
+}
+
+// Sprint 06B.5 — when a quiz tells the student whether they were right.
+//
+// IMMEDIATE: grade each answer as it is given, reveal the correct answer and
+//   the authored explanation straight away, then lock that question. Built
+//   for LEARNING — a student who is wrong finds out while the question is
+//   still in their head.
+// ON_SUBMIT: the Sprint 06B behaviour — answer everything, submit once, see
+//   the verdict at the end. Built for ASSESSMENT (a timed mock exam).
+//
+// This is a property of the QUIZ, never of the course type. Nothing in the
+// quiz engine branches on CourseType — a Grammar lesson is IMMEDIATE because
+// its author chose that, not because the engine knows what Grammar is.
+enum QuizFeedbackMode {
+  IMMEDIATE
+  ON_SUBMIT
 }
 
 enum CefrLevel {
@@ -250,8 +299,26 @@ model LessonTask {
   points     Int
   orderIndex Int
 
+  // Sprint 06B — a quiz with unsaved/incomplete authoring must not reach
+  // students. Defaults false: an admin has to explicitly publish, mirroring
+  // Lesson.isPublished's own default.
+  isPublished Boolean @default(false)
+  // Null falls back to the QUIZ_DEFAULT_PASSING_SCORE_PERCENT env default
+  // (see QuizService) — never hardcoded per the sprint spec.
+  passingScorePercent Int?
+
+  // Sprint 06B.5 — see QuizFeedbackMode. Defaults to IMMEDIATE because the
+  // lessons this engine serves today are for learning, not examination; an
+  // author picks ON_SUBMIT explicitly when they want a test.
+  feedbackMode QuizFeedbackMode @default(IMMEDIATE)
+
   createdAt DateTime @default(now())
 
+  // Restrict (default, explicit here for clarity): a task with real student
+  // attempts (LessonTaskProgress rows) cannot be deleted, only unpublished —
+  // same reasoning as UserWordProgress's word relation. This is also what
+  // keeps `Lesson.remove()`'s existing "cannot delete a lesson with tasks"
+  // guard meaningful.
   lesson    Lesson               @relation(fields: [lessonId], references: [id])
   questions Question[]
   progress  LessonTaskProgress[]
@@ -260,9 +327,14 @@ model LessonTask {
 }
 
 model Question {
-  id            String  @id @default(uuid())
+  id            String              @id @default(uuid())
   taskId        String
   content       String
+  // Sprint 06B — required; every question authored from this sprint forward
+  // must declare its grading shape. See grade-question.ts for the per-type
+  // options/correctAnswer contract this drives.
+  type          QuestionType        @default(MULTIPLE_CHOICE)
+  difficulty    QuestionDifficulty?
   options       Json?
   correctAnswer Json
   explanation   String?
@@ -286,7 +358,57 @@ model LessonTaskProgress {
   attemptsCount Int                @default(0)
   completedAt   DateTime?
 
-  user User       @relation(fields: [userId], references: [id]) //reference tham chiếu đến id của bảng tiến độ
+  // Sprint 06B — stamped by the quiz GET when no attempt is currently in
+  // flight; submit() computes elapsed time as `now - attemptStartedAt`, so
+  // the number reflects real time spent and survives a mid-quiz refresh
+  // (the GET does not re-stamp an in-flight attempt).
+  attemptStartedAt DateTime?
+  // Null when the gap since attemptStartedAt exceeds a sane cap (a tab left
+  // open overnight) — the summary omits the row rather than showing a
+  // fabricated number, the same rule Sprint 06A uses for absent content
+  // blocks.
+  lastDurationSeconds Int?
+
+  // Idempotency for POST .../quiz/submit, scoped to this (user, task) row —
+  // no separate per-attempt log table exists, so a retried submission is
+  // recognised by comparing against the MOST RECENT attempt only (same
+  // "replay the original recorded outcome" contract as Sprint 04's
+  // WordReviewLog, sized down: one prior attempt of memory instead of an
+  // append-only history, which this feature does not need). A resubmission
+  // with the same lastClientAttemptId but different answers is a conflict
+  // (QuizIdempotencyConflictException, never silently re-graded); the same
+  // id with the same answers replays lastSubmitResult verbatim rather than
+  // re-computing it.
+  lastClientAttemptId String?
+  lastAnswers         Json?
+  lastSubmitResult    Json?
+
+  // Sprint 06B.5 — the IN-FLIGHT attempt's server-graded answers, shaped
+  //   { [questionId]: { submitted, isCorrect, answeredAt } }
+  // Deliberately distinct from lastAnswers/lastSubmitResult above, which
+  // record the most recent COMPLETED attempt for idempotent replay.
+  //
+  // This is the ONLY input to scoring under IMMEDIATE feedback, and that is
+  // a security property, not an implementation detail: once a question's
+  // correct answer has been revealed to the student, anything the client
+  // later reports about that question is untrustworthy by construction. The
+  // first recorded answer wins and cannot be overwritten, so a client that
+  // answers wrong and then "submits" the right answer still scores zero.
+  currentAttemptAnswers Json?
+  // Seeds the per-attempt ORDERING option shuffle. Without it the GET
+  // reshuffles on every request, so refreshing mid-quiz would visibly
+  // re-order the options under an already-graded question. Answers are
+  // recorded by option id, so correctness was never at risk — only display.
+  currentAttemptSeed String?
+
+  // Sprint 06B — CHANGED from the implicit default (Restrict) to Cascade.
+  // Without this, test/test-fixture-sweep.ts's user-first sweep order makes
+  // the FIRST e2e test that records a quiz attempt throw P2003 and poison
+  // every later suite. UserWordProgress already uses exactly this pairing —
+  // Cascade on the user (deleting a user's account may reasonably take
+  // their own attempt history with it), Restrict on the content (`task`,
+  // above — a quiz with real attempts cannot itself be deleted).
+  user User       @relation(fields: [userId], references: [id], onDelete: Cascade)
   task LessonTask @relation(fields: [taskId], references: [id])
 
   @@unique([userId, taskId])

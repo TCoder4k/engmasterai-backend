@@ -3,7 +3,10 @@ import { Reflector } from '@nestjs/core';
 import type { Request } from 'express';
 import { RateLimiterService } from '../../auth/rate-limit/rate-limiter.service';
 import { RateLimitExceededException } from '../../auth/exceptions/rate-limit-exceeded.exception';
-import { LEARNING_RATE_LIMITS_KEY, LearningRateLimitPolicy } from './learning-rate-limits.decorator';
+import {
+  LEARNING_RATE_LIMITS_KEY,
+  LearningRateLimitPolicy,
+} from './learning-rate-limits.decorator';
 
 interface RequestWithUser extends Request {
   user?: { userId: string };
@@ -40,7 +43,11 @@ export class LearningRateLimitGuard implements CanActivate {
     if (!userId) return true;
 
     const key = `learning:${policy.kind}:${userId}`;
-    const result = await this.rateLimiter.checkAndIncrement(key, policy.max, policy.windowSeconds);
+    const result = await this.rateLimiter.checkAndIncrement(
+      key,
+      policy.max,
+      policy.windowSeconds,
+    );
     if (!result.allowed) {
       throw new RateLimitExceededException();
     }

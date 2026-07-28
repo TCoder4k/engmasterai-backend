@@ -176,13 +176,15 @@ describe('RefreshTokenService (integration — real Redis, strict single-use rot
       );
     });
 
-    it('revokeAllForUser() does not touch another user\'s sessions', async () => {
+    it("revokeAllForUser() does not touch another user's sessions", async () => {
       const mine = await service.issue('user-10', null);
       const other = await service.issue('user-11', null);
 
       await service.revokeAllForUser('user-10');
 
-      expect(await redis.get(`auth:refresh:family:${mine.familyId}`)).toBeNull();
+      expect(
+        await redis.get(`auth:refresh:family:${mine.familyId}`),
+      ).toBeNull();
       expect(
         await redis.get(`auth:refresh:family:${other.familyId}`),
       ).not.toBeNull();

@@ -1,4 +1,27 @@
 {
   "extends": "./tsconfig.json",
-  "exclude": ["node_modules", "test", "dist", "**/*spec.ts"]
+  // `rootDir` is pinned so the emitted tree is always dist/<src-relative path>.
+  // Without it TypeScript infers the root from the common ancestor of every
+  // INCLUDED file, so a single .ts file outside src/ (prisma/seeds/*.ts are
+  // ts-node scripts, never part of the app) silently shifts the whole output
+  // down to dist/src/**. That breaks two things at runtime, both quietly:
+  //   - nest-cli `assets` are copied relative to sourceRoot, i.e. to
+  //     dist/auth/lua/*.lua, while RefreshTokenService reads them via
+  //     `join(__dirname, 'lua', ...)` — which would then resolve to
+  //     dist/src/auth/lua and throw ENOENT on boot.
+  //   - `start:prod` runs `node dist/main`.
+  // Pinned rather than merely excluded so the next stray file fails the build
+  // loudly instead of relocating the output again.
+  //
+  // `tsBuildInfoFile` is pinned for the same reason: the incremental cache's
+  // default path is derived from the inferred root, so changing the layout
+  // stranded it at the project root where nest-cli's `deleteOutDir` can no
+  // longer clear it — and a stale cache makes `nest build` exit 0 while
+  // emitting nothing at all. Inside dist it is wiped with every build and is
+  // already covered by .gitignore's /dist.
+  "compilerOptions": {
+    "rootDir": "src",
+    "tsBuildInfoFile": "./dist/tsconfig.build.tsbuildinfo"
+  },
+  "exclude": ["node_modules", "test", "dist", "prisma", "**/*spec.ts"]
 }

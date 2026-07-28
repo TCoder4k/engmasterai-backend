@@ -54,7 +54,12 @@ import { MailModule } from '../mail/mail.module';
   // LearningRateLimitGuard reuses this exact generic Redis-Lua counter
   // rather than duplicating it; it has no auth-specific logic of its own,
   // only its (unexported) consumer side (AuthRateLimitGuard) is auth-scoped.
-  exports: [JwtAuthGuard, RolesGuard, TokenBlacklistService, RateLimiterService],
+  exports: [
+    JwtAuthGuard,
+    RolesGuard,
+    TokenBlacklistService,
+    RateLimiterService,
+  ],
 })
 export class AuthModule implements NestModule {
   configure(consumer: MiddlewareConsumer): void {

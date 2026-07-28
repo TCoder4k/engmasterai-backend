@@ -18,7 +18,9 @@
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./test/jest-e2e.json",
-    "vocab-import": "ts-node -r tsconfig-paths/register src/vocab-import/cli.ts"
+    "vocab-import": "ts-node -r tsconfig-paths/register src/vocab-import/cli.ts",
+    "seed:grammar-quizzes": "ts-node -r tsconfig-paths/register prisma/seeds/grammar-quizzes.seed.ts",
+    "seed:grammar-theory": "ts-node -r tsconfig-paths/register prisma/seeds/grammar-theory.seed.ts"
   },
   "dependencies": {
     "@nestjs-modules/ioredis": "^2.0.2",

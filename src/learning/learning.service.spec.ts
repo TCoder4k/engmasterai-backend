@@ -5,7 +5,10 @@ import { AppModule } from '../app.module';
 import { PrismaService } from '../prisma/prisma.service';
 import { LearningService } from './learning.service';
 import { VocabWordService } from '../vocab-word/vocab-word.service';
-import { IdempotencyKeyReusedException, ReviewVersionConflictException } from './learning.exceptions';
+import {
+  IdempotencyKeyReusedException,
+  ReviewVersionConflictException,
+} from './learning.exceptions';
 import { testFixtureName } from '../../test/test-database.util';
 
 // Sprint 04B — integration coverage against the real Postgres instance
@@ -57,7 +60,9 @@ describe('LearningService (integration — real Postgres)', () => {
   };
 
   beforeAll(async () => {
-    moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
+    moduleRef = await Test.createTestingModule({
+      imports: [AppModule],
+    }).compile();
     const app = moduleRef.createNestApplication();
     await app.init();
     prisma = app.get(PrismaService);
@@ -75,7 +80,12 @@ describe('LearningService (integration — real Postgres)', () => {
     libraryId = library.id;
 
     const deck = await prisma.vocabDeck.create({
-      data: { libraryId, name: testFixtureName('Learning Test Deck'), orderIndex: 0, isPublished: true },
+      data: {
+        libraryId,
+        name: testFixtureName('Learning Test Deck'),
+        orderIndex: 0,
+        isPublished: true,
+      },
     });
     deckId = deck.id;
 
@@ -86,21 +96,32 @@ describe('LearningService (integration — real Postgres)', () => {
       },
     });
     wordId = word.id;
-    await prisma.vocabDeckWord.create({ data: { deckId, wordId, orderIndex: 0 } });
+    await prisma.vocabDeckWord.create({
+      data: { deckId, wordId, orderIndex: 0 },
+    });
 
     const hiddenDeck = await prisma.vocabDeck.create({
-      data: { libraryId, name: testFixtureName('Learning Test Hidden Deck'), orderIndex: 1, isPublished: false },
+      data: {
+        libraryId,
+        name: testFixtureName('Learning Test Hidden Deck'),
+        orderIndex: 1,
+        isPublished: false,
+      },
     });
     hiddenDeckId = hiddenDeck.id;
 
     const hiddenWord = await prisma.vocabWord.create({
       data: {
         text: testFixtureName('learning-test-hidden-word'),
-        meanings: { create: [{ meaning: 'a hidden fixture word', orderIndex: 0 }] },
+        meanings: {
+          create: [{ meaning: 'a hidden fixture word', orderIndex: 0 }],
+        },
       },
     });
     hiddenWordId = hiddenWord.id;
-    await prisma.vocabDeckWord.create({ data: { deckId: hiddenDeckId, wordId: hiddenWordId, orderIndex: 0 } });
+    await prisma.vocabDeckWord.create({
+      data: { deckId: hiddenDeckId, wordId: hiddenWordId, orderIndex: 0 },
+    });
   }, 30000);
 
   afterAll(async () => {
@@ -110,9 +131,15 @@ describe('LearningService (integration — real Postgres)', () => {
     if (createdUserIds.length > 0) {
       await prisma.user.deleteMany({ where: { id: { in: createdUserIds } } });
     }
-    await prisma.vocabDeckWord.deleteMany({ where: { deckId: { in: [deckId, hiddenDeckId] } } });
-    await prisma.vocabWord.deleteMany({ where: { id: { in: [wordId, hiddenWordId] } } });
-    await prisma.vocabDeck.deleteMany({ where: { id: { in: [deckId, hiddenDeckId] } } });
+    await prisma.vocabDeckWord.deleteMany({
+      where: { deckId: { in: [deckId, hiddenDeckId] } },
+    });
+    await prisma.vocabWord.deleteMany({
+      where: { id: { in: [wordId, hiddenWordId] } },
+    });
+    await prisma.vocabDeck.deleteMany({
+      where: { id: { in: [deckId, hiddenDeckId] } },
+    });
     await prisma.vocabLibrary.delete({ where: { id: libraryId } });
     await moduleRef.close();
   }, 30000);
@@ -147,20 +174,36 @@ describe('LearningService (integration — real Postgres)', () => {
     it('the same clientReviewId with a different rating throws IdempotencyKeyReusedException, never silently reprocessing', async () => {
       const userId = await createUser();
       const id = randomUUID();
-      await service.submitReview(userId, wordId, { rating: 'GOOD', practiceMode: 'FLASHCARD', clientReviewId: id });
+      await service.submitReview(userId, wordId, {
+        rating: 'GOOD',
+        practiceMode: 'FLASHCARD',
+        clientReviewId: id,
+      });
 
       await expect(
-        service.submitReview(userId, wordId, { rating: 'EASY', practiceMode: 'FLASHCARD', clientReviewId: id }),
+        service.submitReview(userId, wordId, {
+          rating: 'EASY',
+          practiceMode: 'FLASHCARD',
+          clientReviewId: id,
+        }),
       ).rejects.toThrow(IdempotencyKeyReusedException);
     });
 
     it('the same clientReviewId with a different practiceMode also throws IdempotencyKeyReusedException', async () => {
       const userId = await createUser();
       const id = randomUUID();
-      await service.submitReview(userId, wordId, { rating: 'GOOD', practiceMode: 'FLASHCARD', clientReviewId: id });
+      await service.submitReview(userId, wordId, {
+        rating: 'GOOD',
+        practiceMode: 'FLASHCARD',
+        clientReviewId: id,
+      });
 
       await expect(
-        service.submitReview(userId, wordId, { rating: 'GOOD', practiceMode: 'DICTATION', clientReviewId: id }),
+        service.submitReview(userId, wordId, {
+          rating: 'GOOD',
+          practiceMode: 'DICTATION',
+          clientReviewId: id,
+        }),
       ).rejects.toThrow(IdempotencyKeyReusedException);
     });
   });
@@ -170,18 +213,30 @@ describe('LearningService (integration — real Postgres)', () => {
       const userId = await createUser();
 
       const [r1, r2] = await Promise.all([
-        service.submitReview(userId, wordId, { rating: 'GOOD', practiceMode: 'FLASHCARD', clientReviewId: randomUUID() }),
-        service.submitReview(userId, wordId, { rating: 'GOOD', practiceMode: 'FLASHCARD', clientReviewId: randomUUID() }),
+        service.submitReview(userId, wordId, {
+          rating: 'GOOD',
+          practiceMode: 'FLASHCARD',
+          clientReviewId: randomUUID(),
+        }),
+        service.submitReview(userId, wordId, {
+          rating: 'GOOD',
+          practiceMode: 'FLASHCARD',
+          clientReviewId: randomUUID(),
+        }),
       ]);
 
       expect(r1).toBeDefined();
       expect(r2).toBeDefined();
 
-      const progress = await prisma.userWordProgress.findUnique({ where: { userId_wordId: { userId, wordId } } });
+      const progress = await prisma.userWordProgress.findUnique({
+        where: { userId_wordId: { userId, wordId } },
+      });
       expect(progress).not.toBeNull();
       expect(progress!.version).toBe(2); // both reviews applied, exactly once each
 
-      const logCount = await prisma.wordReviewLog.count({ where: { userId, wordId } });
+      const logCount = await prisma.wordReviewLog.count({
+        where: { userId, wordId },
+      });
       expect(logCount).toBe(2);
     });
 
@@ -194,12 +249,20 @@ describe('LearningService (integration — real Postgres)', () => {
       });
 
       const results = await Promise.allSettled([
-        service.submitReview(userId, wordId, { rating: 'GOOD', practiceMode: 'FLASHCARD', clientReviewId: randomUUID() }),
-        service.submitReview(userId, wordId, { rating: 'EASY', practiceMode: 'FLASHCARD', clientReviewId: randomUUID() }),
+        service.submitReview(userId, wordId, {
+          rating: 'GOOD',
+          practiceMode: 'FLASHCARD',
+          clientReviewId: randomUUID(),
+        }),
+        service.submitReview(userId, wordId, {
+          rating: 'EASY',
+          practiceMode: 'FLASHCARD',
+          clientReviewId: randomUUID(),
+        }),
       ]);
 
       const fulfilled = results.filter((r) => r.status === 'fulfilled');
-      const rejected = results.filter((r) => r.status === 'rejected') as PromiseRejectedResult[];
+      const rejected = results.filter((r) => r.status === 'rejected');
       expect(fulfilled).toHaveLength(1);
       expect(rejected).toHaveLength(1);
       expect(rejected[0].reason).toBeInstanceOf(ReviewVersionConflictException);
@@ -220,7 +283,9 @@ describe('LearningService (integration — real Postgres)', () => {
         }),
       ).rejects.toThrow();
 
-      const progress = await prisma.userWordProgress.findUnique({ where: { userId_wordId: { userId, wordId } } });
+      const progress = await prisma.userWordProgress.findUnique({
+        where: { userId_wordId: { userId, wordId } },
+      });
       expect(progress).toBeNull(); // the whole transaction rolled back, not just the log insert
     });
   });
@@ -240,14 +305,20 @@ describe('LearningService (integration — real Postgres)', () => {
     it('a word on an unpublished deck 404s for both first-time and ongoing ratings, then resumes exactly where it left off once republished', async () => {
       const userId = await createUser();
 
-      await prisma.vocabDeck.update({ where: { id: hiddenDeckId }, data: { isPublished: true } });
+      await prisma.vocabDeck.update({
+        where: { id: hiddenDeckId },
+        data: { isPublished: true },
+      });
       const first = await service.submitReview(userId, hiddenWordId, {
         rating: 'GOOD',
         practiceMode: 'FLASHCARD',
         clientReviewId: randomUUID(),
       });
 
-      await prisma.vocabDeck.update({ where: { id: hiddenDeckId }, data: { isPublished: false } });
+      await prisma.vocabDeck.update({
+        where: { id: hiddenDeckId },
+        data: { isPublished: false },
+      });
       await expect(
         service.submitReview(userId, hiddenWordId, {
           rating: 'GOOD',
@@ -263,7 +334,10 @@ describe('LearningService (integration — real Postgres)', () => {
       expect(frozen!.version).toBe(1);
       expect(frozen!.intervalDays).toBe(first.intervalDays);
 
-      await prisma.vocabDeck.update({ where: { id: hiddenDeckId }, data: { isPublished: true } });
+      await prisma.vocabDeck.update({
+        where: { id: hiddenDeckId },
+        data: { isPublished: true },
+      });
       const resumed = await service.submitReview(userId, hiddenWordId, {
         rating: 'GOOD',
         practiceMode: 'FLASHCARD',
@@ -274,7 +348,10 @@ describe('LearningService (integration — real Postgres)', () => {
 
     it('the due queue excludes a currently-due word on an unpublished deck, and includes it again once republished', async () => {
       const userId = await createUser();
-      await prisma.vocabDeck.update({ where: { id: hiddenDeckId }, data: { isPublished: true } });
+      await prisma.vocabDeck.update({
+        where: { id: hiddenDeckId },
+        data: { isPublished: true },
+      });
       await service.submitReview(userId, hiddenWordId, {
         rating: 'GOOD',
         practiceMode: 'FLASHCARD',
@@ -286,13 +363,23 @@ describe('LearningService (integration — real Postgres)', () => {
         data: { nextReviewAt: new Date(Date.now() - 1000) },
       });
 
-      await prisma.vocabDeck.update({ where: { id: hiddenDeckId }, data: { isPublished: false } });
+      await prisma.vocabDeck.update({
+        where: { id: hiddenDeckId },
+        data: { isPublished: false },
+      });
       const hiddenQueue = await service.getDueReviews(userId, {});
-      expect(hiddenQueue.data.some((item) => item.word.id === hiddenWordId)).toBe(false);
+      expect(
+        hiddenQueue.data.some((item) => item.word.id === hiddenWordId),
+      ).toBe(false);
 
-      await prisma.vocabDeck.update({ where: { id: hiddenDeckId }, data: { isPublished: true } });
+      await prisma.vocabDeck.update({
+        where: { id: hiddenDeckId },
+        data: { isPublished: true },
+      });
       const visibleQueue = await service.getDueReviews(userId, {});
-      expect(visibleQueue.data.some((item) => item.word.id === hiddenWordId)).toBe(true);
+      expect(
+        visibleQueue.data.some((item) => item.word.id === hiddenWordId),
+      ).toBe(true);
     });
 
     it('VocabWordService.remove() is blocked once the word has any recorded learning history', async () => {
@@ -303,7 +390,9 @@ describe('LearningService (integration — real Postgres)', () => {
         clientReviewId: randomUUID(),
       });
 
-      await expect(vocabWordService.remove(wordId)).rejects.toThrow(BadRequestException);
+      await expect(vocabWordService.remove(wordId)).rejects.toThrow(
+        BadRequestException,
+      );
     });
   });
 
@@ -312,7 +401,12 @@ describe('LearningService (integration — real Postgres)', () => {
       const userId = await createUser();
       const result = await service.getWordProgress(userId, wordId);
       expect(result.progress).toBeNull();
-      expect(result.previewIntervals).toEqual({ again: 1, hard: 1, good: 1, easy: 4 });
+      expect(result.previewIntervals).toEqual({
+        again: 1,
+        hard: 1,
+        good: 1,
+        easy: 4,
+      });
     });
 
     it('returns real progress + a matching preview after a rating, regardless of due status', async () => {
@@ -323,44 +417,74 @@ describe('LearningService (integration — real Postgres)', () => {
         clientReviewId: randomUUID(),
       });
       const result = await service.getWordProgress(userId, wordId);
-      expect(result.progress).toMatchObject({ state: 'REVIEW', intervalDays: rated.intervalDays });
+      expect(result.progress).toMatchObject({
+        state: 'REVIEW',
+        intervalDays: rated.intervalDays,
+      });
       // Not due for another day, yet still returned here (unlike the due queue).
       expect(result.previewIntervals.good).toBeGreaterThan(0);
     });
 
     it('404s for a word on an unpublished deck', async () => {
       const userId = await createUser();
-      await prisma.vocabDeck.update({ where: { id: hiddenDeckId }, data: { isPublished: false } });
-      await expect(service.getWordProgress(userId, hiddenWordId)).rejects.toThrow(NotFoundException);
+      await prisma.vocabDeck.update({
+        where: { id: hiddenDeckId },
+        data: { isPublished: false },
+      });
+      await expect(
+        service.getWordProgress(userId, hiddenWordId),
+      ).rejects.toThrow(NotFoundException);
     });
   });
 
   describe('due queue (§8)', () => {
     it('includes previewIntervals computed by the pure scheduler for a brand-new word', async () => {
       const userId = await createUser();
-      const queue = await service.getDueReviews(userId, { deckId, includeNew: true });
+      const queue = await service.getDueReviews(userId, {
+        deckId,
+        includeNew: true,
+      });
       const item = queue.data.find((i) => i.word.id === wordId);
-      expect(item?.previewIntervals).toEqual({ again: 1, hard: 1, good: 1, easy: 4 });
+      expect(item?.previewIntervals).toEqual({
+        again: 1,
+        hard: 1,
+        good: 1,
+        easy: 4,
+      });
     });
 
     it('respects the newLimit quota — zero new words when newLimit is 0, present when there is room', async () => {
       const userId = await createUser();
-      const withoutRoom = await service.getDueReviews(userId, { deckId, newLimit: 0, includeNew: true });
+      const withoutRoom = await service.getDueReviews(userId, {
+        deckId,
+        newLimit: 0,
+        includeNew: true,
+      });
       expect(withoutRoom.data.some((item) => item.isNew)).toBe(false);
 
-      const withRoom = await service.getDueReviews(userId, { deckId, newLimit: 5, includeNew: true });
-      expect(withRoom.data.some((item) => item.isNew && item.word.id === wordId)).toBe(true);
+      const withRoom = await service.getDueReviews(userId, {
+        deckId,
+        newLimit: 5,
+        includeNew: true,
+      });
+      expect(
+        withRoom.data.some((item) => item.isNew && item.word.id === wordId),
+      ).toBe(true);
     });
 
     it('bootstraps User.timezone once from a query tz, and never re-derives it from a later, different tz on the same request', async () => {
       const userId = await createUser();
 
       await service.getDueReviews(userId, { tz: 'Asia/Ho_Chi_Minh' });
-      const afterFirst = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
+      const afterFirst = await prisma.user.findUniqueOrThrow({
+        where: { id: userId },
+      });
       expect(afterFirst.timezone).toBe('Asia/Ho_Chi_Minh');
 
       await service.getDueReviews(userId, { tz: 'America/New_York' });
-      const afterSecond = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
+      const afterSecond = await prisma.user.findUniqueOrThrow({
+        where: { id: userId },
+      });
       expect(afterSecond.timezone).toBe('Asia/Ho_Chi_Minh'); // unchanged — no reset-by-spoofing
     });
   });
@@ -386,22 +510,40 @@ describe('LearningService (integration — real Postgres)', () => {
 
     beforeAll(async () => {
       const library = await prisma.vocabLibrary.create({
-        data: { name: testFixtureName('Progress Test Library'), description: 'fixture', orderIndex: 0, isPublished: true },
+        data: {
+          name: testFixtureName('Progress Test Library'),
+          description: 'fixture',
+          orderIndex: 0,
+          isPublished: true,
+        },
       });
       progressLibraryId = library.id;
 
       const deckA = await prisma.vocabDeck.create({
-        data: { libraryId: progressLibraryId, name: testFixtureName('Progress Deck A'), orderIndex: 0, isPublished: true },
+        data: {
+          libraryId: progressLibraryId,
+          name: testFixtureName('Progress Deck A'),
+          orderIndex: 0,
+          isPublished: true,
+        },
       });
       progressDeckAId = deckA.id;
       const deckB = await prisma.vocabDeck.create({
-        data: { libraryId: progressLibraryId, name: testFixtureName('Progress Deck B'), orderIndex: 1, isPublished: true },
+        data: {
+          libraryId: progressLibraryId,
+          name: testFixtureName('Progress Deck B'),
+          orderIndex: 1,
+          isPublished: true,
+        },
       });
       progressDeckBId = deckB.id;
 
       const makeWord = async (text: string) => {
         const w = await prisma.vocabWord.create({
-          data: { text: testFixtureName(text), meanings: { create: [{ meaning: 'x', orderIndex: 0 }] } },
+          data: {
+            text: testFixtureName(text),
+            meanings: { create: [{ meaning: 'x', orderIndex: 0 }] },
+          },
         });
         return w.id;
       };
@@ -416,13 +558,37 @@ describe('LearningService (integration — real Postgres)', () => {
       // Deck A gets everything; Deck B gets only the shared word (so the
       // library-level aggregate must not double-count it).
       let orderIndex = 0;
-      for (const id of [newWordId, learningWordId, reviewWordId, dueReviewWordId, masteredWordId, sharedAcrossDecksWordId]) {
-        await prisma.vocabDeckWord.create({ data: { deckId: progressDeckAId, wordId: id, orderIndex: orderIndex++ } });
+      for (const id of [
+        newWordId,
+        learningWordId,
+        reviewWordId,
+        dueReviewWordId,
+        masteredWordId,
+        sharedAcrossDecksWordId,
+      ]) {
+        await prisma.vocabDeckWord.create({
+          data: {
+            deckId: progressDeckAId,
+            wordId: id,
+            orderIndex: orderIndex++,
+          },
+        });
       }
-      await prisma.vocabDeckWord.create({ data: { deckId: progressDeckBId, wordId: sharedAcrossDecksWordId, orderIndex: 0 } });
+      await prisma.vocabDeckWord.create({
+        data: {
+          deckId: progressDeckBId,
+          wordId: sharedAcrossDecksWordId,
+          orderIndex: 0,
+        },
+      });
 
       const emptyDeck = await prisma.vocabDeck.create({
-        data: { libraryId: progressLibraryId, name: testFixtureName('Empty Deck'), orderIndex: 9, isPublished: true },
+        data: {
+          libraryId: progressLibraryId,
+          name: testFixtureName('Empty Deck'),
+          orderIndex: 9,
+          isPublished: true,
+        },
       });
       emptyDeckId = emptyDeck.id;
     }, 30000);
@@ -440,11 +606,21 @@ describe('LearningService (integration — real Postgres)', () => {
       // and this inner afterAll runs before the outer/file-level afterAll
       // that deletes the users (which would otherwise cascade this away),
       // so it must not be relied on for ordering here.
-      await prisma.wordReviewLog.deleteMany({ where: { wordId: { in: progressWordIds } } });
-      await prisma.userWordProgress.deleteMany({ where: { wordId: { in: progressWordIds } } });
-      await prisma.vocabDeckWord.deleteMany({ where: { deckId: { in: [progressDeckAId, progressDeckBId] } } });
-      await prisma.vocabWord.deleteMany({ where: { id: { in: progressWordIds } } });
-      await prisma.vocabDeck.deleteMany({ where: { id: { in: [progressDeckAId, progressDeckBId, emptyDeckId] } } });
+      await prisma.wordReviewLog.deleteMany({
+        where: { wordId: { in: progressWordIds } },
+      });
+      await prisma.userWordProgress.deleteMany({
+        where: { wordId: { in: progressWordIds } },
+      });
+      await prisma.vocabDeckWord.deleteMany({
+        where: { deckId: { in: [progressDeckAId, progressDeckBId] } },
+      });
+      await prisma.vocabWord.deleteMany({
+        where: { id: { in: progressWordIds } },
+      });
+      await prisma.vocabDeck.deleteMany({
+        where: { id: { in: [progressDeckAId, progressDeckBId, emptyDeckId] } },
+      });
       await prisma.vocabLibrary.delete({ where: { id: progressLibraryId } });
     }, 30000);
 
@@ -481,7 +657,12 @@ describe('LearningService (integration — real Postgres)', () => {
       });
       await prisma.userWordProgress.update({
         where: { userId_wordId: { userId, wordId: masteredWordId } },
-        data: { state: 'MASTERED', intervalDays: 30, repetitions: 5, nextReviewAt: new Date(Date.now() + 30 * 86400000) },
+        data: {
+          state: 'MASTERED',
+          intervalDays: 30,
+          repetitions: 5,
+          nextReviewAt: new Date(Date.now() + 30 * 86400000),
+        },
       });
       await service.submitReview(userId, sharedAcrossDecksWordId, {
         rating: 'GOOD',
@@ -514,9 +695,17 @@ describe('LearningService (integration — real Postgres)', () => {
 
     it('getDeckProgress 404s for a currently-unpublished deck', async () => {
       const userId = await createUser();
-      await prisma.vocabDeck.update({ where: { id: progressDeckBId }, data: { isPublished: false } });
-      await expect(service.getDeckProgress(userId, progressDeckBId)).rejects.toThrow(NotFoundException);
-      await prisma.vocabDeck.update({ where: { id: progressDeckBId }, data: { isPublished: true } }); // restore
+      await prisma.vocabDeck.update({
+        where: { id: progressDeckBId },
+        data: { isPublished: false },
+      });
+      await expect(
+        service.getDeckProgress(userId, progressDeckBId),
+      ).rejects.toThrow(NotFoundException);
+      await prisma.vocabDeck.update({
+        where: { id: progressDeckBId },
+        data: { isPublished: true },
+      }); // restore
     });
 
     it('an empty deck (zero visible words) returns an honest zeroed summary, never NaN or a crash', async () => {
@@ -539,7 +728,10 @@ describe('LearningService (integration — real Postgres)', () => {
       const userId = await createUser();
       await seedUserProgress(userId);
 
-      const result = await service.getLibraryProgress(userId, progressLibraryId);
+      const result = await service.getLibraryProgress(
+        userId,
+        progressLibraryId,
+      );
 
       // 6 distinct words total across both decks (sharedAcrossDecksWordId
       // counted once, not twice, even though it's attached to both decks).
@@ -553,14 +745,26 @@ describe('LearningService (integration — real Postgres)', () => {
       expect(deckA).toMatchObject({ totalWords: 6, newWords: 1 });
       // Deck B has only the one shared word, already REVIEW (rated via Deck
       // A's word) — proves progress is keyed on the word, not the deck.
-      expect(deckB).toMatchObject({ totalWords: 1, newWords: 0, reviewWords: 1 });
+      expect(deckB).toMatchObject({
+        totalWords: 1,
+        newWords: 0,
+        reviewWords: 1,
+      });
     });
 
     it('getLibraryProgress 404s for a currently-unpublished library', async () => {
       const userId = await createUser();
-      await prisma.vocabLibrary.update({ where: { id: progressLibraryId }, data: { isPublished: false } });
-      await expect(service.getLibraryProgress(userId, progressLibraryId)).rejects.toThrow(NotFoundException);
-      await prisma.vocabLibrary.update({ where: { id: progressLibraryId }, data: { isPublished: true } }); // restore
+      await prisma.vocabLibrary.update({
+        where: { id: progressLibraryId },
+        data: { isPublished: false },
+      });
+      await expect(
+        service.getLibraryProgress(userId, progressLibraryId),
+      ).rejects.toThrow(NotFoundException);
+      await prisma.vocabLibrary.update({
+        where: { id: progressLibraryId },
+        data: { isPublished: true },
+      }); // restore
     });
 
     // The counting rule that makes deck totals and the library total
@@ -568,7 +772,10 @@ describe('LearningService (integration — real Postgres)', () => {
     // intended asymmetry can't be "fixed" into a bug later.
     it('counts a word shared across two decks in BOTH deck totals but ONCE library-wide', async () => {
       const userId = await createUser();
-      const result = await service.getLibraryProgress(userId, progressLibraryId);
+      const result = await service.getLibraryProgress(
+        userId,
+        progressLibraryId,
+      );
 
       const deckA = result.decks.find((d) => d.deckId === progressDeckAId)!;
       const deckB = result.decks.find((d) => d.deckId === progressDeckBId)!;
@@ -580,7 +787,10 @@ describe('LearningService (integration — real Postgres)', () => {
       // ...but the library counts 6 DISTINCT words, not 7.
       expect(result.totalWords).toBe(6);
 
-      const sumOfDeckTotals = result.decks.reduce((sum, d) => sum + d.totalWords, 0);
+      const sumOfDeckTotals = result.decks.reduce(
+        (sum, d) => sum + d.totalWords,
+        0,
+      );
       expect(sumOfDeckTotals).toBeGreaterThan(result.totalWords);
     });
 
@@ -599,7 +809,10 @@ describe('LearningService (integration — real Postgres)', () => {
 
     it('a user who has rated nothing gets 0% on both percentages, not a fabricated number', async () => {
       const untouchedUser = await createUser();
-      const result = await service.getDeckProgress(untouchedUser, progressDeckAId);
+      const result = await service.getDeckProgress(
+        untouchedUser,
+        progressDeckAId,
+      );
 
       expect(result).toMatchObject({
         totalWords: 6,
@@ -618,7 +831,10 @@ describe('LearningService (integration — real Postgres)', () => {
       await seedUserProgress(studiedUser);
       const freshUser = await createUser();
 
-      const studied = await service.getDeckProgress(studiedUser, progressDeckAId);
+      const studied = await service.getDeckProgress(
+        studiedUser,
+        progressDeckAId,
+      );
       const fresh = await service.getDeckProgress(freshUser, progressDeckAId);
 
       expect(studied.newWords).toBe(1);
@@ -657,7 +873,12 @@ describe('LearningService (integration — real Postgres)', () => {
       const rows = await service.getLibrariesProgress(userId);
       const row = rows.find((r) => r.libraryId === libraryId);
 
-      expect(row).toMatchObject({ totalWords: 1, newWords: 0, reviewWords: 1, startedPercent: 100 });
+      expect(row).toMatchObject({
+        totalWords: 1,
+        newWords: 0,
+        reviewWords: 1,
+        startedPercent: 100,
+      });
       // Other libraries in the same response are unaffected by that rating.
       const others = rows.filter((r) => r.libraryId !== libraryId);
       for (const other of others) {
@@ -668,11 +889,17 @@ describe('LearningService (integration — real Postgres)', () => {
     it('excludes an unpublished library entirely, then includes it again once republished', async () => {
       const userId = await createUser();
 
-      await prisma.vocabLibrary.update({ where: { id: libraryId }, data: { isPublished: false } });
+      await prisma.vocabLibrary.update({
+        where: { id: libraryId },
+        data: { isPublished: false },
+      });
       const hidden = await service.getLibrariesProgress(userId);
       expect(hidden.find((r) => r.libraryId === libraryId)).toBeUndefined();
 
-      await prisma.vocabLibrary.update({ where: { id: libraryId }, data: { isPublished: true } });
+      await prisma.vocabLibrary.update({
+        where: { id: libraryId },
+        data: { isPublished: true },
+      });
       const restored = await service.getLibrariesProgress(userId);
       expect(restored.find((r) => r.libraryId === libraryId)).toBeDefined();
     });

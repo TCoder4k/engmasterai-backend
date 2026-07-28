@@ -1,4 +1,15 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Query, Req, UseGuards, ValidationPipe } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  ParseUUIDPipe,
+  Post,
+  Query,
+  Req,
+  UseGuards,
+  ValidationPipe,
+} from '@nestjs/common';
 import { LearningService } from './learning.service';
 import { SubmitReviewDto } from './dto/submit-review.dto';
 import { QueryDueReviewsDto } from './dto/query-due-reviews.dto';
@@ -30,7 +41,10 @@ export class LearningController {
   @UseGuards(JwtAuthGuard, LearningRateLimitGuard)
   @LearningRateLimit({ kind: 'queue', max: 60, windowSeconds: 60 })
   @Get('words/:wordId/progress')
-  async getWordProgress(@Param('wordId', ParseUUIDPipe) wordId: string, @Req() req) {
+  async getWordProgress(
+    @Param('wordId', ParseUUIDPipe) wordId: string,
+    @Req() req,
+  ) {
     return this.learningService.getWordProgress(req.user.userId, wordId);
   }
 
@@ -52,7 +66,10 @@ export class LearningController {
   @UseGuards(JwtAuthGuard, LearningRateLimitGuard)
   @LearningRateLimit({ kind: 'queue', max: 60, windowSeconds: 60 })
   @Get('decks/:deckId/progress')
-  async getDeckProgress(@Param('deckId', ParseUUIDPipe) deckId: string, @Req() req) {
+  async getDeckProgress(
+    @Param('deckId', ParseUUIDPipe) deckId: string,
+    @Req() req,
+  ) {
     return this.learningService.getDeckProgress(req.user.userId, deckId);
   }
 
@@ -66,13 +83,18 @@ export class LearningController {
   @LearningRateLimit({ kind: 'queue', max: 60, windowSeconds: 60 })
   @Get('libraries/progress')
   async getLibrariesProgress(@Req() req) {
-    return { data: await this.learningService.getLibrariesProgress(req.user.userId) };
+    return {
+      data: await this.learningService.getLibrariesProgress(req.user.userId),
+    };
   }
 
   @UseGuards(JwtAuthGuard, LearningRateLimitGuard)
   @LearningRateLimit({ kind: 'queue', max: 60, windowSeconds: 60 })
   @Get('libraries/:libraryId/progress')
-  async getLibraryProgress(@Param('libraryId', ParseUUIDPipe) libraryId: string, @Req() req) {
+  async getLibraryProgress(
+    @Param('libraryId', ParseUUIDPipe) libraryId: string,
+    @Req() req,
+  ) {
     return this.learningService.getLibraryProgress(req.user.userId, libraryId);
   }
 }

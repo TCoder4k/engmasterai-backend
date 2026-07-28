@@ -29,8 +29,10 @@ export function startOfDayInTimeZone(instant: Date, timeZone: string): Date {
     hour12: false,
   });
   const parts = timeFormatter.formatToParts(guess);
-  const get = (type: string): number => Number(parts.find((p) => p.type === type)?.value ?? '0');
-  const msIntoDay = ((get('hour') % 24) * 3600 + get('minute') * 60 + get('second')) * 1000;
+  const get = (type: string): number =>
+    Number(parts.find((p) => p.type === type)?.value ?? '0');
+  const msIntoDay =
+    ((get('hour') % 24) * 3600 + get('minute') * 60 + get('second')) * 1000;
 
   guess = new Date(guess.getTime() - msIntoDay);
   return guess;

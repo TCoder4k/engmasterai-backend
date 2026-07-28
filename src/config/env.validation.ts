@@ -315,6 +315,15 @@ export const envValidationSchema = Joi.object({
   // such requests instead (no mail call at all), for deployments prioritizing
   // minimal outbound email. Either way the API response is unaffected.
   PASSWORD_RESET_GOOGLE_NOTICE_ENABLED: Joi.boolean().default(true),
+
+  // Sprint 06B — Lesson Quiz Engine. Fallback used whenever a quiz's own
+  // LessonTask.passingScorePercent is null; never a hardcoded 80% in code.
+  // A per-quiz override always wins over this default (see QuizService).
+  QUIZ_DEFAULT_PASSING_SCORE_PERCENT: Joi.number()
+    .integer()
+    .min(1)
+    .max(100)
+    .default(70),
 })
   // Cloudinary/other unrelated vars are intentionally out of this sprint's
   // scope (see docs/sprints/sprint-01C-security-hardening.md) — `unknown`

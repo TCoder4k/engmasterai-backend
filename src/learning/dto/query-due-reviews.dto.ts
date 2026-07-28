@@ -1,5 +1,13 @@
 import { Transform, Type } from 'class-transformer';
-import { IsBoolean, IsInt, IsOptional, IsTimeZone, IsUUID, Max, Min } from 'class-validator';
+import {
+  IsBoolean,
+  IsInt,
+  IsOptional,
+  IsTimeZone,
+  IsUUID,
+  Max,
+  Min,
+} from 'class-validator';
 
 // Same reasoning as every other list/query DTO in this codebase: the
 // app-wide ValidationPipe (main.ts) doesn't enable `transform`, so the

@@ -14,6 +14,31 @@ import { TEST_FIXTURE_PREFIX } from './test-database.util';
 export async function sweepTestFixtures(): Promise<void> {
   const prisma = new PrismaClient();
   try {
+    // Sprint 06B (Lesson Quiz Engine) — swept FIRST, before the user sweep
+    // below. LessonTaskProgress.user cascades on user delete, so in the
+    // common case this step is redundant with that cascade — but
+    // LessonTask.lesson and Question.task are both `Restrict` (the
+    // default), so a fixture lesson carrying a question could otherwise
+    // survive the `lesson.deleteMany` below and poison every later run.
+    // Matched by lesson/course title exactly like the lesson sweep further
+    // down, not by user, so an orphaned row from an interrupted earlier run
+    // is swept too.
+    const fixtureLessonWhere = {
+      OR: [
+        { title: { startsWith: TEST_FIXTURE_PREFIX } },
+        { course: { title: { startsWith: TEST_FIXTURE_PREFIX } } },
+      ],
+    };
+    await prisma.lessonTaskProgress.deleteMany({
+      where: { task: { lesson: fixtureLessonWhere } },
+    });
+    await prisma.question.deleteMany({
+      where: { task: { lesson: fixtureLessonWhere } },
+    });
+    await prisma.lessonTask.deleteMany({
+      where: { lesson: fixtureLessonWhere },
+    });
+
     // Users first. `User` cascades to UserWordProgress and WordReviewLog,
     // and clearing those is what makes the words deletable at all — both
     // word relations are `onDelete: Restrict` precisely so that real

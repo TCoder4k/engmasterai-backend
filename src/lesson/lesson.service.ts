@@ -3,6 +3,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { LessonTaskType } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateLessonDto } from './dto/create-lesson.dto';
 import { UpdateLessonDto } from './dto/update-lesson.dto';
@@ -22,11 +23,24 @@ const USER_SELECT = {
   orderIndex: true,
   createdAt: true,
   updatedAt: true,
+  // Sprint 06B — additive, non-breaking: tells a student whether this
+  // lesson has a live quiz (`services/lessonProgress.ts`'s `availableStages`
+  // reads it), without exposing anything about draft content. Counts
+  // published QUIZ tasks specifically, not tasks in general — "Quiz is one
+  // kind of LessonTask; LessonTask is not a synonym for Quiz."
+  _count: {
+    select: {
+      tasks: { where: { isPublished: true, type: LessonTaskType.QUIZ } },
+    },
+  },
 };
 
 const MANAGE_SELECT = {
   ...USER_SELECT,
   isPublished: true,
+  // Overrides USER_SELECT's filtered _count — admins keep seeing the true
+  // total task count (drafts included), matching MANAGE_SELECT's existing
+  // pattern for isPublished.
   _count: {
     select: { tasks: true },
   },
