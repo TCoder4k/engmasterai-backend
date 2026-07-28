@@ -808,6 +808,101 @@ describe('Lesson Quiz Engine (e2e) — Sprint 06B', () => {
         ).quiz.questions.every((q) => q.answered === null),
       ).toBe(true);
     });
+
+    // Regression: the GET used to withhold the in-flight attempt id, so a
+    // client that lost its sessionStorage draft (new tab, restored session,
+    // cleared storage) minted a fresh one. The answer endpoint treats an
+    // unrecognised id as a retake and starts the record over, so every
+    // answer already recorded was silently discarded — and submit then
+    // rejected the attempt as incomplete for questions the student could
+    // plainly see marked as answered.
+    it('hands back the in-flight attempt id so a client that lost its draft resumes the same attempt', async () => {
+      const student = await registerAndLogin('imm-resume');
+      const original = randomUUID();
+      const correct = allCorrectAnswers(questionIds);
+
+      await request(app.getHttpServer())
+        .get(`/lessons/${lessonId}/quiz`)
+        .set('Authorization', `Bearer ${student.token}`)
+        .expect(200);
+
+      // Answer the first half under the original id.
+      for (const answer of correct.slice(0, 2)) {
+        await request(app.getHttpServer())
+          .post(`/lessons/${lessonId}/quiz/answer`)
+          .set('Authorization', `Bearer ${student.token}`)
+          .send(answerBody(original, answer.questionId, answer.submitted))
+          .expect(201);
+      }
+
+      // What a reloaded client sees. The id must come back, because that is
+      // the only way it can keep answering into the same record.
+      const resumed = await request(app.getHttpServer())
+        .get(`/lessons/${lessonId}/quiz`)
+        .set('Authorization', `Bearer ${student.token}`)
+        .expect(200);
+      const resumedQuiz = (
+        resumed.body as {
+          quiz: { currentAttemptId: string | null; questions: { answered: unknown }[] };
+        }
+      ).quiz;
+      expect(resumedQuiz.currentAttemptId).toBe(original);
+      expect(resumedQuiz.questions.filter((q) => q.answered !== null)).toHaveLength(2);
+
+      // Finish using the id the server handed back, exactly as the client does.
+      for (const answer of correct.slice(2)) {
+        await request(app.getHttpServer())
+          .post(`/lessons/${lessonId}/quiz/answer`)
+          .set('Authorization', `Bearer ${student.token}`)
+          .send(
+            answerBody(
+              resumedQuiz.currentAttemptId as string,
+              answer.questionId,
+              answer.submitted,
+            ),
+          )
+          .expect(201);
+      }
+
+      const finish = await request(app.getHttpServer())
+        .post(`/lessons/${lessonId}/quiz/submit`)
+        .set('Authorization', `Bearer ${student.token}`)
+        .send({ clientAttemptId: original })
+        .expect(201);
+      expect((finish.body as { correctCount: number }).correctCount).toBe(4);
+    });
+
+    it('still treats a genuinely new attempt id as a retake, discarding the half-finished record', async () => {
+      const student = await registerAndLogin('imm-retake');
+      const first = randomUUID();
+      const correct = allCorrectAnswers(questionIds);
+
+      for (const answer of correct.slice(0, 3)) {
+        await request(app.getHttpServer())
+          .post(`/lessons/${lessonId}/quiz/answer`)
+          .set('Authorization', `Bearer ${student.token}`)
+          .send(answerBody(first, answer.questionId, answer.submitted))
+          .expect(201);
+      }
+
+      // A different id means "start over" — that behaviour is deliberate and
+      // is what makes retake work; the fix above is that clients no longer
+      // trigger it by accident.
+      const second = randomUUID();
+      const afterRetake = await request(app.getHttpServer())
+        .post(`/lessons/${lessonId}/quiz/answer`)
+        .set('Authorization', `Bearer ${student.token}`)
+        .send(answerBody(second, correct[0].questionId, correct[0].submitted))
+        .expect(201);
+      expect((afterRetake.body as { answeredCount: number }).answeredCount).toBe(1);
+
+      const blocked = await request(app.getHttpServer())
+        .post(`/lessons/${lessonId}/quiz/submit`)
+        .set('Authorization', `Bearer ${student.token}`)
+        .send({ clientAttemptId: second })
+        .expect(400);
+      expect((blocked.body as { message: string }).message).toContain('3');
+    });
   });
 
   describe('Deletion', () => {

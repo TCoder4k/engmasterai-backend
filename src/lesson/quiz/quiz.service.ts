@@ -239,8 +239,8 @@ export class QuizService {
       return existing;
     });
 
-    const recorded =
-      readCurrentAttempt(progress.currentAttemptAnswers)?.answers ?? {};
+    const currentAttempt = readCurrentAttempt(progress.currentAttemptAnswers);
+    const recorded = currentAttempt?.answers ?? {};
     const answeredIds = Object.keys(recorded);
 
     // Invariant 9 (Sprint 06B.5): correct answers are fetched in a SECOND,
@@ -288,6 +288,10 @@ export class QuizService {
         passingScorePercent:
           task.passingScorePercent ?? this.defaultPassingScorePercent,
         feedbackMode: task.feedbackMode,
+        // Handed back so a client that lost its draft resumes the SAME
+        // attempt instead of minting an id the answer endpoint would treat
+        // as a retake — see StudentQuizDto.
+        currentAttemptId: currentAttempt?.clientAttemptId ?? null,
         questions,
       },
       progress: {

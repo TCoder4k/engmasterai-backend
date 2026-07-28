@@ -45,6 +45,18 @@ export interface StudentQuizDto {
   taskId: string;
   passingScorePercent: number;
   feedbackMode: QuizFeedbackMode;
+  /**
+   * The `clientAttemptId` the server is currently recording answers against,
+   * or null when no attempt is in flight.
+   *
+   * The client MUST adopt this when present. The answer endpoint starts the
+   * record over whenever it is handed an id it does not recognise, so a
+   * client that invents a fresh id after losing its sessionStorage draft
+   * would silently discard every answer already recorded — and then be
+   * rejected at submit for questions it believes it answered. Handing the id
+   * back is what makes resume-after-refresh actually resume.
+   */
+  currentAttemptId: string | null;
   questions: StudentQuestionDto[];
 }
 

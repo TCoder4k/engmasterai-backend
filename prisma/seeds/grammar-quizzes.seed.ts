@@ -1,4 +1,4 @@
-import { PrismaClient, QuestionType } from '@prisma/client';
+import { Prisma, PrismaClient, QuestionType } from '@prisma/client';
 import { validateQuestionContent } from '../../src/lesson/quiz/grade-question';
 
 // Seed script for the four published Grammar lessons' quizzes.
@@ -550,9 +550,13 @@ const seedOne = async (seed: SeedQuiz): Promise<void> => {
     // Cleared so a student mid-quiz starts cleanly against the new set.
     // Deliberately does NOT touch attemptsCount/score/completedAt — that is
     // real history and this script has no business rewriting it.
+    //
+    // `Prisma.DbNull`, NOT `undefined`: on a Json column `undefined` means
+    // "leave this field alone", so the original version of this line silently
+    // did nothing and left every stale attempt record in place.
     await tx.lessonTaskProgress.updateMany({
       where: { taskId: task.id },
-      data: { currentAttemptAnswers: undefined, currentAttemptSeed: null },
+      data: { currentAttemptAnswers: Prisma.DbNull, currentAttemptSeed: null },
     });
   });
 
