@@ -401,6 +401,30 @@ model LessonTaskProgress {
   // recorded by option id, so correctness was never at risk — only display.
   currentAttemptSeed String?
 
+  // Sprint 06C — Trap Hunter. The remedial pass over the mistakes of the
+  // most recent COMPLETED attempt, shaped
+  //   { sourceAttemptId, traps: { [questionId]: { attempts, hintLevel, clearedAt } } }
+  //
+  // Distinct from all three neighbours above, and the distinction is the
+  // whole design: currentAttemptAnswers is the IN-FLIGHT quiz attempt,
+  // lastAnswers/lastSubmitResult are the COMPLETED one, and this is the
+  // correction round over that completed attempt's wrong answers. The traps
+  // themselves are never stored — they are derived from
+  // lastSubmitResult.results.filter(r => !r.isCorrect), so a trap can never
+  // disagree with the attempt that produced it.
+  //
+  // Holding sourceAttemptId INSIDE the JSON makes a quiz retake
+  // self-detecting without another column (the same trick Sprint 06B.5 used
+  // for currentAttemptAnswers): once it stops matching lastClientAttemptId,
+  // this state belongs to a superseded attempt and starts over.
+  //
+  // THIS IS THE ONLY FIELD TRAP HUNTER WRITES. score, maxScore,
+  // attemptsCount, completedAt, lastAnswers, lastSubmitResult and
+  // currentAttemptAnswers all belong to the quiz's own scoring; writing to
+  // any of them from the correction round would be duplicated scoring, and
+  // would let a student inflate a quiz result by grinding traps.
+  trapHunterState Json?
+
   // Sprint 06B — CHANGED from the implicit default (Restrict) to Cascade.
   // Without this, test/test-fixture-sweep.ts's user-first sweep order makes
   // the FIRST e2e test that records a quiz attempt throw P2003 and poison

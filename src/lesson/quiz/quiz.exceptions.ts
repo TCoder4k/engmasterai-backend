@@ -69,3 +69,30 @@ export class QuizNotImmediateFeedbackException extends BadRequestException {
     );
   }
 }
+
+// Sprint 06C — Trap Hunter reached before any quiz attempt has been
+// finished. Traps are derived from a COMPLETED attempt's recorded mistakes,
+// so there is genuinely nothing to correct yet. Refused rather than answered
+// with an empty set, which would look identical to "you made no mistakes"
+// and is the opposite message.
+export class TrapHunterNotAvailableException extends BadRequestException {
+  constructor() {
+    super(
+      'Finish the quiz first — Trap Hunter works from the questions you got wrong.',
+    );
+  }
+}
+
+// Sprint 06C — a hint level this question cannot offer. Levels are built
+// only from authored content (see trap-hints.ts), so asking past the end
+// means the client is out of sync, not that a hint should be invented to
+// satisfy it.
+export class TrapHintUnavailableException extends BadRequestException {
+  constructor(level: number, available: number) {
+    super(
+      available === 0
+        ? 'This question has no hints available.'
+        : `Hint level ${level} does not exist for this question (${available} available).`,
+    );
+  }
+}

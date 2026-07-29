@@ -9,7 +9,16 @@ import { SetMetadata } from '@nestjs/common';
 // 'submit': under IMMEDIATE feedback one request per question is ordinary
 // traffic, so the submit bucket's ceiling would throttle honest students
 // working through a long quiz.
-export type QuizRateLimitKind = 'read' | 'answer' | 'submit' | 'manage';
+// 'trap' (Sprint 06C) is its own kind for the same reason 'answer' is: a
+// correction round is one request per trap plus one per hint, so sharing
+// 'submit''s tight bucket would throttle a student doing exactly what the
+// stage asks of them.
+export type QuizRateLimitKind =
+  | 'read'
+  | 'answer'
+  | 'trap'
+  | 'submit'
+  | 'manage';
 
 export interface QuizRateLimitPolicy {
   kind: QuizRateLimitKind;

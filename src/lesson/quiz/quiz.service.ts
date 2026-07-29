@@ -13,6 +13,13 @@ import {
   QuestionOption,
   validateQuestionContent,
 } from './grade-question';
+// Sprint 06C — both extracted so TrapHunterService shares them rather than
+// growing its own near-copy of a 404 policy and a seeded shuffle.
+import { seededShuffle } from './seeded-shuffle';
+import {
+  assertCourseAccessible,
+  assertLessonVisible,
+} from './lesson-visibility';
 import {
   InvalidQuestionContentException,
   QuizAttemptIncompleteException,
@@ -67,38 +74,6 @@ const stableStringify = (value: unknown): string => {
     return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${stableStringify(v)}`).join(',')}}`;
   }
   return JSON.stringify(value);
-};
-
-// Fisher-Yates over a seeded PRNG. Used only to shuffle ORDERING option
-// DISPLAY order — the correct order lives in Question.correctAnswer, which
-// this function never touches and which the student response never carries.
-//
-// Seeded (Sprint 06B.5) rather than random-per-call so the order stays
-// stable for the life of one attempt: an unseeded shuffle would visibly
-// re-order the options under an already-graded question on every refresh.
-const seededShuffle = <T>(items: T[], seed: string): T[] => {
-  // xmur3 string hash → mulberry32 PRNG. Small, dependency-free, and more
-  // than good enough for display ordering (no security property rests on it).
-  let h = 1779033703 ^ seed.length;
-  for (let i = 0; i < seed.length; i++) {
-    h = Math.imul(h ^ seed.charCodeAt(i), 3432918353);
-    h = (h << 13) | (h >>> 19);
-  }
-  let state = (h ^= h >>> 16) >>> 0;
-  const next = (): number => {
-    state = (state + 0x6d2b79f5) >>> 0;
-    let t = state;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-
-  const result = [...items];
-  for (let i = result.length - 1; i > 0; i--) {
-    const j = Math.floor(next() * (i + 1));
-    [result[i], result[j]] = [result[j], result[i]];
-  }
-  return result;
 };
 
 // Sprint 06B.5 — the shape stored in LessonTaskProgress.currentAttemptAnswers.
@@ -156,18 +131,10 @@ export class QuizService {
     return this.config.get<number>('QUIZ_DEFAULT_PASSING_SCORE_PERCENT', 70);
   }
 
-  // Same anti-probing shape as LessonService.findOnePublished: a 404 here
-  // never distinguishes "lesson doesn't exist" from "lesson/course is a
-  // draft", so an authenticated caller can't use this endpoint to enumerate
-  // unpublished content.
-  private async assertLessonVisible(lessonId: string): Promise<void> {
-    const lesson = await this.prisma.lesson.findUnique({
-      where: { id: lessonId },
-      select: { isPublished: true, course: { select: { isPublished: true } } },
-    });
-    if (!lesson || !lesson.isPublished || !lesson.course.isPublished) {
-      throw new NotFoundException(`Quiz for lesson ${lessonId} not found`);
-    }
+  // Delegates to the shared helper (Sprint 06C) — kept as a method so every
+  // call site below reads unchanged.
+  private assertLessonVisible(lessonId: string): Promise<void> {
+    return assertLessonVisible(this.prisma, lessonId);
   }
 
   private async assertLessonExists(lessonId: string): Promise<void> {
@@ -179,14 +146,8 @@ export class QuizService {
       throw new NotFoundException(`Lesson with ID ${lessonId} not found`);
   }
 
-  private async assertCourseAccessible(courseId: string): Promise<void> {
-    const course = await this.prisma.course.findUnique({
-      where: { id: courseId },
-      select: { isPublished: true },
-    });
-    if (!course || !course.isPublished) {
-      throw new NotFoundException(`Course with ID ${courseId} not found`);
-    }
+  private assertCourseAccessible(courseId: string): Promise<void> {
+    return assertCourseAccessible(this.prisma, courseId);
   }
 
   // GET /lessons/:lessonId/quiz (student). Same 404 whether the lesson,
