@@ -49,6 +49,12 @@ lerna-debug.log*
 .temp
 .tmp
 
+# Throwaway one-off scripts and everything tsc emits for them. The existing
+# .tmp entry above only matches a file or directory literally named ".tmp",
+# so a dbcheck.tmp.js/.d.ts/.js.map trio was committed by accident in 2cdcb5f.
+# The trailing .* is what catches the .js.map, which *.tmp.js does not.
+*.tmp.*
+
 # Runtime data
 pids
 *.pid
