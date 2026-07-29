@@ -23,15 +23,22 @@ const USER_SELECT = {
   orderIndex: true,
   createdAt: true,
   updatedAt: true,
-  // Sprint 06B — additive, non-breaking: tells a student whether this
-  // lesson has a live quiz (`services/lessonProgress.ts`'s `availableStages`
-  // reads it), without exposing anything about draft content. Counts
-  // published QUIZ tasks specifically, not tasks in general — "Quiz is one
-  // kind of LessonTask; LessonTask is not a synonym for Quiz."
-  _count: {
-    select: {
-      tasks: { where: { isPublished: true, type: LessonTaskType.QUIZ } },
-    },
+  // Sprint 06D — REPLACES the Sprint 06B `_count.tasks` signal, which
+  // counted published QUIZ tasks only.
+  //
+  // That field could not be extended. Prisma cannot express two
+  // differently-filtered counts of the SAME relation in one `_count`, so
+  // there was nowhere to put "this lesson also has a published Practice
+  // task" — and the name already meant two different things, since
+  // MANAGE_SELECT below overrides it with the unfiltered total.
+  //
+  // An explicit list of published task types says what it is, extends to
+  // every future task type for free (Vocabulary, Listening, Writing…), and
+  // leaks nothing about draft content. `services/lessonProgress.ts` derives
+  // both `lessonHasQuiz` and `lessonHasPractice` from it.
+  tasks: {
+    where: { isPublished: true },
+    select: { type: true },
   },
 };
 
@@ -44,6 +51,27 @@ const MANAGE_SELECT = {
   _count: {
     select: { tasks: true },
   },
+};
+
+// Sprint 06D — flattens the filtered `tasks` relation into the flat
+// `publishedTaskTypes` array the client actually consumes, so no caller has
+// to know that the signal arrives as a list of row fragments. Deduplicated
+// because @@unique([lessonId, type]) makes one row per type the rule, and a
+// client asking "does this lesson have a quiz" should not care either way.
+type WithTaskTypes<T> = Omit<T, 'tasks'> & {
+  publishedTaskTypes: LessonTaskType[];
+};
+
+const withPublishedTaskTypes = <
+  T extends { tasks: { type: LessonTaskType }[] },
+>(
+  lesson: T,
+): WithTaskTypes<T> => {
+  const { tasks, ...rest } = lesson;
+  return {
+    ...rest,
+    publishedTaskTypes: [...new Set(tasks.map((task) => task.type))],
+  };
 };
 
 @Injectable()
@@ -59,7 +87,7 @@ export class LessonService {
       select: USER_SELECT,
     });
 
-    return { data: lessons };
+    return { data: lessons.map(withPublishedTaskTypes) };
   }
 
   async findOnePublished(id: string, user: { userId: string }) {
@@ -79,7 +107,7 @@ export class LessonService {
     }
 
     const { isPublished, course, ...publicLesson } = lesson;
-    return publicLesson;
+    return withPublishedTaskTypes(publicLesson);
   }
 
   async findAllByCourseManage(courseId: string) {

@@ -5,7 +5,13 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { randomUUID } from 'crypto';
-import { Prisma, QuizFeedbackMode, TaskProgressStatus } from '@prisma/client';
+import {
+  LessonTaskProgress,
+  LessonTaskType,
+  Prisma,
+  QuizFeedbackMode,
+  TaskProgressStatus,
+} from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { UpsertQuizDto, SubmitQuizDto, AnswerQuestionDto } from './dto';
 import {
@@ -103,6 +109,16 @@ const readCurrentAttempt = (value: unknown): CurrentAttempt | null => {
   };
 };
 
+// Sprint 06D — task types are a parameter now, so a 404 must not say "Quiz"
+// for a Practice task. Only the two question-bearing types are nameable here;
+// nothing else reaches this engine.
+const TASK_LABEL: Partial<Record<LessonTaskType, string>> = {
+  QUIZ: 'Quiz',
+  PRACTICE: 'Practice',
+};
+const taskLabel = (taskType: LessonTaskType): string =>
+  TASK_LABEL[taskType] ?? 'Task';
+
 // Consecutive correct answers ending at the most recently answered question.
 // Ordered by answeredAt (not question order) so the number means what a
 // student would call "in a row" even if they navigated back and forth.
@@ -150,16 +166,24 @@ export class QuizService {
     return assertCourseAccessible(this.prisma, courseId);
   }
 
-  // GET /lessons/:lessonId/quiz (student). Same 404 whether the lesson,
-  // course, or quiz itself is missing/unpublished.
-  async getStudentQuiz(
-    lessonId: string,
-    userId: string,
-  ): Promise<GetQuizResponseDto> {
-    await this.assertLessonVisible(lessonId);
-
+  // Sprint 06D — the student read path, split in two.
+  //
+  // readStudentTask() NEVER WRITES. startStudentAttempt() is the only thing
+  // that stamps an attempt clock or mints a shuffle seed.
+  //
+  // The quiz composes both, because its GET has always started an attempt and
+  // that behaviour is deliberately unchanged. Advanced Practice calls them
+  // separately, so rendering its intro screen cannot record an attempt the
+  // student never began — which is the whole reason for the split, since
+  // reusing the composed version would have started a clock on a screen whose
+  // only button is "Start Practice".
+  //
+  // It is also why neither method needs to know which task type it serves:
+  // the difference between the quiz and practice is which of the two a caller
+  // composes, not a branch inside either.
+  private async resolveStudentTask(lessonId: string, taskType: LessonTaskType) {
     const task = await this.prisma.lessonTask.findFirst({
-      where: { lessonId, type: 'QUIZ', isPublished: true },
+      where: { lessonId, type: taskType, isPublished: true },
       select: {
         id: true,
         passingScorePercent: true,
@@ -171,7 +195,49 @@ export class QuizService {
       },
     });
     if (!task)
-      throw new NotFoundException(`Quiz for lesson ${lessonId} not found`);
+      throw new NotFoundException(
+        `${taskLabel(taskType)} for lesson ${lessonId} not found`,
+      );
+    return task;
+  }
+
+  // GET /lessons/:lessonId/quiz (student). Same 404 whether the lesson,
+  // course, or quiz itself is missing/unpublished.
+  async getStudentQuiz(
+    lessonId: string,
+    userId: string,
+  ): Promise<GetQuizResponseDto> {
+    return this.startStudentAttempt(lessonId, userId, LessonTaskType.QUIZ);
+  }
+
+  // Read-only. Returns exactly what the student is entitled to see given the
+  // state already stored — and stores nothing itself. Safe to call from an
+  // intro screen, a stage tile, or any surface that must not have side
+  // effects.
+  async readStudentTask(
+    lessonId: string,
+    userId: string,
+    taskType: LessonTaskType,
+  ): Promise<GetQuizResponseDto> {
+    await this.assertLessonVisible(lessonId);
+    const task = await this.resolveStudentTask(lessonId, taskType);
+    const progress = await this.prisma.lessonTaskProgress.findUnique({
+      where: { userId_taskId: { userId, taskId: task.id } },
+    });
+    return this.buildStudentTaskView(task, progress);
+  }
+
+  // The write half. Idempotent by design: an attempt already in flight is
+  // returned untouched, so a refresh, a double-click or a retried request
+  // never restarts the clock or reshuffles a question the student is already
+  // looking at.
+  async startStudentAttempt(
+    lessonId: string,
+    userId: string,
+    taskType: LessonTaskType,
+  ): Promise<GetQuizResponseDto> {
+    await this.assertLessonVisible(lessonId);
+    const task = await this.resolveStudentTask(lessonId, taskType);
 
     const now = new Date();
     const progress = await this.prisma.$transaction(async (tx) => {
@@ -200,7 +266,19 @@ export class QuizService {
       return existing;
     });
 
-    const currentAttempt = readCurrentAttempt(progress.currentAttemptAnswers);
+    return this.buildStudentTaskView(task, progress);
+  }
+
+  // Shared by both paths above. `progress` is nullable because the read path
+  // must describe a task the student has never opened WITHOUT creating a row
+  // for it.
+  private async buildStudentTaskView(
+    task: Awaited<ReturnType<QuizService['resolveStudentTask']>>,
+    progress: LessonTaskProgress | null,
+  ): Promise<GetQuizResponseDto> {
+    const currentAttempt = readCurrentAttempt(
+      progress?.currentAttemptAnswers ?? null,
+    );
     const recorded = currentAttempt?.answers ?? {};
     const answeredIds = Object.keys(recorded);
 
@@ -218,7 +296,11 @@ export class QuizService {
         : [];
     const answeredContentById = new Map(answeredContent.map((q) => [q.id, q]));
 
-    const seed = progress.currentAttemptSeed ?? progress.id;
+    // With no progress row yet (read path, never opened) the task id is a
+    // stable stand-in: the shuffle has to be deterministic per request, and
+    // startStudentAttempt mints the real per-attempt seed the moment the
+    // student actually begins.
+    const seed = progress?.currentAttemptSeed ?? progress?.id ?? task.id;
     const questions = task.questions.map((q) => {
       const record = recorded[q.id];
       const content = answeredContentById.get(q.id);
@@ -255,14 +337,17 @@ export class QuizService {
         currentAttemptId: currentAttempt?.clientAttemptId ?? null,
         questions,
       },
+      // A missing row is a real zero-state, not a gap to guess at: never
+      // opened means no attempts, no best score and not passed. Derived, not
+      // persisted — the read path must not create a row just to describe one.
       progress: {
-        attemptsCount: progress.attemptsCount,
+        attemptsCount: progress?.attemptsCount ?? 0,
         bestScorePercent:
-          progress.attemptsCount > 0 && progress.maxScore > 0
+          progress && progress.attemptsCount > 0 && progress.maxScore > 0
             ? Math.floor((progress.score / progress.maxScore) * 100)
             : null,
-        passed: progress.completedAt !== null,
-        lastDurationSeconds: progress.lastDurationSeconds,
+        passed: progress?.completedAt != null,
+        lastDurationSeconds: progress?.lastDurationSeconds ?? null,
       },
     };
   }
@@ -278,10 +363,19 @@ export class QuizService {
     userId: string,
     dto: AnswerQuestionDto,
   ): Promise<AnswerQuestionResponseDto> {
+    return this.answerTaskQuestion(lessonId, userId, LessonTaskType.QUIZ, dto);
+  }
+
+  async answerTaskQuestion(
+    lessonId: string,
+    userId: string,
+    taskType: LessonTaskType,
+    dto: AnswerQuestionDto,
+  ): Promise<AnswerQuestionResponseDto> {
     await this.assertLessonVisible(lessonId);
 
     const task = await this.prisma.lessonTask.findFirst({
-      where: { lessonId, type: 'QUIZ', isPublished: true },
+      where: { lessonId, type: taskType, isPublished: true },
       select: {
         id: true,
         feedbackMode: true,
@@ -292,7 +386,9 @@ export class QuizService {
       },
     });
     if (!task)
-      throw new NotFoundException(`Quiz for lesson ${lessonId} not found`);
+      throw new NotFoundException(
+        `${taskLabel(taskType)} for lesson ${lessonId} not found`,
+      );
     if (task.feedbackMode !== QuizFeedbackMode.IMMEDIATE) {
       throw new QuizNotImmediateFeedbackException();
     }
@@ -300,7 +396,7 @@ export class QuizService {
     const question = task.questions.find((q) => q.id === dto.questionId);
     if (!question)
       throw new NotFoundException(
-        `Question ${dto.questionId} does not belong to this quiz`,
+        `Question ${dto.questionId} does not belong to this ${taskLabel(taskType).toLowerCase()}`,
       );
 
     const totalCount = task.questions.length;
@@ -383,10 +479,19 @@ export class QuizService {
     userId: string,
     dto: SubmitQuizDto,
   ): Promise<SubmitQuizResponseDto> {
+    return this.submitTask(lessonId, userId, LessonTaskType.QUIZ, dto);
+  }
+
+  async submitTask(
+    lessonId: string,
+    userId: string,
+    taskType: LessonTaskType,
+    dto: SubmitQuizDto,
+  ): Promise<SubmitQuizResponseDto> {
     await this.assertLessonVisible(lessonId);
 
     const task = await this.prisma.lessonTask.findFirst({
-      where: { lessonId, type: 'QUIZ', isPublished: true },
+      where: { lessonId, type: taskType, isPublished: true },
       select: {
         id: true,
         passingScorePercent: true,
@@ -398,13 +503,15 @@ export class QuizService {
       },
     });
     if (!task)
-      throw new NotFoundException(`Quiz for lesson ${lessonId} not found`);
+      throw new NotFoundException(
+        `${taskLabel(taskType)} for lesson ${lessonId} not found`,
+      );
 
     const isImmediate = task.feedbackMode === QuizFeedbackMode.IMMEDIATE;
 
     if (!isImmediate && (!dto.answers || dto.answers.length === 0)) {
       throw new BadRequestException(
-        'answers must contain at least 1 element for a quiz that grades on submit.',
+        `answers must contain at least 1 element for a ${taskLabel(taskType).toLowerCase()} that grades on submit.`,
       );
     }
 
@@ -552,10 +659,24 @@ export class QuizService {
     userId: string,
   ): Promise<CourseQuizProgressRowDto[]> {
     await this.assertCourseAccessible(courseId);
+    return this.collectCourseTaskProgress(
+      courseId,
+      userId,
+      LessonTaskType.QUIZ,
+    );
+  }
 
+  // Sprint 06D — the visibility check is the CALLER's responsibility here, so
+  // the aggregated stage-progress endpoint can check the course once and then
+  // roll up several task types without repeating it per type.
+  async collectCourseTaskProgress(
+    courseId: string,
+    userId: string,
+    taskType: LessonTaskType,
+  ): Promise<CourseQuizProgressRowDto[]> {
     const tasks = await this.prisma.lessonTask.findMany({
       where: {
-        type: 'QUIZ',
+        type: taskType,
         isPublished: true,
         lesson: { courseId, isPublished: true },
       },
@@ -586,10 +707,17 @@ export class QuizService {
 
   // GET /lessons/:lessonId/quiz/manage
   async getManageQuiz(lessonId: string): Promise<ManageQuizDto> {
+    return this.getManageTask(lessonId, LessonTaskType.QUIZ);
+  }
+
+  async getManageTask(
+    lessonId: string,
+    taskType: LessonTaskType,
+  ): Promise<ManageQuizDto> {
     await this.assertLessonExists(lessonId);
 
     const task = await this.prisma.lessonTask.findFirst({
-      where: { lessonId, type: 'QUIZ' },
+      where: { lessonId, type: taskType },
       select: {
         id: true,
         isPublished: true,
@@ -633,6 +761,14 @@ export class QuizService {
     lessonId: string,
     dto: UpsertQuizDto,
   ): Promise<ManageQuizDto> {
+    return this.upsertTask(lessonId, LessonTaskType.QUIZ, dto);
+  }
+
+  async upsertTask(
+    lessonId: string,
+    taskType: LessonTaskType,
+    dto: UpsertQuizDto,
+  ): Promise<ManageQuizDto> {
     await this.assertLessonExists(lessonId);
 
     dto.questions.forEach((question, index) => {
@@ -653,7 +789,7 @@ export class QuizService {
 
     await this.prisma.$transaction(async (tx) => {
       let task = await tx.lessonTask.findFirst({
-        where: { lessonId, type: 'QUIZ' },
+        where: { lessonId, type: taskType },
       });
 
       if (!task) {
@@ -664,8 +800,8 @@ export class QuizService {
         task = await tx.lessonTask.create({
           data: {
             lessonId,
-            type: 'QUIZ',
-            title: 'Quiz',
+            type: taskType,
+            title: taskLabel(taskType),
             content: {},
             points: dto.questions.length,
             orderIndex: (maxOrderIndex._max.orderIndex ?? -1) + 1,
@@ -731,20 +867,27 @@ export class QuizService {
       }
     });
 
-    return this.getManageQuiz(lessonId);
+    return this.getManageTask(lessonId, taskType);
   }
 
   // PATCH /lessons/:lessonId/quiz/publish
   async publishQuiz(lessonId: string): Promise<ManageQuizDto> {
+    return this.publishTask(lessonId, LessonTaskType.QUIZ);
+  }
+
+  async publishTask(
+    lessonId: string,
+    taskType: LessonTaskType,
+  ): Promise<ManageQuizDto> {
     await this.assertLessonExists(lessonId);
 
     const task = await this.prisma.lessonTask.findFirst({
-      where: { lessonId, type: 'QUIZ' },
+      where: { lessonId, type: taskType },
       include: { _count: { select: { questions: true } } },
     });
     if (!task)
       throw new NotFoundException(
-        `No quiz has been created for lesson ${lessonId} yet.`,
+        `No ${taskLabel(taskType).toLowerCase()} has been created for lesson ${lessonId} yet.`,
       );
     if (task._count.questions === 0) throw new QuizNotPublishedException();
 
@@ -752,40 +895,51 @@ export class QuizService {
       where: { id: task.id },
       data: { isPublished: true },
     });
-    return this.getManageQuiz(lessonId);
+    return this.getManageTask(lessonId, taskType);
   }
 
   // PATCH /lessons/:lessonId/quiz/unpublish
   async unpublishQuiz(lessonId: string): Promise<ManageQuizDto> {
+    return this.unpublishTask(lessonId, LessonTaskType.QUIZ);
+  }
+
+  async unpublishTask(
+    lessonId: string,
+    taskType: LessonTaskType,
+  ): Promise<ManageQuizDto> {
     await this.assertLessonExists(lessonId);
 
     const task = await this.prisma.lessonTask.findFirst({
-      where: { lessonId, type: 'QUIZ' },
+      where: { lessonId, type: taskType },
     });
     if (!task)
       throw new NotFoundException(
-        `No quiz has been created for lesson ${lessonId} yet.`,
+        `No ${taskLabel(taskType).toLowerCase()} has been created for lesson ${lessonId} yet.`,
       );
 
     await this.prisma.lessonTask.update({
       where: { id: task.id },
       data: { isPublished: false },
     });
-    return this.getManageQuiz(lessonId);
+    return this.getManageTask(lessonId, taskType);
   }
 
   // DELETE /lessons/:lessonId/quiz — refuses (409) once any student has a
   // real attempt (attemptsCount > 0). View-only progress rows (a student
   // opened the quiz but never submitted) do not block deletion.
   async deleteQuiz(lessonId: string): Promise<void> {
+    return this.deleteTask(lessonId, LessonTaskType.QUIZ);
+  }
+
+  async deleteTask(lessonId: string, taskType: LessonTaskType): Promise<void> {
     await this.assertLessonExists(lessonId);
 
     const task = await this.prisma.lessonTask.findFirst({
-      where: { lessonId, type: 'QUIZ' },
+      where: { lessonId, type: taskType },
     });
     if (!task)
       throw new NotFoundException(
-        `No quiz has been created for lesson ${lessonId} yet.`,
+        `No ${taskLabel(taskType).toLowerCase()} has been created for lesson ${lessonId} yet.`,
       );
 
     const attemptedCount = await this.prisma.lessonTaskProgress.count({
