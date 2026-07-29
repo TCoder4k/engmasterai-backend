@@ -12,8 +12,9 @@ import { testFixtureName, TEST_FIXTURE_PREFIX } from './test-database.util';
 //   - the student GET response never carries a correctAnswer or explanation
 //     (Invariant 9);
 //   - every answer is graded server-side, never trusted from the client;
-//   - a lesson's quiz signal (`_count.tasks`) counts published QUIZ tasks
-//     only;
+//   - a lesson's quiz signal (`publishedTaskTypes`, which replaced Sprint
+//     06B's `_count.tasks` in Sprint 06D) lists published tasks only, so a
+//     draft quiz is invisible to students;
 //   - a quiz with real attempts cannot be deleted;
 //   - a repeated clientAttemptId with the same answers replays the original
 //     result, and with different answers is a 409 conflict.
@@ -434,7 +435,7 @@ describe('Lesson Quiz Engine (e2e) — Sprint 06B', () => {
       expect(row!.attemptsCount).toBe(1);
     });
 
-    it("counts this lesson's published quiz in the student lesson list's _count.tasks, and 0 while still a draft", async () => {
+    it("lists this lesson's published quiz in publishedTaskTypes, and nothing while still a draft", async () => {
       const student = await registerAndLogin('count-check');
       const draftLesson = await createLesson('Count Check Draft Lesson');
       await request(app.getHttpServer())
@@ -449,10 +450,12 @@ describe('Lesson Quiz Engine (e2e) — Sprint 06B', () => {
         .expect(200);
       const rowBefore = (
         beforePublish.body as {
-          data: { id: string; _count: { tasks: number } }[];
+          data: { id: string; publishedTaskTypes: string[] }[];
         }
       ).data.find((l) => l.id === draftLesson.id);
-      expect(rowBefore!._count.tasks).toBe(0);
+      // Sprint 06D — an unpublished quiz must not appear at all. The old
+      // assertion was `_count.tasks === 0`; the meaning is unchanged.
+      expect(rowBefore!.publishedTaskTypes).not.toContain('QUIZ');
 
       await request(app.getHttpServer())
         .patch(`/lessons/${draftLesson.id}/quiz/publish`)
@@ -465,10 +468,13 @@ describe('Lesson Quiz Engine (e2e) — Sprint 06B', () => {
         .expect(200);
       const rowAfter = (
         afterPublish.body as {
-          data: { id: string; _count: { tasks: number } }[];
+          data: { id: string; publishedTaskTypes: string[] }[];
         }
       ).data.find((l) => l.id === draftLesson.id);
-      expect(rowAfter!._count.tasks).toBe(1);
+      expect(rowAfter!.publishedTaskTypes).toContain('QUIZ');
+      // No practice task was authored for this lesson, so the signal that
+      // drives Sprint 06D's stage must stay absent.
+      expect(rowAfter!.publishedTaskTypes).not.toContain('PRACTICE');
     });
   });
 

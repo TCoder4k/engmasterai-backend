@@ -23,6 +23,22 @@ enum CourseType {
 enum LessonTaskType {
   VIDEO
   QUIZ
+  // Sprint 06D — Advanced Practice: separately authored, harder, more
+  // contextual questions that extend the lesson once the student can already
+  // answer it directly.
+  //
+  // It is NOT a second quiz and NOT derived from the student's mistakes —
+  // that is Trap Hunter, which stays derived from the QUIZ task alone. The
+  // difference is the source of the content: Trap Hunter replays questions
+  // the student got wrong, Advanced Practice presents questions an author
+  // wrote for this purpose.
+  //
+  // Its questions are ordinary Question rows and its progress is an ordinary
+  // LessonTaskProgress row keyed by THIS task's id. That is what keeps its
+  // scoring structurally separate from the quiz's — a different taskId is a
+  // different row, so "Practice never writes to the quiz's score" is a
+  // property of the schema rather than a rule someone has to remember.
+  PRACTICE
   // @deprecated Sprint 06B — these two are QUESTION types (see QuestionType
   // below), not task types; they leaked into this enum before the Lesson
   // Quiz Engine existed. Zero rows and zero code references as of Sprint
@@ -323,6 +339,18 @@ model LessonTask {
   questions Question[]
   progress  LessonTaskProgress[]
 
+  // Sprint 06D — one task of each kind per lesson. Every lookup in the
+  // engine is `findFirst({ where: { lessonId, type, isPublished } })` with no
+  // `orderBy`, so before this constraint two rows of the same type on one
+  // lesson meant the student silently got whichever Postgres returned first —
+  // and could get a different one on the next request. Verified duplicate-free
+  // on both databases before adding (0 groups across 4 dev rows / 0 test).
+  //
+  // This also makes the admin whole-document upsert honest: it must UPDATE the
+  // existing task rather than insert a second one, and now fails loudly
+  // instead of quietly creating an ambiguity nobody would notice until a
+  // student saw the wrong quiz.
+  @@unique([lessonId, type])
   @@map("lesson_tasks")
 }
 

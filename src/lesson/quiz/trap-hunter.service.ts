@@ -486,7 +486,20 @@ export class TrapHunterService {
     userId: string,
   ): Promise<CourseTrapHunterProgressRowDto[]> {
     await assertCourseAccessible(this.prisma, courseId);
+    return this.collectCourseTrapProgress(courseId, userId);
+  }
 
+  // Sprint 06D — the access check is the CALLER's responsibility here, so the
+  // aggregated stage-progress endpoint can verify the course once and roll up
+  // several stages without repeating it per stage.
+  //
+  // Still keyed on the QUIZ task, and that is not an oversight: traps are
+  // derived from a quiz attempt and from nothing else. Advanced Practice
+  // mistakes deliberately do NOT feed this — see Sprint 06D's constraints.
+  async collectCourseTrapProgress(
+    courseId: string,
+    userId: string,
+  ): Promise<CourseTrapHunterProgressRowDto[]> {
     const tasks = await this.prisma.lessonTask.findMany({
       where: {
         type: 'QUIZ',

@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   HttpException,
   HttpStatus,
 } from '@nestjs/common';
@@ -79,6 +80,45 @@ export class TrapHunterNotAvailableException extends BadRequestException {
   constructor() {
     super(
       'Finish the quiz first — Trap Hunter works from the questions you got wrong.',
+    );
+  }
+}
+
+// Sprint 06D — Advanced Practice reached before its prerequisites are met.
+//
+// Thrown ONLY from the mutating endpoints (start / answer / submit). The GET
+// deliberately succeeds and reports `availability: { state: 'blocked' }`
+// instead, following the convention Trap Hunter set in Sprint 06C: a read
+// that describes why you cannot proceed is more useful than one that refuses
+// to answer, and the UI needs the reason to say "clear your traps first"
+// rather than showing a generic lock.
+//
+// `reason` is carried on the body so the client renders the specific blocker
+// rather than guessing from the status code.
+export type PracticeBlockedReason = 'quiz_not_passed' | 'traps_outstanding';
+
+export class PracticePrerequisitesNotMetException extends ForbiddenException {
+  constructor(reason: PracticeBlockedReason) {
+    super({
+      statusCode: 403,
+      error: 'Forbidden',
+      reason,
+      message:
+        reason === 'quiz_not_passed'
+          ? 'Pass the lesson quiz before starting Advanced Practice.'
+          : 'Clear your remaining traps before starting Advanced Practice.',
+    });
+  }
+}
+
+// Sprint 06D — answer/submit with no attempt in flight. Advanced Practice
+// starts explicitly (POST .../practice/start) rather than on read, so an
+// answer arriving before that is a client out of sync, not a reason to
+// silently create an attempt the student never began.
+export class PracticeAttemptNotStartedException extends BadRequestException {
+  constructor() {
+    super(
+      'Start the practice attempt before answering — POST /practice/start.',
     );
   }
 }
