@@ -13,11 +13,20 @@ import { SetMetadata } from '@nestjs/common';
 // correction round is one request per trap plus one per hint, so sharing
 // 'submit''s tight bucket would throttle a student doing exactly what the
 // stage asks of them.
+//
+// 'step' (Sprint 07) exists because THE KIND IS THE BUCKET — the guard keys on
+// `quiz:${kind}:${userId}`, so any two route groups sharing a kind share one
+// counter. Video progress posts roughly every 7 seconds while a video plays,
+// ~86 of them across a 10-minute lesson. Filing those under 'answer' would
+// have burned ~72% of the quiz-answering budget before the student even opened
+// the quiz, surfacing as "the quiz randomly stops accepting answers" — a
+// miserable bug to diagnose from that symptom.
 export type QuizRateLimitKind =
   | 'read'
   | 'answer'
   | 'trap'
   | 'submit'
+  | 'step'
   | 'manage';
 
 export interface QuizRateLimitPolicy {

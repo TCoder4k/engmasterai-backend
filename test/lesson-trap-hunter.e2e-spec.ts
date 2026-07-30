@@ -131,9 +131,9 @@ describe('Trap Hunter (e2e) — Sprint 06C', () => {
       .expect(200);
     return {
       lessonId: lesson.id,
-      questionIds: (saved.body as { questions: { id: string }[] }).questions.map(
-        (question) => question.id,
-      ),
+      questionIds: (
+        saved.body as { questions: { id: string }[] }
+      ).questions.map((question) => question.id),
     };
   };
 
@@ -155,7 +155,9 @@ describe('Trap Hunter (e2e) — Sprint 06C', () => {
         clientAttemptId: randomUUID(),
         answers: questionIds.map((questionId, index) => ({
           questionId,
-          submitted: wrongIndexes.includes(index) ? WRONG[index] : CORRECT[index],
+          submitted: wrongIndexes.includes(index)
+            ? WRONG[index]
+            : CORRECT[index],
         })),
       })
       .expect(201);
@@ -205,6 +207,12 @@ describe('Trap Hunter (e2e) — Sprint 06C', () => {
     await prisma.question.deleteMany({
       where: { task: { lesson: { courseId } } },
     });
+    // Sprint 07 — LessonTaskAttempt.task is Restrict, so the append-only
+    // attempt history must go before the tasks it belongs to. Mirrors the
+    // lessonTaskProgress delete above and the order in test-fixture-sweep.ts.
+    await prisma.lessonTaskAttempt.deleteMany({
+      where: { task: { lesson: { courseId } } },
+    });
     await prisma.lessonTask.deleteMany({ where: { lesson: { courseId } } });
     await prisma.lesson.deleteMany({ where: { courseId } });
     await prisma.course.deleteMany({ where: { id: courseId } });
@@ -239,12 +247,15 @@ describe('Trap Hunter (e2e) — Sprint 06C', () => {
     });
 
     it('contains exactly the questions answered incorrectly — and nothing else', async () => {
-      const { lessonId, questionIds } = await createPublishedQuiz('Two Wrong Lesson');
+      const { lessonId, questionIds } =
+        await createPublishedQuiz('Two Wrong Lesson');
       const student = await registerAndLogin('two-wrong');
       await submitAttempt(lessonId, questionIds, student.token, [0, 2]);
 
       const res = await getTraps(lessonId, student.token);
-      const trapIds = res.body.traps.map((trap: { questionId: string }) => trap.questionId);
+      const trapIds = res.body.traps.map(
+        (trap: { questionId: string }) => trap.questionId,
+      );
       expect(trapIds.sort()).toEqual([questionIds[0], questionIds[2]].sort());
       expect(res.body.progress).toEqual({
         hasSource: true,
@@ -255,7 +266,8 @@ describe('Trap Hunter (e2e) — Sprint 06C', () => {
     });
 
     it('carries the student’s own wrong answer so they can see what is being corrected', async () => {
-      const { lessonId, questionIds } = await createPublishedQuiz('Wrong Answer Echo');
+      const { lessonId, questionIds } =
+        await createPublishedQuiz('Wrong Answer Echo');
       const student = await registerAndLogin('echo');
       await submitAttempt(lessonId, questionIds, student.token, [0]);
 
@@ -264,7 +276,8 @@ describe('Trap Hunter (e2e) — Sprint 06C', () => {
     });
 
     it('produces NO traps for a perfect attempt — and reports it as a real source, not a missing one', async () => {
-      const { lessonId, questionIds } = await createPublishedQuiz('Perfect Lesson');
+      const { lessonId, questionIds } =
+        await createPublishedQuiz('Perfect Lesson');
       const student = await registerAndLogin('perfect');
       await submitAttempt(lessonId, questionIds, student.token, []);
 
@@ -347,7 +360,8 @@ describe('Trap Hunter (e2e) — Sprint 06C', () => {
     });
 
     it('replays a cleared trap without a write, so a double-click cannot alter the record', async () => {
-      const { lessonId, questionIds } = await createPublishedQuiz('Replay Cleared');
+      const { lessonId, questionIds } =
+        await createPublishedQuiz('Replay Cleared');
       const student = await registerAndLogin('replay');
       await submitAttempt(lessonId, questionIds, student.token, [0]);
 
@@ -377,7 +391,8 @@ describe('Trap Hunter (e2e) — Sprint 06C', () => {
     });
 
     it('404s for a question that is not one of this student’s traps', async () => {
-      const { lessonId, questionIds } = await createPublishedQuiz('Foreign Question');
+      const { lessonId, questionIds } =
+        await createPublishedQuiz('Foreign Question');
       const student = await registerAndLogin('foreign-q');
       // Only index 0 is wrong, so index 1 is not a trap for this student.
       await submitAttempt(lessonId, questionIds, student.token, [0]);
@@ -392,7 +407,8 @@ describe('Trap Hunter (e2e) — Sprint 06C', () => {
 
   describe('INVARIANT B — Trap Hunter never touches the quiz’s own state', () => {
     it('leaves every quiz-scoring field byte-identical across a full correction round', async () => {
-      const { lessonId, questionIds } = await createPublishedQuiz('No Double Scoring');
+      const { lessonId, questionIds } =
+        await createPublishedQuiz('No Double Scoring');
       const student = await registerAndLogin('no-double-scoring');
       await submitAttempt(lessonId, questionIds, student.token, [0, 1, 2]);
 
@@ -433,7 +449,9 @@ describe('Trap Hunter (e2e) — Sprint 06C', () => {
       expect(after?.completedAt).toEqual(before?.completedAt);
       expect(after?.lastAnswers).toEqual(before?.lastAnswers);
       expect(after?.lastSubmitResult).toEqual(before?.lastSubmitResult);
-      expect(after?.currentAttemptAnswers).toEqual(before?.currentAttemptAnswers);
+      expect(after?.currentAttemptAnswers).toEqual(
+        before?.currentAttemptAnswers,
+      );
       expect(after?.lastClientAttemptId).toBe(before?.lastClientAttemptId);
 
       // ...while the one field it DOES own has of course changed.
@@ -441,7 +459,8 @@ describe('Trap Hunter (e2e) — Sprint 06C', () => {
     });
 
     it('does not make a failed quiz look passed, however many traps are cleared', async () => {
-      const { lessonId, questionIds } = await createPublishedQuiz('Still Failed');
+      const { lessonId, questionIds } =
+        await createPublishedQuiz('Still Failed');
       const student = await registerAndLogin('still-failed');
       // 1/4 = 25%, under the default 70% pass mark.
       await submitAttempt(lessonId, questionIds, student.token, [0, 1, 2]);
@@ -465,7 +484,8 @@ describe('Trap Hunter (e2e) — Sprint 06C', () => {
 
   describe('Retaking the quiz', () => {
     it('re-derives traps from the NEW attempt and discards the old cleared flags', async () => {
-      const { lessonId, questionIds } = await createPublishedQuiz('Retake Lesson');
+      const { lessonId, questionIds } =
+        await createPublishedQuiz('Retake Lesson');
       const student = await registerAndLogin('retake');
 
       await submitAttempt(lessonId, questionIds, student.token, [0]);
@@ -497,7 +517,8 @@ describe('Trap Hunter (e2e) — Sprint 06C', () => {
 
   describe('What an uncleared trap does and does not carry', () => {
     it('carries neither correctAnswer nor explanation while sealed', async () => {
-      const { lessonId, questionIds } = await createPublishedQuiz('Sealed Trap');
+      const { lessonId, questionIds } =
+        await createPublishedQuiz('Sealed Trap');
       const student = await registerAndLogin('sealed');
       await submitAttempt(lessonId, questionIds, student.token, [0, 1]);
 
@@ -513,7 +534,8 @@ describe('Trap Hunter (e2e) — Sprint 06C', () => {
     });
 
     it('carries its result once cleared, so a refresh restores what the student earned', async () => {
-      const { lessonId, questionIds } = await createPublishedQuiz('Cleared Restores');
+      const { lessonId, questionIds } =
+        await createPublishedQuiz('Cleared Restores');
       const student = await registerAndLogin('cleared-restores');
       await submitAttempt(lessonId, questionIds, student.token, [0, 1]);
       await request(app.getHttpServer())
@@ -530,7 +552,9 @@ describe('Trap Hunter (e2e) — Sprint 06C', () => {
         (trap: { questionId: string }) => trap.questionId === questionIds[1],
       );
       expect(cleared.cleared.correctAnswer).toEqual({ optionId: 'b' });
-      expect(cleared.cleared.explanation).toBe('Third person singular takes -s.');
+      expect(cleared.cleared.explanation).toBe(
+        'Third person singular takes -s.',
+      );
       // ...and the one still open stays sealed in the same response.
       expect(sealed.cleared).toBeNull();
       expect(sealed.hints).toEqual([]);
@@ -539,7 +563,8 @@ describe('Trap Hunter (e2e) — Sprint 06C', () => {
 
   describe('Hints', () => {
     it('unlocks one level at a time and records it across a re-GET', async () => {
-      const { lessonId, questionIds } = await createPublishedQuiz('Hint Levels');
+      const { lessonId, questionIds } =
+        await createPublishedQuiz('Hint Levels');
       const student = await registerAndLogin('hint-levels');
       await submitAttempt(lessonId, questionIds, student.token, [0]);
 
@@ -578,7 +603,8 @@ describe('Trap Hunter (e2e) — Sprint 06C', () => {
     });
 
     it('offers no hints at all for a question with no authored source', async () => {
-      const { lessonId, questionIds } = await createPublishedQuiz('No Hint Source');
+      const { lessonId, questionIds } =
+        await createPublishedQuiz('No Hint Source');
       const student = await registerAndLogin('no-hint-source');
       // Index 3 is ORDERING with three options and no explanation: its
       // Level 1 exists but Level 2 does not.
@@ -595,7 +621,8 @@ describe('Trap Hunter (e2e) — Sprint 06C', () => {
     });
 
     it('NEVER blocks or annotates a clear — a hinted correction is just a correction', async () => {
-      const { lessonId, questionIds } = await createPublishedQuiz('Hint Then Clear');
+      const { lessonId, questionIds } =
+        await createPublishedQuiz('Hint Then Clear');
       const student = await registerAndLogin('hint-then-clear');
       await submitAttempt(lessonId, questionIds, student.token, [0]);
 
@@ -643,7 +670,8 @@ describe('Trap Hunter (e2e) — Sprint 06C', () => {
     });
 
     it('keeps one student’s traps out of another’s', async () => {
-      const { lessonId, questionIds } = await createPublishedQuiz('Per Student');
+      const { lessonId, questionIds } =
+        await createPublishedQuiz('Per Student');
       const alice = await registerAndLogin('alice');
       const bob = await registerAndLogin('bob');
 
@@ -664,7 +692,12 @@ describe('Trap Hunter (e2e) — Sprint 06C', () => {
       const untouched = await createPublishedQuiz('Batch Untouched');
       const student = await registerAndLogin('batch');
 
-      await submitAttempt(attempted.lessonId, attempted.questionIds, student.token, [0]);
+      await submitAttempt(
+        attempted.lessonId,
+        attempted.questionIds,
+        student.token,
+        [0],
+      );
 
       const res = await request(app.getHttpServer())
         .get(`/courses/${courseId}/trap-hunter-progress`)
@@ -677,8 +710,12 @@ describe('Trap Hunter (e2e) — Sprint 06C', () => {
         total: number;
         cleared: number;
       }[];
-      const attemptedRow = rows.find((row) => row.lessonId === attempted.lessonId);
-      const untouchedRow = rows.find((row) => row.lessonId === untouched.lessonId);
+      const attemptedRow = rows.find(
+        (row) => row.lessonId === attempted.lessonId,
+      );
+      const untouchedRow = rows.find(
+        (row) => row.lessonId === untouched.lessonId,
+      );
 
       expect(attemptedRow).toEqual({
         lessonId: attempted.lessonId,

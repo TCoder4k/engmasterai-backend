@@ -1,6 +1,7 @@
 import { QuizFeedbackMode } from '@prisma/client';
 import { PracticeBlockedReason } from './quiz.exceptions';
 import { StudentQuizDto } from './quiz.types';
+import { LessonStepsDto } from '../steps/lesson-step.types';
 
 // Sprint 06D — Advanced Practice response shapes.
 //
@@ -68,11 +69,15 @@ export interface StartPracticeResponseDto {
 // One row per published lesson in a course, for every stage that has a
 // backend. Replaces three separate course-level round trips.
 //
-// There is deliberately NO `prerequisitesMet` field here. The client already
-// holds `quiz` and `trapHunter` for the same lesson, so deriving it costs
-// nothing — whereas shipping a fourth field computed from the other three
-// creates a value that can disagree with them after any partial update. The
-// server stays authoritative where it matters: the mutation guard.
+// Sprint 06D shipped this without a `prerequisitesMet` field, reasoning that a
+// fourth value computed from the three beside it could disagree with them.
+// Sprint 07 keeps that decision HERE — the course page needs a percentage, not
+// a blocked-reason string — while the lesson aggregate
+// (GET /lessons/:lessonId/progress) does return `availability`. The difference
+// is not inconsistency: the lesson payload is what let the client's duplicate
+// copy of the rule be deleted, and a rule with one implementation has nothing
+// left to disagree with. The course page derives practice status from the quiz
+// and trap fields it already has, using that same single client helper.
 export interface CourseStageProgressRowDto {
   lessonId: string;
   quiz: {
@@ -86,4 +91,9 @@ export interface CourseStageProgressRowDto {
     bestScorePercent: number | null;
     attemptsCount: number;
   } | null;
+  // Sprint 07 — video and theory. Never null: a lesson with no step rows
+  // returns { video: null, theory: null }, which means "not started", not
+  // "this lesson has no video". What content exists is decided by
+  // Lesson.videoUrl / Lesson.notes, which the client already holds.
+  steps: LessonStepsDto;
 }

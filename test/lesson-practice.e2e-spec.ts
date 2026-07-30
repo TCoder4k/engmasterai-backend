@@ -202,6 +202,12 @@ describe('Advanced Practice (e2e) — Sprint 06D', () => {
     await prisma.question.deleteMany({
       where: { task: { lesson: { courseId } } },
     });
+    // Sprint 07 — LessonTaskAttempt.task is Restrict, so the append-only
+    // attempt history must go before the tasks it belongs to. Mirrors the
+    // lessonTaskProgress delete above and the order in test-fixture-sweep.ts.
+    await prisma.lessonTaskAttempt.deleteMany({
+      where: { task: { lesson: { courseId } } },
+    });
     await prisma.lessonTask.deleteMany({ where: { lesson: { courseId } } });
     await prisma.lesson.deleteMany({ where: { courseId } });
     await prisma.course.deleteMany({ where: { id: courseId } });
@@ -657,7 +663,9 @@ describe('Advanced Practice (e2e) — Sprint 06D', () => {
     // returns authoring data (correctAnswer included) rather than falling
     // through to the student route.
     it('serves the admin manage payload, distinct from the student read', async () => {
-      const { lessonId } = await createLesson('manage-route', { practice: true });
+      const { lessonId } = await createLesson('manage-route', {
+        practice: true,
+      });
 
       const manage = await request(app.getHttpServer())
         .get(`/lessons/${lessonId}/practice/manage`)
@@ -678,7 +686,9 @@ describe('Advanced Practice (e2e) — Sprint 06D', () => {
 
     it('refuses the admin manage route to a non-admin', async () => {
       const { token } = await registerAndLogin('manage-forbidden');
-      const { lessonId } = await createLesson('manage-forbidden', { practice: true });
+      const { lessonId } = await createLesson('manage-forbidden', {
+        practice: true,
+      });
       await request(app.getHttpServer())
         .get(`/lessons/${lessonId}/practice/manage`)
         .set('Authorization', `Bearer ${token}`)
@@ -709,26 +719,31 @@ describe('Advanced Practice (e2e) — Sprint 06D', () => {
         .patch(`/lessons/${lesson.id}/practice/publish`)
         .set('Authorization', `Bearer ${adminToken}`)
         .expect(200);
-      expect((published.body as { isPublished: boolean }).isPublished).toBe(true);
+      expect((published.body as { isPublished: boolean }).isPublished).toBe(
+        true,
+      );
 
       // A student can now see the stage.
       const { token } = await registerAndLogin('rt-student');
       const student = await getPractice(lesson.id, token).expect(200);
-      expect((student.body as { availability: { state: string } }).availability.state).toBe(
-        'available',
-      );
+      expect(
+        (student.body as { availability: { state: string } }).availability
+          .state,
+      ).toBe('available');
 
       const unpublished = await request(app.getHttpServer())
         .patch(`/lessons/${lesson.id}/practice/unpublish`)
         .set('Authorization', `Bearer ${adminToken}`)
         .expect(200);
-      expect((unpublished.body as { isPublished: boolean }).isPublished).toBe(false);
+      expect((unpublished.body as { isPublished: boolean }).isPublished).toBe(
+        false,
+      );
 
       // ...and it disappears again.
       const after = await getPractice(lesson.id, token).expect(200);
-      expect((after.body as { availability: { state: string } }).availability.state).toBe(
-        'unavailable',
-      );
+      expect(
+        (after.body as { availability: { state: string } }).availability.state,
+      ).toBe('unavailable');
     });
 
     it('keeps quiz and practice as separate tasks on the same lesson', async () => {

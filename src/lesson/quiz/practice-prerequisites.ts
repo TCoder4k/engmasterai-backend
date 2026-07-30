@@ -29,11 +29,18 @@ import { PracticeBlockedReason } from './quiz.exceptions';
 //      uncorrected errors is exactly the sequencing this stage order exists
 //      to prevent.
 //
-// Theory is deliberately NOT here. It is stored device-locally
-// (services/lessonProgress.ts), so the server cannot verify it and must not
-// pretend to: the UI shows the full chain including Theory, and the server
-// enforces the two prerequisites it can actually see. Do not add a Theory
-// check here without first moving Theory to real server state.
+// Theory is deliberately NOT here.
+//
+// Until Sprint 07 it COULD not be: theory completion lived in the browser's
+// localStorage, so the server had no way to verify it. That is no longer true
+// — LessonStepProgress makes it real server state — and its absence from this
+// file is now a PRODUCT decision rather than a technical limit.
+//
+// It stays out because gating Practice on Theory would change which students
+// can enter the stage, and Sprint 07 is a persistence fix that must not move
+// any gate. The stage ORDER in the stepper already communicates the intended
+// sequence. Adding the check here is a deliberate product change for a later
+// sprint, not a tidy-up.
 
 export interface PracticePrerequisiteInput {
   // Whether the lesson has a PUBLISHED quiz task at all — not whether the

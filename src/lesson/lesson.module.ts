@@ -19,6 +19,10 @@ import {
 import { PracticeAdminController } from './quiz/practice-admin.controller';
 import { PracticeService } from './quiz/practice.service';
 import { QuizRateLimitGuard } from './quiz/rate-limit/quiz-rate-limit.guard';
+import { LessonStepController } from './steps/lesson-step.controller';
+import { LessonStepService } from './steps/lesson-step.service';
+import { LessonProgressController } from './progress/lesson-progress.controller';
+import { LessonProgressService } from './progress/lesson-progress.service';
 
 // Sprint 06B — the Lesson Quiz Engine lives inside the existing Lesson
 // module rather than a new top-level one (RateLimiterService/JwtAuthGuard
@@ -45,14 +49,29 @@ import { QuizRateLimitGuard } from './quiz/rate-limit/quiz-rate-limit.guard';
     PracticeStudentController,
     PracticeAdminController,
     PracticeCourseController,
+    // Sprint 07 — the VIDEO and THEORY steps, and the lesson-level read that
+    // ties every stage together. Both live in this module because they are
+    // reads and writes over the same lesson content, and because the aggregate
+    // composes the quiz/trap collectors that already live here.
+    LessonStepController,
+    LessonProgressController,
   ],
   providers: [
     LessonService,
     QuizService,
     TrapHunterService,
     PracticeService,
+    LessonStepService,
+    LessonProgressService,
     QuizRateLimitGuard,
   ],
-  exports: [LessonService, QuizService, TrapHunterService, PracticeService],
+  exports: [
+    LessonService,
+    QuizService,
+    TrapHunterService,
+    PracticeService,
+    LessonStepService,
+    LessonProgressService,
+  ],
 })
 export class LessonModule {}

@@ -51,10 +51,36 @@ enum LessonTaskType {
   TRUE_FALSE
 }
 
+// DEAD as of Sprint 07. Written exactly once in the whole backend
+// (QuizService.answerTaskQuestion sets IN_PROGRESS) and NEVER set to
+// COMPLETED — under ON_SUBMIT feedback the answer path never runs at all, so
+// a fully-passed quiz keeps NOT_STARTED forever. `completedAt` is the real
+// signal and always has been.
+//
+// Sprint 07 deliberately did NOT "fix" this by adding writes: nothing reads
+// the column, and a stored status beside completedAt is a second
+// representation of one fact — which is how it came to disagree in the first
+// place. LessonStepProgress therefore has no status column and derives its
+// state from timestamps instead. Removal of this column is scheduled with the
+// deprecated-endpoint cleanup.
+//
+// DO NOT read or write this from new code.
 enum TaskProgressStatus {
   NOT_STARTED
   IN_PROGRESS
   COMPLETED
+}
+
+// Sprint 07 — the two lesson steps that are CONSUMED rather than answered.
+// Deliberately not LessonTaskType values: a quiz/practice task carries
+// questions and hangs off LessonTask, whereas a video and its theory notes
+// are columns on Lesson itself (videoUrl, notes). Modelling these as tasks
+// would need a contentless LessonTask row per lesson plus a backfill, and
+// would create two disagreeing answers to "does this lesson have a video?"
+// — lesson.videoUrl and the task row.
+enum LessonStepKind {
+  VIDEO
+  THEORY
 }
 
 // Sprint 06B — Lesson Quiz Engine. Deliberately NOT open-ended: only types
@@ -185,6 +211,8 @@ model User {
   timezone String?
 
   taskProgress            LessonTaskProgress[]
+  taskAttempts            LessonTaskAttempt[]
+  stepProgress            LessonStepProgress[]
   identities              AuthIdentity[]
   emailVerificationTokens EmailVerificationToken[]
   passwordResetTokens     PasswordResetToken[]
@@ -301,9 +329,70 @@ model Lesson {
   course       Course             @relation(fields: [courseId], references: [id])
   tasks        LessonTask[]
   vocabularies LessonVocabulary[]
+  stepProgress LessonStepProgress[]
 
   @@index([courseId])
   @@map("lessons")
+}
+
+// Sprint 07 — durable progress for the VIDEO and THEORY steps. Before this,
+// both lived ONLY in the browser's localStorage, which made two of the five
+// stages that gate lesson completion device-local, client-forgeable and
+// invisible to the server: a lesson finished on a laptop read as unfinished
+// on a phone, permanently.
+model LessonStepProgress {
+  id       String         @id @default(uuid())
+  userId   String
+  lessonId String
+  step     LessonStepKind
+
+  // There is NO status enum here, and that is deliberate — see the note on
+  // TaskProgressStatus. State is derived from these two timestamps:
+  //   completedAt != null -> COMPLETED
+  //   startedAt   != null -> IN_PROGRESS
+  //   neither             -> NOT_STARTED
+  // One fact, one representation, nothing that can disagree with itself.
+  startedAt DateTime?
+  // Set once and NEVER cleared by any code path. Rewatching a finished video
+  // or reopening finished theory updates lastActivityAt only — a review must
+  // never cost a student their completion.
+  completedAt DateTime?
+
+  // Written explicitly by the service, not via @updatedAt: @updatedAt would
+  // fire on every write and mean "last written", which for THEORY (whose only
+  // writes are start and complete) is not the same thing as "last accessed".
+  lastActivityAt DateTime @default(now())
+
+  // VIDEO only; null for THEORY. Monotonic — the service takes max(stored,
+  // reported), so seeking backwards or replaying can never lower it.
+  highestPositionSeconds Int?
+  // WRITE-ONCE. Captured from the first report that carries a usable duration
+  // and never updated afterwards.
+  //
+  // This is the anti-abuse floor for the 90% completion gate. The gate has no
+  // anti-seek rule by product decision (dragging to the end completes the
+  // step), but without freezing the denominator a later {positionSeconds: 1,
+  // durationSeconds: 1} payload would complete any video whose lesson has no
+  // authored videoDurationMinutes — which is most of them, since the column
+  // is nullable.
+  videoDurationSeconds Int?
+
+  // Cascade on both sides. The user side matches LessonTaskProgress and
+  // UserWordProgress (deleting an account takes its own progress with it).
+  //
+  // The lesson side deliberately DIVERGES from LessonTaskProgress.task, which
+  // is Restrict so a quiz with real attempts cannot be deleted. A watch
+  // position is not graded work, and Restrict here would make the existing
+  // admin DELETE /lessons/:id start throwing P2003 for any lesson a student
+  // had merely opened — a behaviour change well outside Sprint 07's scope.
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lesson Lesson @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, lessonId, step])
+  // Serves the Sprint 07-D daily dashboard ("lessons completed today") without
+  // needing a second index later.
+  @@index([userId, completedAt])
+  @@map("lesson_step_progress")
 }
 
 model LessonTask {
@@ -338,6 +427,7 @@ model LessonTask {
   lesson    Lesson               @relation(fields: [lessonId], references: [id])
   questions Question[]
   progress  LessonTaskProgress[]
+  attempts  LessonTaskAttempt[]
 
   // Sprint 06D — one task of each kind per lesson. Every lookup in the
   // engine is `findFirst({ where: { lessonId, type, isPublished } })` with no
@@ -465,6 +555,71 @@ model LessonTaskProgress {
 
   @@unique([userId, taskId])
   @@map("lesson_task_progress")
+}
+
+// Sprint 07 — append-only attempt history for question-bearing tasks (QUIZ
+// and PRACTICE alike; this table is task-type agnostic like the engine that
+// writes it).
+//
+// Before this, a retake overwrote lastAnswers/lastSubmitResult on the progress
+// row, so "Thử lại" destroyed the record of the attempt it replaced — even the
+// student's BEST one, whose score survived as a scalar while the answers that
+// earned it did not.
+//
+// OWNERSHIP (read this before adding a second writer):
+//   * This table is the AUTHORITATIVE history. Rows are never updated and
+//     never deleted while the task exists.
+//   * LessonTaskProgress.score/maxScore/attemptsCount is a DERIVED CACHE —
+//     MAX(accuracyPercent) and COUNT(*) over these rows. Rebuildable.
+//   * LessonTaskProgress.lastSubmitResult/lastAnswers/lastClientAttemptId is a
+//     HOT-PATH REPLAY CACHE, equal to the newest row's `result`.
+// All three are written in the SAME transaction as the insert below, so they
+// cannot diverge without a crash mid-transaction, which Postgres prevents.
+//
+// Collapsing lastSubmitResult into "newest attempt" is possible and was
+// deliberately NOT done in Sprint 07: it refactors the most heavily tested
+// path in the codebase for no behavioural gain.
+model LessonTaskAttempt {
+  id     String @id @default(uuid())
+  userId String
+  taskId String
+
+  // There is deliberately NO attemptNumber column. It would have been
+  // computed as `progress.attemptsCount + 1` inside the transaction, but under
+  // Prisma's default ReadCommitted isolation two concurrent submits both read
+  // the same count and would both write 1 — with no uniqueness to catch it.
+  // Ordinality is derivable from submittedAt via the index below, which cannot
+  // race.
+  correctCount    Int
+  totalCount      Int
+  accuracyPercent Int
+  passed          Boolean
+  durationSeconds Int?
+
+  // The exact SubmitQuizResponseDto body that was returned for this attempt.
+  // Storing the whole response — not just the answers — is what makes any
+  // attempt independently replayable, which is what lets the P2002 backstop in
+  // QuizService.submitTask return a real historical result instead of a 500
+  // when a client replays a clientAttemptId from two attempts ago.
+  result Json
+
+  submittedAt     DateTime @default(now())
+  // The idempotency key, scoped per-user by the @@unique below rather than
+  // globally — one user's key space can never collide with another's. Same
+  // contract as WordReviewLog.clientReviewId (Sprint 04).
+  clientAttemptId String
+
+  user User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // Restrict (default): a task with real attempt history cannot be deleted,
+  // matching LessonTaskProgress.task. QuizService.deleteTask already refuses
+  // with 409 when attempts exist, so this is a backstop, not the primary guard.
+  task LessonTask @relation(fields: [taskId], references: [id])
+
+  @@unique([userId, clientAttemptId])
+  @@index([userId, taskId, submittedAt])
+  // Serves the Sprint 07-D daily dashboard ("practice attempts today").
+  @@index([userId, submittedAt])
+  @@map("lesson_task_attempts")
 }
 
 model Vocabulary {

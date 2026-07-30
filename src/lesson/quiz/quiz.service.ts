@@ -22,6 +22,7 @@ import {
 // Sprint 06C — both extracted so TrapHunterService shares them rather than
 // growing its own near-copy of a 404 policy and a seeded shuffle.
 import { seededShuffle } from './seeded-shuffle';
+import { ProgressScope, scopeToTaskWhere } from './progress-scope';
 import {
   assertCourseAccessible,
   assertLessonVisible,
@@ -80,6 +81,20 @@ const stableStringify = (value: unknown): string => {
     return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${stableStringify(v)}`).join(',')}}`;
   }
   return JSON.stringify(value);
+};
+
+// Sprint 07 — rebuild the { questionId: submitted } map from a stored
+// LessonTaskAttempt.result, so the P2002 backstop can compare an old attempt's
+// answers against a resubmission the same way the fast path compares
+// progress.lastAnswers.
+//
+// Reads from the frozen response body rather than a separate answers column
+// precisely so there is ONE stored representation of an attempt — a second
+// column holding the same answers in a different shape is how the two drift.
+const extractSubmittedAnswers = (result: unknown): Record<string, unknown> => {
+  const results = (result as { results?: QuestionResultDto[] } | null)?.results;
+  if (!Array.isArray(results)) return {};
+  return Object.fromEntries(results.map((r) => [r.questionId, r.submitted]));
 };
 
 // Sprint 06B.5 — the shape stored in LessonTaskProgress.currentAttemptAnswers.
@@ -203,7 +218,19 @@ export class QuizService {
 
   // GET /lessons/:lessonId/quiz (student). Same 404 whether the lesson,
   // course, or quiz itself is missing/unpublished.
-  async getStudentQuiz(
+  //
+  // Sprint 07 — READ-ONLY. This used to delegate to startStudentAttempt, so
+  // the GET wrote. See QuizStudentController.getQuiz for why that had to stop.
+  async readStudentQuiz(
+    lessonId: string,
+    userId: string,
+  ): Promise<GetQuizResponseDto> {
+    return this.readStudentTask(lessonId, userId, LessonTaskType.QUIZ);
+  }
+
+  // POST /lessons/:lessonId/quiz/start (student) — the write half, now
+  // explicit. Idempotent; see startStudentAttempt.
+  async startQuizAttempt(
     lessonId: string,
     userId: string,
   ): Promise<GetQuizResponseDto> {
@@ -349,6 +376,22 @@ export class QuizService {
         passed: progress?.completedAt != null,
         lastDurationSeconds: progress?.lastDurationSeconds ?? null,
       },
+      // Sprint 07 — the stored summary of the most recently FINISHED attempt,
+      // so revisiting a completed quiz shows what the student scored instead
+      // of dropping them into a blank attempt. The client fetched `progress`
+      // already and simply had nothing to render from it.
+      //
+      // Returned ONLY when no attempt is in flight. That is the whole
+      // security argument: this body carries correctAnswer for every question
+      // (it is the same SubmitQuizResponseDto the summary screen was already
+      // shown), so releasing it mid-attempt would hand a student the answers
+      // to questions they have not yet answered. With no attempt in flight
+      // there is nothing to cheat at, and they have already seen all of it.
+      lastResult:
+        progress && !progress.attemptStartedAt
+          ? ((progress.lastSubmitResult as unknown as SubmitQuizResponseDto) ??
+            null)
+          : null,
     };
   }
 
@@ -533,6 +576,77 @@ export class QuizService {
         });
       }
 
+      // ---- IDEMPOTENCY FAST PATH ------------------------------------------
+      //
+      // Sprint 07 moved this ABOVE the completeness check below, and split it
+      // by feedback mode. Both halves of that change are required; the reorder
+      // alone was not enough.
+      //
+      // The bug it fixes: a successful submit sets currentAttemptAnswers to
+      // JsonNull. Replaying that submit therefore rebuilt `recorded` as {} and
+      // the completeness check fired first — "N questions still need an
+      // answer" — for a quiz the student had just completed. IMMEDIATE is the
+      // schema default, so this was the common path, and the only replay test
+      // in the suite lived in the ON_SUBMIT block where it could not catch it.
+      //
+      // Why the mode split: under IMMEDIATE the client sends NO answers at all
+      // (grading already happened per question), so there is nothing to
+      // compare and comparing is itself the bug — {} would never equal the
+      // stored answers and every replay would 409. Under ON_SUBMIT the client
+      // does send answers, so the comparison is meaningful and stays: same id
+      // with DIFFERENT answers is a genuine conflict and must never be
+      // silently re-graded.
+      if (progress.lastClientAttemptId === dto.clientAttemptId) {
+        if (!isImmediate) {
+          const previousAnswers = (progress.lastAnswers ?? {}) as Record<
+            string,
+            unknown
+          >;
+          const submitted = Object.fromEntries(answersByQuestionId);
+          if (stableStringify(previousAnswers) !== stableStringify(submitted)) {
+            throw new QuizIdempotencyConflictException();
+          }
+        }
+        return progress.lastSubmitResult as unknown as SubmitQuizResponseDto;
+      }
+
+      // ---- IDEMPOTENCY DEEP PATH ------------------------------------------
+      //
+      // The fast path above remembers exactly ONE attempt back, so a client
+      // replaying an id from two attempts ago slips past it. The append-only
+      // history remembers all of them.
+      //
+      // This is a PRE-CHECK, not a catch around the insert below, and that is
+      // load-bearing: a unique violation aborts the surrounding Postgres
+      // transaction, so a P2002 handler cannot query for the row it needs to
+      // replay — it can only produce the 500 this exists to prevent. The
+      // constraint stays as a true integrity backstop; correctness is enforced
+      // here, before anything is written.
+      //
+      // It also sits ABOVE the completeness check for the same reason the fast
+      // path does: a finished attempt has no in-flight answers left, so under
+      // IMMEDIATE feedback a replay would otherwise be rejected as incomplete.
+      const priorAttempt = await tx.lessonTaskAttempt.findUnique({
+        where: {
+          userId_clientAttemptId: {
+            userId,
+            clientAttemptId: dto.clientAttemptId,
+          },
+        },
+      });
+      if (priorAttempt) {
+        // The same two observable outcomes as the fast path, so the contract
+        // does not depend on which layer recognised the replay.
+        if (!isImmediate) {
+          const previousAnswers = extractSubmittedAnswers(priorAttempt.result);
+          const submitted = Object.fromEntries(answersByQuestionId);
+          if (stableStringify(previousAnswers) !== stableStringify(submitted)) {
+            throw new QuizIdempotencyConflictException();
+          }
+        }
+        return priorAttempt.result as unknown as SubmitQuizResponseDto;
+      }
+
       // The scoring source. Under IMMEDIATE feedback every question was
       // already graded by answerQuestion() and the verdict stored; the
       // client has since been told every correct answer, so its own report
@@ -551,19 +665,6 @@ export class QuizService {
             Object.entries(recorded).map(([id, r]) => [id, r.submitted]),
           )
         : Object.fromEntries(answersByQuestionId);
-
-      if (progress.lastClientAttemptId === dto.clientAttemptId) {
-        const previousAnswers = (progress.lastAnswers ?? {}) as Record<
-          string,
-          unknown
-        >;
-        if (
-          stableStringify(previousAnswers) !== stableStringify(answersRecord)
-        ) {
-          throw new QuizIdempotencyConflictException();
-        }
-        return progress.lastSubmitResult as unknown as SubmitQuizResponseDto;
-      }
 
       const results: QuestionResultDto[] = task.questions.map((question) => {
         if (recorded) {
@@ -628,6 +729,34 @@ export class QuizService {
         results,
       };
 
+      // ---- APPEND-ONLY HISTORY (Sprint 07) --------------------------------
+      //
+      // Written BEFORE the progress update and inside the same transaction, so
+      // the cache below can never describe an attempt this table does not
+      // contain. Before this row existed, a retake overwrote lastAnswers and
+      // lastSubmitResult, destroying the record of the attempt it replaced —
+      // including the student's BEST one, whose score survived as a scalar
+      // while the answers that earned it did not.
+      //
+      // The unique (userId, clientAttemptId) is an integrity backstop only —
+      // replays are recognised by the deep pre-check above, before anything is
+      // written. If this insert ever DOES violate the constraint it means two
+      // concurrent submits raced past that check, and failing the transaction
+      // is the correct outcome: one attempt is recorded, not two.
+      await tx.lessonTaskAttempt.create({
+        data: {
+          userId,
+          taskId: task.id,
+          correctCount,
+          totalCount,
+          accuracyPercent,
+          passed,
+          durationSeconds,
+          result: responseBody as unknown as Prisma.InputJsonValue,
+          clientAttemptId: dto.clientAttemptId,
+        },
+      });
+
       await tx.lessonTaskProgress.update({
         where: { id: progress.id },
         data: {
@@ -636,12 +765,19 @@ export class QuizService {
           maxScore: isNewBest ? totalCount : progress.maxScore,
           // Set on first pass, never cleared on a later failed retry.
           completedAt: progress.completedAt ?? (passed ? new Date() : null),
-          // Attempt consumed — the next GET stamps a fresh clock and a
+          // Attempt consumed — the next start stamps a fresh clock and a
           // fresh ORDERING shuffle seed.
           attemptStartedAt: null,
           currentAttemptAnswers: Prisma.JsonNull,
           currentAttemptSeed: null,
-          lastDurationSeconds: durationSeconds,
+          // Sprint 07 — only overwrite when this attempt actually produced a
+          // duration. It used to write unconditionally, so an attempt with no
+          // attemptStartedAt (a submit that never went through start, or a
+          // second submit after the field was nulled just above) replaced a
+          // perfectly good stored duration with null.
+          ...(durationSeconds !== null
+            ? { lastDurationSeconds: durationSeconds }
+            : {}),
           lastClientAttemptId: dto.clientAttemptId,
           lastAnswers: answersRecord as unknown as Prisma.InputJsonValue,
           lastSubmitResult: responseBody as unknown as Prisma.InputJsonValue,
@@ -669,8 +805,29 @@ export class QuizService {
   // Sprint 06D — the visibility check is the CALLER's responsibility here, so
   // the aggregated stage-progress endpoint can check the course once and then
   // roll up several task types without repeating it per type.
+  //
+  // Sprint 07 — kept as a one-line delegation so every existing caller and
+  // test is untouched, while the real implementation below is scope-agnostic.
   async collectCourseTaskProgress(
     courseId: string,
+    userId: string,
+    taskType: LessonTaskType,
+  ): Promise<CourseQuizProgressRowDto[]> {
+    return this.collectTaskProgress(
+      { kind: 'course', courseId },
+      userId,
+      taskType,
+    );
+  }
+
+  // Sprint 07 — the same roll-up over either a whole course or one lesson.
+  // The lesson aggregate (GET /lessons/:lessonId/progress) needs exactly this
+  // view for a single lesson; without the scope parameter it would either read
+  // the entire course to answer a one-lesson question, or grow a second
+  // implementation of "what does stage progress mean" that can drift from this
+  // one.
+  async collectTaskProgress(
+    scope: ProgressScope,
     userId: string,
     taskType: LessonTaskType,
   ): Promise<CourseQuizProgressRowDto[]> {
@@ -678,7 +835,7 @@ export class QuizService {
       where: {
         type: taskType,
         isPublished: true,
-        lesson: { courseId, isPublished: true },
+        ...scopeToTaskWhere(scope),
       },
       select: { id: true, lessonId: true },
     });
@@ -942,10 +1099,20 @@ export class QuizService {
         `No ${taskLabel(taskType).toLowerCase()} has been created for lesson ${lessonId} yet.`,
       );
 
-    const attemptedCount = await this.prisma.lessonTaskProgress.count({
-      where: { taskId: task.id, attemptsCount: { gt: 0 } },
-    });
-    if (attemptedCount > 0) throw new QuizHasAttemptsException();
+    // Sprint 07 — both are checked, and deliberately so. The progress row's
+    // attemptsCount is a CACHE; LessonTaskAttempt is the authoritative history
+    // and is Restrict on `task`, so if the two ever disagreed the delete would
+    // fail with a raw P2003 in front of an admin instead of this 409. Counting
+    // the authoritative table too makes the refusal correct by construction
+    // rather than by the cache happening to be right.
+    const [attemptedCount, historyCount] = await Promise.all([
+      this.prisma.lessonTaskProgress.count({
+        where: { taskId: task.id, attemptsCount: { gt: 0 } },
+      }),
+      this.prisma.lessonTaskAttempt.count({ where: { taskId: task.id } }),
+    ]);
+    if (attemptedCount > 0 || historyCount > 0)
+      throw new QuizHasAttemptsException();
 
     await this.prisma.$transaction([
       // View-only progress rows (attemptsCount 0) are not real attempts and
