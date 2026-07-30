@@ -3,6 +3,7 @@ import { LessonTaskType } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { QuizService } from './quiz.service';
 import { TrapHunterService } from './trap-hunter.service';
+import { EMPTY_STEPS, LessonStepService } from '../steps/lesson-step.service';
 import { AnswerQuestionDto, SubmitQuizDto } from './dto';
 import {
   assertLessonVisible,
@@ -45,6 +46,9 @@ export class PracticeService {
     private readonly prisma: PrismaService,
     private readonly quiz: QuizService,
     private readonly trapHunter: TrapHunterService,
+    // Sprint 07 — used ONLY by the course aggregate below, to fold video and
+    // theory into the same single request.
+    private readonly steps: LessonStepService,
   ) {}
 
   // Gathers the two server-verifiable prerequisites. Reads trap state through
@@ -259,29 +263,42 @@ export class PracticeService {
   ): Promise<CourseStageProgressRowDto[]> {
     await assertCourseAccessible(this.prisma, courseId);
 
-    const [quizRows, trapRows, practiceRows] = await Promise.all([
-      this.quiz.collectCourseTaskProgress(
-        courseId,
-        userId,
-        LessonTaskType.QUIZ,
-      ),
-      this.trapHunter.collectCourseTrapProgress(courseId, userId),
-      this.quiz.collectCourseTaskProgress(
-        courseId,
-        userId,
-        LessonTaskType.PRACTICE,
-      ),
-    ]);
+    const [quizRows, trapRows, practiceRows, stepsByLesson] = await Promise.all(
+      [
+        this.quiz.collectCourseTaskProgress(
+          courseId,
+          userId,
+          LessonTaskType.QUIZ,
+        ),
+        this.trapHunter.collectCourseTrapProgress(courseId, userId),
+        this.quiz.collectCourseTaskProgress(
+          courseId,
+          userId,
+          LessonTaskType.PRACTICE,
+        ),
+        // Sprint 07 — video and theory. This is not an enhancement to the course
+        // page, it is what keeps it CORRECT: both stages gate isLessonComplete(),
+        // and until this sprint the client read them from localStorage. With that
+        // storage removed, a course page without these rows would show every
+        // lesson as incomplete no matter how much of it the student had watched.
+        this.steps.collectSteps({ kind: 'course', courseId }, userId),
+      ],
+    );
 
     const quizByLesson = new Map(quizRows.map((r) => [r.lessonId, r]));
     const trapByLesson = new Map(trapRows.map((r) => [r.lessonId, r]));
     const practiceByLesson = new Map(practiceRows.map((r) => [r.lessonId, r]));
 
+    // Step rows contribute lesson ids too. A lesson whose only content is a
+    // video and some notes has no LessonTask at all, so before Sprint 07 it
+    // was absent from this response entirely — and a client computing a course
+    // percentage from these rows could not see it.
     const lessonIds = [
       ...new Set([
         ...quizRows.map((r) => r.lessonId),
         ...trapRows.map((r) => r.lessonId),
         ...practiceRows.map((r) => r.lessonId),
+        ...stepsByLesson.keys(),
       ]),
     ];
 
@@ -312,6 +329,7 @@ export class PracticeService {
               attemptsCount: practice.attemptsCount,
             }
           : null,
+        steps: stepsByLesson.get(lessonId) ?? EMPTY_STEPS,
       };
     });
   }

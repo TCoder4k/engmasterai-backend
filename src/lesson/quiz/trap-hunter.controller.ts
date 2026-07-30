@@ -60,6 +60,11 @@ export class TrapHunterStudentController {
 // GET /courses/:courseId/trap-hunter-progress — the batch companion, shaped
 // exactly like QuizCourseController so the course page fetches both the same
 // way.
+//
+// @deprecated Sprint 07. Superseded by GET /courses/:courseId/stage-progress.
+// Kept for one sprint so a client mid-deploy does not 404; deleted in the
+// cleanup sprint. See the note on QuizCourseController. DO NOT wire anything
+// new to it.
 @Controller('courses/:courseId/trap-hunter-progress')
 export class TrapHunterCourseController {
   constructor(private readonly trapHunterService: TrapHunterService) {}

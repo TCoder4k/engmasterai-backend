@@ -49,7 +49,7 @@ describe('QuizService', () => {
       };
       const service = new QuizService(prisma as any, buildConfig(65));
 
-      const res = await service.getStudentQuiz('lesson-1', 'user-1');
+      const res = await service.startQuizAttempt('lesson-1', 'user-1');
       expect(res.quiz.passingScorePercent).toBe(65);
     });
 
@@ -85,7 +85,7 @@ describe('QuizService', () => {
       };
       const service = new QuizService(prisma as any, buildConfig(65));
 
-      const res = await service.getStudentQuiz('lesson-1', 'user-1');
+      const res = await service.startQuizAttempt('lesson-1', 'user-1');
       expect(res.quiz.passingScorePercent).toBe(90);
     });
   });
@@ -131,6 +131,12 @@ describe('QuizService', () => {
             lessonTaskProgress: {
               findUnique: jest.fn().mockResolvedValue(progressRow),
               update,
+            },
+            // Sprint 07 — submit now also appends to the immutable attempt
+            // history inside the same transaction.
+            lessonTaskAttempt: {
+              create: jest.fn().mockResolvedValue({}),
+              findUnique: jest.fn().mockResolvedValue(null),
             },
           }),
         ),

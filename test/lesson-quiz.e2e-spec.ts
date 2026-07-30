@@ -145,6 +145,12 @@ describe('Lesson Quiz Engine (e2e) — Sprint 06B', () => {
     await prisma.question.deleteMany({
       where: { task: { lesson: { courseId } } },
     });
+    // Sprint 07 — LessonTaskAttempt.task is Restrict, so the append-only
+    // attempt history must go before the tasks it belongs to. Mirrors the
+    // lessonTaskProgress delete above and the order in test-fixture-sweep.ts.
+    await prisma.lessonTaskAttempt.deleteMany({
+      where: { task: { lesson: { courseId } } },
+    });
     await prisma.lessonTask.deleteMany({ where: { lesson: { courseId } } });
     await prisma.lesson.deleteMany({ where: { courseId } });
     await prisma.course.deleteMany({ where: { id: courseId } });
@@ -849,11 +855,16 @@ describe('Lesson Quiz Engine (e2e) — Sprint 06B', () => {
         .expect(200);
       const resumedQuiz = (
         resumed.body as {
-          quiz: { currentAttemptId: string | null; questions: { answered: unknown }[] };
+          quiz: {
+            currentAttemptId: string | null;
+            questions: { answered: unknown }[];
+          };
         }
       ).quiz;
       expect(resumedQuiz.currentAttemptId).toBe(original);
-      expect(resumedQuiz.questions.filter((q) => q.answered !== null)).toHaveLength(2);
+      expect(
+        resumedQuiz.questions.filter((q) => q.answered !== null),
+      ).toHaveLength(2);
 
       // Finish using the id the server handed back, exactly as the client does.
       for (const answer of correct.slice(2)) {
@@ -900,7 +911,9 @@ describe('Lesson Quiz Engine (e2e) — Sprint 06B', () => {
         .set('Authorization', `Bearer ${student.token}`)
         .send(answerBody(second, correct[0].questionId, correct[0].submitted))
         .expect(201);
-      expect((afterRetake.body as { answeredCount: number }).answeredCount).toBe(1);
+      expect(
+        (afterRetake.body as { answeredCount: number }).answeredCount,
+      ).toBe(1);
 
       const blocked = await request(app.getHttpServer())
         .post(`/lessons/${lessonId}/quiz/submit`)

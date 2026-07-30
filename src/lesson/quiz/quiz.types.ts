@@ -86,6 +86,13 @@ export interface StudentQuizProgressDto {
 export interface GetQuizResponseDto {
   quiz: StudentQuizDto;
   progress: StudentQuizProgressDto;
+  // Sprint 07 — the stored summary of the last FINISHED attempt, or null when
+  // there is none or an attempt is currently in flight.
+  //
+  // Non-null means "you have finished this before; here is what you scored" —
+  // which is what lets the client render the stored summary instead of
+  // silently restarting a quiz the student already passed.
+  lastResult: SubmitQuizResponseDto | null;
 }
 
 export interface QuestionResultDto {

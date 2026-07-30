@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AnswerTrapDto, RequestTrapHintDto } from './dto';
 import { gradeQuestion, QuestionOption } from './grade-question';
+import { ProgressScope, scopeToTaskWhere } from './progress-scope';
 import {
   assertCourseAccessible,
   assertLessonVisible,
@@ -500,11 +501,21 @@ export class TrapHunterService {
     courseId: string,
     userId: string,
   ): Promise<CourseTrapHunterProgressRowDto[]> {
+    return this.collectTrapProgress({ kind: 'course', courseId }, userId);
+  }
+
+  // Sprint 07 — the same derivation over either a course or one lesson, so the
+  // lesson aggregate reuses this rather than growing a second definition of
+  // what a trap is. Still QUIZ-keyed, for the reason above.
+  async collectTrapProgress(
+    scope: ProgressScope,
+    userId: string,
+  ): Promise<CourseTrapHunterProgressRowDto[]> {
     const tasks = await this.prisma.lessonTask.findMany({
       where: {
         type: 'QUIZ',
         isPublished: true,
-        lesson: { courseId, isPublished: true },
+        ...scopeToTaskWhere(scope),
       },
       select: { id: true, lessonId: true },
     });

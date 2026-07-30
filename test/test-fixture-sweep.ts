@@ -32,6 +32,20 @@ export async function sweepTestFixtures(): Promise<void> {
     await prisma.lessonTaskProgress.deleteMany({
       where: { task: { lesson: fixtureLessonWhere } },
     });
+    // Sprint 07 — LessonTaskAttempt.task is `Restrict` for the same reason
+    // LessonTaskProgress.task is: real attempt history must not be silently
+    // destroyed by deleting the content it belongs to. That makes this sweep
+    // REQUIRED, not redundant — without it the first e2e test that submits a
+    // quiz leaves a row that blocks the lessonTask.deleteMany below, and every
+    // later suite in the run inherits the poisoned fixture.
+    await prisma.lessonTaskAttempt.deleteMany({
+      where: { task: { lesson: fixtureLessonWhere } },
+    });
+    // NOTE: lessonStepProgress needs NO entry here. Both of its relations
+    // (user, lesson) are onDelete: Cascade, so its rows go with either the
+    // user sweep below or the lesson sweep further down. Adding a deleteMany
+    // for it would be harmless but misleading — it would imply a Restrict
+    // relation that does not exist. Do not "fix" this omission.
     await prisma.question.deleteMany({
       where: { task: { lesson: fixtureLessonWhere } },
     });
