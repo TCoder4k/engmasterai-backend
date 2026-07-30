@@ -2,7 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { LessonStepKind, LessonStepProgress, Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { assertLessonVisible } from '../quiz/lesson-visibility';
-import { ProgressScope } from '../quiz/progress-scope';
+import { ProgressScope, scopeToLessonWhere } from '../quiz/progress-scope';
 import { VideoProgressDto } from './dto/video-progress.dto';
 import { LessonStepsDto, StepProgressDto } from './lesson-step.types';
 
@@ -57,13 +57,12 @@ export class LessonStepService {
     scope: ProgressScope,
     userId: string,
   ): Promise<Map<string, LessonStepsDto>> {
+    // Sprint 08 — the scope predicate moved to scopeToLessonWhere so this
+    // collector, the task collectors and the course aggregate's own lesson
+    // query all agree on what a scope selects. A lesson counted by one and
+    // missed by another is a silent percentage bug.
     const rows = await this.prisma.lessonStepProgress.findMany({
-      where: {
-        userId,
-        ...(scope.kind === 'lesson'
-          ? { lessonId: scope.lessonId, lesson: { isPublished: true } }
-          : { lesson: { courseId: scope.courseId, isPublished: true } }),
-      },
+      where: { userId, lesson: scopeToLessonWhere(scope) },
     });
 
     const byLesson = new Map<string, LessonStepProgress[]>();

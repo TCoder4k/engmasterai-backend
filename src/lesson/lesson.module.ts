@@ -23,6 +23,8 @@ import { LessonStepController } from './steps/lesson-step.controller';
 import { LessonStepService } from './steps/lesson-step.service';
 import { LessonProgressController } from './progress/lesson-progress.controller';
 import { LessonProgressService } from './progress/lesson-progress.service';
+import { CourseProgressController } from './progress/course-progress.controller';
+import { CourseProgressService } from './progress/course-progress.service';
 
 // Sprint 06B — the Lesson Quiz Engine lives inside the existing Lesson
 // module rather than a new top-level one (RateLimiterService/JwtAuthGuard
@@ -55,6 +57,12 @@ import { LessonProgressService } from './progress/lesson-progress.service';
     // composes the quiz/trap collectors that already live here.
     LessonStepController,
     LessonProgressController,
+    // Sprint 08 — the course-level aggregate. It lives here, not in
+    // CourseModule, because it composes the quiz/trap/step collectors that
+    // already live in this module; putting it beside the Course CRUD would
+    // have made CourseModule depend on the whole lesson-progress stack to
+    // answer a question about lessons.
+    CourseProgressController,
   ],
   providers: [
     LessonService,
@@ -63,6 +71,7 @@ import { LessonProgressService } from './progress/lesson-progress.service';
     PracticeService,
     LessonStepService,
     LessonProgressService,
+    CourseProgressService,
     QuizRateLimitGuard,
   ],
   exports: [
@@ -72,6 +81,7 @@ import { LessonProgressService } from './progress/lesson-progress.service';
     PracticeService,
     LessonStepService,
     LessonProgressService,
+    CourseProgressService,
   ],
 })
 export class LessonModule {}

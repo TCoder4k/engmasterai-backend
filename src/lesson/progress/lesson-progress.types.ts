@@ -1,5 +1,6 @@
 import { LessonStepsDto } from '../steps/lesson-step.types';
 import { PracticeAvailabilityDto } from '../quiz/practice.types';
+import { CourseStatus, LessonStatus } from './lesson-status';
 
 // Sprint 07 — GET /lessons/:lessonId/progress.
 //
@@ -53,4 +54,40 @@ export interface LessonProgressDto {
   quiz: LessonQuizProgressDto | null;
   trapHunter: LessonTrapProgressDto | null;
   practice: LessonPracticeProgressDto | null;
+}
+
+// --- Sprint 08 — GET /progress/courses --------------------------------------
+//
+// The canonical COURSE-level progress payload, and the only one. Every course
+// surface (catalog, detail, grammar roadmap, dashboard, Continue Learning)
+// reads this, so a percentage cannot mean one thing on one page and something
+// else on the next.
+//
+// It supersedes GET /courses/:id/stage-progress, which returns raw per-stage
+// rows the client then had to roll up itself. That endpoint is deprecated, not
+// deleted — one sprint of overlap so a client mid-deploy does not 404.
+
+export interface CourseLessonStatusDto {
+  lessonId: string;
+  orderIndex: number;
+  status: LessonStatus;
+}
+
+export interface CourseProgressSummaryDto {
+  courseId: string;
+  // Counts EXCLUDE lessons with no completable stage (status NO_CONTENT), so
+  // 100% stays reachable on a course that contains one. See lesson-status.ts.
+  totalLessons: number;
+  completedLessons: number;
+  inProgressLessons: number;
+  notStartedLessons: number;
+  progressPercent: number;
+  status: CourseStatus;
+  // An ID, never a path. The client composes the route — see the note on
+  // resolveContinueLesson in lesson-status.ts.
+  continueLessonId: string | null;
+  // Present only when the caller asks for `include=lessons`. The course detail
+  // page needs a status per row; the catalog and the dashboard render summaries
+  // and would otherwise be shipped every lesson status of every course listed.
+  lessons: CourseLessonStatusDto[] | null;
 }

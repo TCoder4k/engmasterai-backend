@@ -86,6 +86,14 @@ export class PracticeStudentController {
 // exist and still work; this replaces the need to call them together. Adding a
 // stage used to mean adding a round trip to every surface that shows a
 // percentage, which by Sprint 06E would have been four.
+//
+// @deprecated Sprint 08. Superseded by GET /progress/courses, which returns
+// derived lesson and course STATUS rather than raw per-stage rows the client
+// then has to roll up itself. That roll-up was the last place a course
+// percentage was decided in the browser. Every in-repo consumer is migrated;
+// this is kept one sprint so a client mid-deploy does not 404, and is deleted
+// in the cleanup sprint alongside quiz-progress and trap-hunter-progress.
+// DO NOT wire anything new to it.
 @Controller('courses/:courseId/stage-progress')
 export class PracticeCourseController {
   constructor(private readonly practiceService: PracticeService) {}

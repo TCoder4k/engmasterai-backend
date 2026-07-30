@@ -39,3 +39,32 @@ export const assertCourseAccessible = async (
     throw new NotFoundException(`Course with ID ${courseId} not found`);
   }
 };
+
+// Sprint 08 — the BATCH form, for the course-progress aggregate.
+//
+// It filters instead of throwing, and that difference is deliberate. The
+// aggregate answers for a whole catalog page at once; one stale or unpublished
+// id in that list must not fail the request for every other course on the
+// page. Callers treat an absent courseId as "no progress available".
+//
+// This is NOT a weaker policy than assertCourseAccessible — it applies exactly
+// the same predicate (`isPublished`), which is why it lives here rather than
+// inline in the service. Sprint 06C extracted this file precisely so a second
+// service could not grow its own slightly-different copy; a batch reader
+// filtering on `isPublished: true` written somewhere else is how the two
+// versions start to disagree.
+//
+// It leaks nothing: GET /courses is public and lists every published course,
+// so which ids are published is already public information. The filter hides
+// unpublished ids, which is the part that matters.
+export const filterAccessibleCourses = async (
+  prisma: PrismaService,
+  courseIds: string[],
+): Promise<string[]> => {
+  if (courseIds.length === 0) return [];
+  const courses = await prisma.course.findMany({
+    where: { id: { in: courseIds }, isPublished: true },
+    select: { id: true },
+  });
+  return courses.map((course) => course.id);
+};

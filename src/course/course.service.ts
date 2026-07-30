@@ -38,9 +38,53 @@ const MANAGE_SELECT = {
 
 const MAX_LIMIT = 100;
 
+type CourseRow = { id: string };
+
 @Injectable()
 export class CourseService {
   constructor(private readonly prismaService: PrismaService) {}
+
+  // Sprint 08 — total study time per course, summed over PUBLISHED lessons.
+  //
+  // This is the sibling of _count.lessons above and exists for the same
+  // reason: without it a card showing "12 bài · 340 phút" had to fetch every
+  // lesson of every course to add up estimatedStudyMinutes, which is exactly
+  // what GrammarRoadmapPage did — one lessons request per course, on top of one
+  // progress request per course. Sprint 08 removed the progress half; this
+  // removes the other half, and the roadmap drops from 2N requests to one.
+  //
+  // It is deliberately NOT part of the course-progress payload. This number is
+  // the same for every student, so putting it in a per-user, uncacheable
+  // response would be duplicating course metadata into a progress read.
+  //
+  // Prisma cannot sum a relation inside `select`, so it is one groupBy over the
+  // ids already fetched — one extra query, constant in page size, no N+1.
+  private async withEstimatedMinutes<T extends CourseRow>(
+    courses: T[],
+  ): Promise<(T & { totalEstimatedMinutes: number })[]> {
+    if (courses.length === 0) return [];
+
+    const grouped = await this.prismaService.lesson.groupBy({
+      by: ['courseId'],
+      where: {
+        courseId: { in: courses.map((course) => course.id) },
+        isPublished: true,
+      },
+      _sum: { estimatedStudyMinutes: true },
+    });
+
+    const minutesByCourse = new Map(
+      grouped.map((row) => [row.courseId, row._sum.estimatedStudyMinutes ?? 0]),
+    );
+
+    // 0, not null, when no lesson carries a study time — the client already
+    // renders the tile only when the value is above zero, so a course with no
+    // authored durations shows nothing rather than "0 phút".
+    return courses.map((course) => ({
+      ...course,
+      totalEstimatedMinutes: minutesByCourse.get(course.id) ?? 0,
+    }));
+  }
 
   async findPublished(page?: number, limit?: number, type?: CourseType) {
     const take = Math.min(limit || 10, MAX_LIMIT);
@@ -59,7 +103,7 @@ export class CourseService {
     ]);
 
     return {
-      data: courses,
+      data: await this.withEstimatedMinutes(courses),
       meta: {
         total,
         page: page || 1,
@@ -108,7 +152,8 @@ export class CourseService {
       throw new NotFoundException(`Course with ID ${id} not found`);
     }
 
-    return course;
+    const [withMinutes] = await this.withEstimatedMinutes([course]);
+    return withMinutes;
   }
 
   async create(dto: CreateCourseDto) {
