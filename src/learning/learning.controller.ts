@@ -13,6 +13,7 @@ import {
 import { LearningService } from './learning.service';
 import { SubmitReviewDto } from './dto/submit-review.dto';
 import { QueryDueReviewsDto } from './dto/query-due-reviews.dto';
+import { LibrariesProgressQueryDto } from './dto/libraries-progress-query.dto';
 import { JwtAuthGuard } from '../auth/guards';
 import { LearningRateLimitGuard } from './rate-limit/learning-rate-limit.guard';
 import { LearningRateLimit } from './rate-limit/learning-rate-limits.decorator';
@@ -79,13 +80,21 @@ export class LearningController {
   // collide (this one has no `:libraryId` segment), but keeping the more
   // specific literal route first matches this codebase's existing
   // convention elsewhere (e.g. vocab-word.controller.ts's `manage` routes).
+  // Sprint 09 follow-up — now also reports the daily NEW-word allowance, so the
+  // dashboard's review card can say "23 to review + 15 new" instead of "23
+  // waiting" and then opening a 38-card session. The service returns the whole
+  // envelope; this no longer wraps it, because there are two top-level fields.
+  //
+  // `tz` is optional and READ-ONLY here: it buckets "today" for the quota count
+  // but never writes User.timezone. Only getDueReviews bootstraps that column.
   @UseGuards(JwtAuthGuard, LearningRateLimitGuard)
   @LearningRateLimit({ kind: 'queue', max: 60, windowSeconds: 60 })
   @Get('libraries/progress')
-  async getLibrariesProgress(@Req() req) {
-    return {
-      data: await this.learningService.getLibrariesProgress(req.user.userId),
-    };
+  async getLibrariesProgress(
+    @Query(queryPipe) query: LibrariesProgressQueryDto,
+    @Req() req,
+  ) {
+    return this.learningService.getLibrariesProgress(req.user.userId, query.tz);
   }
 
   @UseGuards(JwtAuthGuard, LearningRateLimitGuard)

@@ -1,0 +1,42 @@
+{
+  "id": "toeic-part2",
+  "mapper": "generic",
+  "importSource": "IMPORT",
+  "files": {
+    "table": "toeic/TOEIC_Vocab_PART 2.xlsx",
+    "format": "xlsx",
+    "sheet": "Vocabulary"
+  },
+  "library": {
+    "name": "TOEIC Part 2 Vocabulary",
+    "description": "TOEIC Part 2 vocabulary focused on short spoken responses and office communication."
+  },
+  "deckFrom": { "column": "Topic" },
+  "columns": {
+    "text": "Word/Phrase",
+    "ipa": "IPA",
+    "meanings": [
+      { "from": "Meaning", "posFrom": "Form" }
+    ],
+    "examples": [
+      { "sentence": "Example", "translation": "Example Meaning" }
+    ],
+    "synonyms": "Synonym"
+  },
+  "posAliases": {
+    "n": "NOUN",
+    "noun": "NOUN",
+    "v": "VERB",
+    "verb": "VERB",
+    "adj": "ADJECTIVE",
+    "adjective": "ADJECTIVE",
+    "adv": "ADVERB",
+    "adverb": "ADVERB",
+    "phr": "PHRASE",
+    "phr.": "PHRASE",
+    "phr v": "PHRASE",
+    "noun phrase": "PHRASE",
+    "verb phrase": "PHRASE"
+  },
+  "cefrAliases": {}
+}

@@ -82,6 +82,12 @@ import { CourseProgressService } from './progress/course-progress.service';
     LessonStepService,
     LessonProgressService,
     CourseProgressService,
+    // Sprint 09 — AnalyticsModule reuses this guard rather than declaring a
+    // second provider for the same class. Both would work (it is stateless and
+    // keyed in Redis), but one class with two instances is the kind of harmless
+    // duplication that stops being harmless the moment someone gives the guard
+    // state.
+    QuizRateLimitGuard,
   ],
 })
 export class LessonModule {}

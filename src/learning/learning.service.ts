@@ -26,7 +26,7 @@ import {
   ReviewResponseDto,
   DeckProgressDto,
   LibraryProgressDto,
-  LibrarySummaryProgressDto,
+  LibrarySummaryProgressResponseDto,
 } from './learning.types';
 
 const DEFAULT_QUEUE_LIMIT = 200;
@@ -694,13 +694,28 @@ export class LearningService {
   // fetch — never one query per library.
   async getLibrariesProgress(
     userId: string,
-  ): Promise<LibrarySummaryProgressDto[]> {
+    requestedTimeZone?: string,
+  ): Promise<LibrarySummaryProgressResponseDto> {
     const libraries = await this.prisma.vocabLibrary.findMany({
       where: { isPublished: true },
       select: { id: true },
       orderBy: { orderIndex: 'asc' },
     });
-    if (libraries.length === 0) return [];
+    if (libraries.length === 0) {
+      return {
+        data: [],
+        dailyNewWords: {
+          dailyLimit: DEFAULT_NEW_LIMIT,
+          introducedToday: await this.countNewWordsIntroducedToday(
+            userId,
+            requestedTimeZone,
+          ),
+          // No published library means no word can be handed out, whatever the
+          // quota says.
+          availableNow: 0,
+        },
+      };
+    }
 
     const deckCounts = await this.prisma.vocabDeck.groupBy({
       by: ['libraryId'],
@@ -747,7 +762,7 @@ export class LearningService {
         : [];
     const progressByWordId = new Map(allProgress.map((p) => [p.wordId, p]));
 
-    return libraries.map((library) => {
+    const data = libraries.map((library) => {
       const wordIds = [...(wordIdsByLibrary.get(library.id) ?? [])];
       const rows = wordIds
         .map((id) => progressByWordId.get(id))
@@ -757,6 +772,58 @@ export class LearningService {
         deckCount: deckCountByLibrary.get(library.id) ?? 0,
         ...this.summarizeProgressRows(wordIds.length, rows),
       };
+    });
+
+    // Counted across ALL libraries, deduplicated by word id — the quota is per
+    // user per day, not per library, and a word attached to two libraries can
+    // only be introduced once. Summing each library's own `newWords` would
+    // double-count exactly those words.
+    const neverRatedCount = allWordIds.length - allProgress.length;
+    const introducedToday = await this.countNewWordsIntroducedToday(
+      userId,
+      requestedTimeZone,
+    );
+
+    return {
+      data,
+      dailyNewWords: {
+        dailyLimit: DEFAULT_NEW_LIMIT,
+        introducedToday,
+        availableNow: Math.min(
+          Math.max(0, DEFAULT_NEW_LIMIT - introducedToday),
+          neverRatedCount,
+        ),
+      },
+    };
+  }
+
+  // The same window getDueReviews uses to spend the daily new-word quota, so
+  // the two cannot disagree about what "today" means.
+  //
+  // TIMEZONE PRECEDENCE, and it is deliberate: the REQUEST's zone wins for this
+  // READ, matching DashboardAnalyticsService rather than getDueReviews. Both
+  // feed the dashboard, and a card that says "15 từ mới" beside a stats widget
+  // computing a different "today" would be its own bug. getDueReviews keeps
+  // reading the stored column because it SPENDS the quota, and that is where
+  // spoofing a zone would actually gain something.
+  //
+  // The set-once bootstrap write stays in getDueReviews alone. This is a pure
+  // read and must not acquire a write.
+  private async countNewWordsIntroducedToday(
+    userId: string,
+    requestedTimeZone?: string,
+  ): Promise<number> {
+    const user = await this.prisma.user.findUniqueOrThrow({
+      where: { id: userId },
+      select: { timezone: true },
+    });
+    const effectiveTz = requestedTimeZone ?? user.timezone ?? 'UTC';
+
+    return this.prisma.userWordProgress.count({
+      where: {
+        userId,
+        createdAt: { gte: startOfDayInTimeZone(new Date(), effectiveTz) },
+      },
     });
   }
 }
