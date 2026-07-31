@@ -113,6 +113,35 @@ export interface LibrarySummaryProgressDto {
   masteredPercent: number;
 }
 
+// Sprint 09 follow-up — the daily NEW-word allowance, which is per-user and
+// per-day, NOT per-library, so it sits beside `data` rather than inside it.
+//
+// WHY THIS EXISTS. The dashboard's review card summed `dueWords` and told the
+// student "23 từ đang chờ", then opening the session showed "Còn lại: 38". Both
+// numbers were correct and they answered different questions: `dueWords` counts
+// only words with an EXISTING UserWordProgress row that has come due, while the
+// review queue is topped up with NEW words the student has never rated. The
+// difference — 15 — had no representation anywhere in the API, so no client
+// could have explained it.
+export interface DailyNewWordsDto {
+  /** The per-day cap on newly introduced words. */
+  dailyLimit: number;
+  /** Already introduced today, in the user's own timezone. */
+  introducedToday: number;
+  /**
+   * How many new words a session started NOW would actually hand out:
+   * `min(remaining quota, words never rated)`.
+   *
+   * This is the number to add to `dueWords` to predict the queue length. It can
+   * still overstate by a hair in one case: the queue also caps its total at
+   * DEFAULT_QUEUE_LIMIT (200), so a student with 200+ due words gets fewer new
+   * ones than this. Not modelled here — at 200 due words the review card has
+   * bigger things to say.
+   */
+  availableNow: number;
+}
+
 export interface LibrarySummaryProgressResponseDto {
   data: LibrarySummaryProgressDto[];
+  dailyNewWords: DailyNewWordsDto;
 }

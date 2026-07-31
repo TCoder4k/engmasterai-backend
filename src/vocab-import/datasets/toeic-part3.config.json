@@ -1,0 +1,44 @@
+{
+  "id": "toeic-part3",
+  "mapper": "generic",
+  "importSource": "IMPORT",
+  "files": {
+    "table": "toeic/PART-3---Tu-vung-co-ban-2026-07-27-DaSua (1).xlsx",
+    "format": "xlsx",
+    "sheet": "Vocabulary"
+  },
+  "library": {
+    "name": "TOEIC Part 3 Vocabulary",
+    "description": "TOEIC Part 3 vocabulary organized as contextual workplace phrase sets."
+  },
+  "deckFrom": { "column": "Topic" },
+  "columns": {
+    "text": "Word/Phrase",
+    "ipa": "IPA",
+    "meanings": [
+      { "from": "Meaning", "posFrom": "Form" }
+    ],
+    "examples": [
+      { "sentence": "Example", "translation": "Example Meaning" }
+    ],
+    "synonyms": "Synonym"
+  },
+  "posAliases": {
+    "n": "NOUN",
+    "noun": "NOUN",
+    "v": "VERB",
+    "verb": "VERB",
+    "adj": "ADJECTIVE",
+    "adjective": "ADJECTIVE",
+    "adv": "ADVERB",
+    "adverb": "ADVERB",
+    "phr": "PHRASE",
+    "phr.": "PHRASE",
+    "phr v": "PHRASE",
+    "conj": "CONJUNCTION",
+    "prep": "PREPOSITION",
+    "verb phrase": "PHRASE",
+    "noun phrase": "PHRASE"
+  },
+  "cefrAliases": {}
+}

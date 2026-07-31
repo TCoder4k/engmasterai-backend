@@ -846,7 +846,7 @@ describe('LearningService (integration — real Postgres)', () => {
   describe('getLibrariesProgress (library grid)', () => {
     it('returns one real summary row per published library, with a real published-deck count', async () => {
       const userId = await createUser();
-      const rows = await service.getLibrariesProgress(userId);
+      const { data: rows } = await service.getLibrariesProgress(userId);
 
       const row = rows.find((r) => r.libraryId === libraryId);
       expect(row).toBeDefined();
@@ -870,7 +870,7 @@ describe('LearningService (integration — real Postgres)', () => {
         clientReviewId: randomUUID(),
       });
 
-      const rows = await service.getLibrariesProgress(userId);
+      const { data: rows } = await service.getLibrariesProgress(userId);
       const row = rows.find((r) => r.libraryId === libraryId);
 
       expect(row).toMatchObject({
@@ -893,15 +893,79 @@ describe('LearningService (integration — real Postgres)', () => {
         where: { id: libraryId },
         data: { isPublished: false },
       });
-      const hidden = await service.getLibrariesProgress(userId);
+      const { data: hidden } = await service.getLibrariesProgress(userId);
       expect(hidden.find((r) => r.libraryId === libraryId)).toBeUndefined();
 
       await prisma.vocabLibrary.update({
         where: { id: libraryId },
         data: { isPublished: true },
       });
-      const restored = await service.getLibrariesProgress(userId);
+      const { data: restored } = await service.getLibrariesProgress(userId);
       expect(restored.find((r) => r.libraryId === libraryId)).toBeDefined();
+    });
+
+    // THE 23-vs-38 BUG. The dashboard summed `dueWords` and promised "23 words
+    // waiting"; opening the session showed "38 remaining". Both were right and
+    // they answered different questions — `dueWords` counts only words with an
+    // existing progress row that has come due, while the queue is topped up
+    // with NEW words. The difference had no representation in the API at all,
+    // so no client could explain it. `dailyNewWords` is that representation.
+    describe('dailyNewWords (the review card must be able to explain the queue)', () => {
+      it('reports the quota and how many new words a session would hand out', async () => {
+        const userId = await createUser();
+
+        const { dailyNewWords } = await service.getLibrariesProgress(userId);
+
+        expect(dailyNewWords.dailyLimit).toBe(20);
+        expect(dailyNewWords.introducedToday).toBe(0);
+        // One visible, never-rated word in the fixture library.
+        expect(dailyNewWords.availableNow).toBe(1);
+      });
+
+      it('counts a first rating against today’s quota and drops availability', async () => {
+        const userId = await createUser();
+        await service.submitReview(userId, wordId, {
+          rating: 'GOOD',
+          practiceMode: 'FLASHCARD',
+          clientReviewId: randomUUID(),
+        });
+
+        const { data, dailyNewWords } =
+          await service.getLibrariesProgress(userId);
+
+        expect(dailyNewWords.introducedToday).toBe(1);
+        // The word is no longer new, so nothing new is left to hand out.
+        expect(dailyNewWords.availableNow).toBe(0);
+        // And it has left `newWords` on the library row, which is the other
+        // half of the same fact.
+        expect(data.find((r) => r.libraryId === libraryId)?.newWords).toBe(0);
+      });
+
+      it('never reports negative availability once the quota is spent', async () => {
+        const userId = await createUser();
+
+        const { dailyNewWords } = await service.getLibrariesProgress(
+          userId,
+          'Asia/Ho_Chi_Minh',
+        );
+
+        expect(dailyNewWords.availableNow).toBeGreaterThanOrEqual(0);
+      });
+
+      // A pure read: unlike the due queue, this endpoint must never write the
+      // column, or a dashboard visit would silently fix a user's timezone to
+      // whatever device they happened to open first.
+      it('does NOT bootstrap User.timezone', async () => {
+        const userId = await createUser();
+
+        await service.getLibrariesProgress(userId, 'America/New_York');
+
+        const user = await prisma.user.findUniqueOrThrow({
+          where: { id: userId },
+          select: { timezone: true },
+        });
+        expect(user.timezone).toBeNull();
+      });
     });
   });
 });

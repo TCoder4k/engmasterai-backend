@@ -392,6 +392,12 @@ model LessonStepProgress {
   // Serves the Sprint 07-D daily dashboard ("lessons completed today") without
   // needing a second index later.
   @@index([userId, completedAt])
+  // Sprint 09 — the activity calendar / streak window, which asks "did this
+  // user touch anything on day N". completedAt above cannot answer it: a
+  // student who watched half a video today completed nothing, but the day is
+  // still an active day. lastActivityAt is the only column that moves on every
+  // visit, so it is the one the streak reads.
+  @@index([userId, lastActivityAt])
   @@map("lesson_step_progress")
 }
 
@@ -554,6 +560,12 @@ model LessonTaskProgress {
   task LessonTask @relation(fields: [taskId], references: [id])
 
   @@unique([userId, taskId])
+  // Sprint 09 — "how many stages did this user finish today". completedAt is
+  // stamped once, when the task is first passed, and never re-stamped (see
+  // QuizService.submitTask), so it is a true completion event for both QUIZ and
+  // PRACTICE. The @@unique above only offers a userId prefix, which degrades to
+  // scanning every task row this user has ever touched.
+  @@index([userId, completedAt])
   @@map("lesson_task_progress")
 }
 
@@ -800,6 +812,14 @@ model UserWordProgress {
   @@index([userId, nextReviewAt])
   @@index([userId, state])
   @@index([wordId])
+  // Sprint 09 — "new words learned today". A row is created lazily, on the
+  // word's FIRST rating (see LearningService.attemptReview), so createdAt is
+  // exactly the moment a word entered this user's vocabulary.
+  //
+  // This also serves LearningService.getDueReviews' own introducedTodayCount
+  // query, which filters on the same two columns and until now leaned on the
+  // userId prefix of [userId, nextReviewAt].
+  @@index([userId, createdAt])
   @@map("user_word_progress")
 }
 

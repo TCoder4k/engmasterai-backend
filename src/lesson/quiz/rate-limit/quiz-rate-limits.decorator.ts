@@ -21,12 +21,19 @@ import { SetMetadata } from '@nestjs/common';
 // have burned ~72% of the quiz-answering budget before the student even opened
 // the quiz, surfacing as "the quiz randomly stops accepting answers" — a
 // miserable bug to diagnose from that symptom.
+// 'stats' (Sprint 09) is its own kind for exactly the reason 'step' is. The
+// dashboard calls GET /analytics/dashboard on every visit to /home, and the
+// SAME page load also calls GET /progress/courses, which is filed under 'read'.
+// Sharing that bucket would consume it twice as fast on the busiest navigation
+// path in the app, and the symptom — "course progress sometimes fails to
+// load" — points nowhere near the analytics widget that caused it.
 export type QuizRateLimitKind =
   | 'read'
   | 'answer'
   | 'trap'
   | 'submit'
   | 'step'
+  | 'stats'
   | 'manage';
 
 export interface QuizRateLimitPolicy {

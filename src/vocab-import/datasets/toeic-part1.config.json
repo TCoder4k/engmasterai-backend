@@ -1,0 +1,45 @@
+{
+  "id": "toeic-part1",
+  "mapper": "generic",
+  "importSource": "IMPORT",
+  "files": {
+    "table": "toeic/TOEIC_Vocab_PART 1.xlsx",
+    "format": "xlsx",
+    "sheet": "Vocabulary"
+  },
+  "library": {
+    "name": "TOEIC Part 1 Vocabulary",
+    "description": "TOEIC Part 1 vocabulary grouped by image and listening context from the Part 1 workbook."
+  },
+  "deckFrom": { "column": "Topic" },
+  "columns": {
+    "text": "Word/Phrase",
+    "ipa": "IPA",
+    "meanings": [
+      { "from": "Meaning", "posFrom": "Form" }
+    ],
+    "examples": [
+      { "sentence": "Example", "translation": "Example Meaning" }
+    ],
+    "synonyms": "Synonym"
+  },
+  "posAliases": {
+    "n": "NOUN",
+    "noun": "NOUN",
+    "v": "VERB",
+    "verb": "VERB",
+    "adj": "ADJECTIVE",
+    "adjective": "ADJECTIVE",
+    "adv": "ADVERB",
+    "adverb": "ADVERB",
+    "phr": "PHRASE",
+    "phr.": "PHRASE",
+    "phr v": "PHRASE",
+    "n phr": "PHRASE",
+    "v phr": "PHRASE",
+    "v.phr": "PHRASE",
+    "verb phrase": "PHRASE",
+    "noun phrase": "PHRASE"
+  },
+  "cefrAliases": {}
+}
