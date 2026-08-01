@@ -5,6 +5,7 @@ import type { App } from 'supertest/types';
 import { randomUUID } from 'crypto';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
+import { expectIdempotentReplay } from './replay-assertions';
 import { testFixtureName, TEST_FIXTURE_PREFIX } from './test-database.util';
 
 // Sprint 06B — the Lesson Quiz Engine. This suite is the proof for the
@@ -394,7 +395,10 @@ describe('Lesson Quiz Engine (e2e) — Sprint 06B', () => {
         .set('Authorization', `Bearer ${student.token}`)
         .send({ clientAttemptId, answers })
         .expect(201);
-      expect(replay.body).toEqual(first.body);
+      // Sprint 10 — the recorded attempt replays exactly; the award does not.
+      // A brand-new account passing its first quiz earns 30 (the pass) + 20
+      // (FIRST_STAGE) + 20 (FIRST_QUIZ_PASS) = 70.
+      expectIdempotentReplay(first.body, replay.body, 70);
       expect((replay.body as { attemptsCount: number }).attemptsCount).toBe(1); // not incremented again
 
       const conflictingAnswers = allCorrectAnswers(questionIds).map((a, i) =>

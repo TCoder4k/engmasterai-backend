@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { PrismaModule } from '../prisma/prisma.module';
+import { GamificationModule } from '../gamification/gamification.module';
 import { VocabWordModule } from '../vocab-word/vocab-word.module';
 import { VocabDeckModule } from '../vocab-deck/vocab-deck.module';
 import { VocabLibraryModule } from '../vocab-library/vocab-library.module';
@@ -13,7 +14,15 @@ import { LearningRateLimitGuard } from './rate-limit/learning-rate-limit.guard';
 // for LearningRateLimitGuard/the controller's guards without a new import,
 // matching how JwtAuthGuard is used everywhere else in this codebase.
 @Module({
-  imports: [PrismaModule, VocabWordModule, VocabDeckModule, VocabLibraryModule],
+  // Sprint 10 — GamificationModule imports only PrismaModule, so this
+  // direction creates no cycle.
+  imports: [
+    PrismaModule,
+    VocabWordModule,
+    VocabDeckModule,
+    VocabLibraryModule,
+    GamificationModule,
+  ],
   controllers: [LearningController],
   providers: [LearningService, LearningEventLogger, LearningRateLimitGuard],
 })

@@ -13,6 +13,7 @@ import { SubmitQuizDto, AnswerQuestionDto } from './dto';
 import { JwtAuthGuard } from '../../auth/guards';
 import { QuizRateLimitGuard } from './rate-limit/quiz-rate-limit.guard';
 import { QuizRateLimit } from './rate-limit/quiz-rate-limits.decorator';
+import { toSubmitResponse } from './task-submit-response';
 
 // Sprint 06B — student-facing quiz endpoints. Every response here goes
 // through GetQuizResponseDto (quiz.types.ts), which structurally has no
@@ -86,6 +87,8 @@ export class QuizStudentController {
     @Body() dto: SubmitQuizDto,
     @Req() req,
   ) {
-    return this.quizService.submitQuiz(lessonId, req.user.userId, dto);
+    return toSubmitResponse(
+      await this.quizService.submitQuiz(lessonId, req.user.userId, dto),
+    );
   }
 }

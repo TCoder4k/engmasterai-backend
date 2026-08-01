@@ -13,6 +13,9 @@ import {
   TaskProgressStatus,
 } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import { GamificationService } from '../../gamification/gamification.service';
+import { noAward } from '../../gamification/gamification.types';
+import { taskPassedAward } from '../../gamification/xp-rules';
 import { UpsertQuizDto, SubmitQuizDto, AnswerQuestionDto } from './dto';
 import {
   gradeQuestion,
@@ -42,6 +45,7 @@ import {
   ManageQuizDto,
   QuestionResultDto,
   SubmitQuizResponseDto,
+  TaskSubmitOutcome,
 } from './quiz.types';
 
 // A student's attempt clock is discarded past this gap (a tab left open
@@ -156,6 +160,7 @@ export class QuizService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
+    private readonly gamification: GamificationService,
   ) {}
 
   private get defaultPassingScorePercent(): number {
@@ -521,7 +526,7 @@ export class QuizService {
     lessonId: string,
     userId: string,
     dto: SubmitQuizDto,
-  ): Promise<SubmitQuizResponseDto> {
+  ): Promise<TaskSubmitOutcome> {
     return this.submitTask(lessonId, userId, LessonTaskType.QUIZ, dto);
   }
 
@@ -530,7 +535,7 @@ export class QuizService {
     userId: string,
     taskType: LessonTaskType,
     dto: SubmitQuizDto,
-  ): Promise<SubmitQuizResponseDto> {
+  ): Promise<TaskSubmitOutcome> {
     await this.assertLessonVisible(lessonId);
 
     const task = await this.prisma.lessonTask.findFirst({
@@ -607,7 +612,14 @@ export class QuizService {
             throw new QuizIdempotencyConflictException();
           }
         }
-        return progress.lastSubmitResult as unknown as SubmitQuizResponseDto;
+        // Sprint 10 — a replay awards NOTHING, and says so explicitly rather
+        // than by omission. The stored body carries no gamification field (see
+        // TaskSubmitOutcome), which is exactly why replaying it cannot
+        // re-announce an award that already happened.
+        return {
+          response: progress.lastSubmitResult as unknown as SubmitQuizResponseDto,
+          gamification: await this.replayGamification(tx, userId),
+        };
       }
 
       // ---- IDEMPOTENCY DEEP PATH ------------------------------------------
@@ -644,7 +656,10 @@ export class QuizService {
             throw new QuizIdempotencyConflictException();
           }
         }
-        return priorAttempt.result as unknown as SubmitQuizResponseDto;
+        return {
+          response: priorAttempt.result as unknown as SubmitQuizResponseDto,
+          gamification: await this.replayGamification(tx, userId),
+        };
       }
 
       // The scoring source. Under IMMEDIATE feedback every question was
@@ -757,6 +772,12 @@ export class QuizService {
         },
       });
 
+      // Sprint 10 — XP is due on the transition into passing, and this is the
+      // SAME expression the update below uses to decide whether to stamp
+      // completedAt. One condition, one meaning: a retake after a pass takes
+      // the `false` branch because completedAt is never re-stamped.
+      const justPassed = progress.completedAt == null && passed;
+
       await tx.lessonTaskProgress.update({
         where: { id: progress.id },
         data: {
@@ -780,12 +801,39 @@ export class QuizService {
             : {}),
           lastClientAttemptId: dto.clientAttemptId,
           lastAnswers: answersRecord as unknown as Prisma.InputJsonValue,
+          // `responseBody` and nothing more. Sprint 10 keeps the gamification
+          // result OUT of this column deliberately — see TaskSubmitOutcome.
           lastSubmitResult: responseBody as unknown as Prisma.InputJsonValue,
         },
       });
 
-      return responseBody;
+      // ORDERING INVARIANT: the attempt row and the progress update above are
+      // written FIRST. The streak scan inside recordProgress reads
+      // LessonTaskAttempt, and countCurrentStreak counts from yesterday when
+      // today looks empty — so evaluating before this write would report a
+      // streak one day short and deliver the 3-day badge on day four.
+      const gamification = await this.gamification.recordProgress(tx, userId, {
+        at: new Date(),
+        awards: justPassed ? [taskPassedAward(task.id, taskType)] : [],
+        countsAsActivity: true,
+      });
+
+      return { response: responseBody, gamification };
     });
+  }
+
+  // A replayed submit earns nothing, but the client still wants the current
+  // totals so its level widget stays right. One cheap read on a rare path,
+  // which keeps the response shape identical either way.
+  private async replayGamification(
+    tx: Prisma.TransactionClient,
+    userId: string,
+  ) {
+    const user = await tx.user.findUniqueOrThrow({
+      where: { id: userId },
+      select: { totalPoints: true },
+    });
+    return noAward(user.totalPoints);
   }
 
   // GET /courses/:courseId/quiz-progress (student) — one row per

@@ -13,6 +13,7 @@ import { SubmitQuizDto, AnswerQuestionDto } from './dto';
 import { JwtAuthGuard } from '../../auth/guards';
 import { QuizRateLimitGuard } from './rate-limit/quiz-rate-limit.guard';
 import { QuizRateLimit } from './rate-limit/quiz-rate-limits.decorator';
+import { toSubmitResponse } from './task-submit-response';
 
 // Sprint 06D — student-facing Advanced Practice endpoints.
 //
@@ -76,7 +77,9 @@ export class PracticeStudentController {
     @Body() dto: SubmitQuizDto,
     @Req() req,
   ) {
-    return this.practiceService.submitPractice(lessonId, req.user.userId, dto);
+    return toSubmitResponse(
+      await this.practiceService.submitPractice(lessonId, req.user.userId, dto),
+    );
   }
 }
 

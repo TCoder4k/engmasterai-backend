@@ -149,17 +149,19 @@ export class UserService {
     return { message: 'User deleted successfully' };
   }
 
-  async updatePoints(id: string, points: number) {
-    const user = await this.findOne(id);
-    const newTotalPoints = user.totalPoints + points;
-    const newLevel = Math.floor(newTotalPoints / 100) + 1;
-
-    return this.prismaService.user.update({
-      where: { id },
-      data: { totalPoints: newTotalPoints, level: newLevel },
-      select: { id: true, totalPoints: true, level: true },
-    });
-  }
+  // `updatePoints` was DELETED in Sprint 10. Do not reintroduce it.
+  //
+  // It had zero callers for its entire life, and it could not have been used
+  // safely if it had: it did findOne -> add in JS -> update, a read-modify-
+  // write with no transaction and no optimistic-concurrency guard, so two
+  // concurrent awards would both read the same total and one would be silently
+  // lost. Its level formula (floor(total / 100) + 1) was also linear, which
+  // puts a student at level 101 by 10,000 XP.
+  //
+  // XP is now written in exactly one place — GamificationService.awardXp —
+  // always as `{ increment }` inside the caller's transaction, always from an
+  // XpTransaction ledger row that makes the award exactly-once at the database
+  // level. The level comes from levelForXp (src/gamification/level-curve.ts).
 
   async updateAvatar(userId: string, file: Express.Multer.File) {
     const user = await this.findOne(userId);

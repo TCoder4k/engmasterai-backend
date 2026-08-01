@@ -24,6 +24,25 @@ export interface StepProgressDto {
 // yet, which is NOT the same as "this lesson has no video": whether a step
 // exists at all is decided by Lesson.videoUrl / Lesson.notes, which the client
 // already holds.
+// Sprint 10 — what a step WRITE endpoint returns.
+//
+// THE GAMIFICATION RESULT IS A SIBLING OF THE STEP, NEVER A FIELD ON IT, and
+// this separation is the whole point of the type.
+//
+// StepProgressDto is not a write-endpoint DTO: `toDto` is exported and its
+// output flows into LessonStepsDto -> LessonProgressDto and the course
+// aggregate (lesson-progress.types.ts), which are pure READS. Hanging
+// `xpAwarded` off it would leak XP into GET /lessons/:id/progress and
+// GET /progress/courses, where it means nothing — and worse, those reads would
+// then report an "award" on every page load.
+//
+// The controller merges the two at the edge. Same shape and same reason as
+// TaskSubmitOutcome in the quiz engine.
+export interface StepWriteOutcome {
+  step: StepProgressDto;
+  gamification: import('../../gamification/gamification.types').GamificationResultDto;
+}
+
 export interface LessonStepsDto {
   video: StepProgressDto | null;
   theory: StepProgressDto | null;

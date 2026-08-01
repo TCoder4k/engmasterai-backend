@@ -1,6 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { LessonTaskType } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { collectActiveDays } from '../shared/activity-window';
+import { publishedLesson, publishedTask } from '../shared/published-scope';
 import { startOfDayInTimeZone } from '../learning/timezone.util';
 import {
   countCurrentStreak,
@@ -87,24 +89,19 @@ export class DashboardAnalyticsService {
 
     // Only lessons whose lesson AND course are published contribute to
     // completion counts.
-    const publishedLesson = {
-      isPublished: true,
-      course: { isPublished: true },
-    };
-    const publishedTask = {
-      isPublished: true,
-      lesson: publishedLesson,
-    };
-
+    //
+    // Sprint 10 moved these two literals to src/shared/published-scope.ts,
+    // unchanged, so the gamification aggregates count the same content this
+    // endpoint does instead of growing a second, drifting definition. Behaviour
+    // here is identical — this file's spec, query counter included, passes
+    // unedited.
     const [
       stepCompletions,
       taskCompletions,
       todayAttempts,
       newWordsLearned,
       wordsReviewed,
-      stepActivity,
-      attemptActivity,
-      reviewActivity,
+      activeDays,
     ] = await Promise.all([
       // 1 — video/theory finished today. Index [userId, completedAt].
       this.prisma.lessonStepProgress.count({
@@ -150,21 +147,17 @@ export class DashboardAnalyticsService {
       // 6-8 — the calendar window. No publication filter (see the note above).
       // Only the timestamp column is selected: the answer needed is seven
       // booleans, so nothing else should cross the wire from Postgres.
-      // Index [userId, lastActivityAt], added this sprint. lastActivityAt
+      // Index [userId, lastActivityAt], added in Sprint 09. lastActivityAt
       // rather than completedAt because a day on which a student watched half
       // a video completed nothing but was very much an active day.
-      this.prisma.lessonStepProgress.findMany({
-        where: { userId, lastActivityAt: { gte: windowStart } },
-        select: { lastActivityAt: true },
-      }),
-      this.prisma.lessonTaskAttempt.findMany({
-        where: { userId, submittedAt: { gte: windowStart } },
-        select: { submittedAt: true },
-      }),
-      this.prisma.wordReviewLog.findMany({
-        where: { userId, reviewedAt: { gte: windowStart } },
-        select: { reviewedAt: true },
-      }),
+      //
+      // Sprint 10 moved these three, unchanged, to shared/activity-window.ts.
+      // Awarding the STREAK_3 / STREAK_7 achievements asks the same question,
+      // and two implementations of "which days was this student active" would
+      // eventually disagree — showing a 5-day streak here while the 3-day badge
+      // never arrives. Still three queries, still one Promise.all, still nine
+      // reads in total.
+      collectActiveDays(this.prisma, userId, windowStart, effectiveTimeZone),
     ]);
 
     const quiz = todayAttempts.filter(
@@ -181,18 +174,6 @@ export class DashboardAnalyticsService {
       newWordsLearned,
       wordsReviewed,
     };
-
-    const activeDays = new Set<string>([
-      ...stepActivity.map((row) =>
-        formatDayInTimeZone(row.lastActivityAt, effectiveTimeZone),
-      ),
-      ...attemptActivity.map((row) =>
-        formatDayInTimeZone(row.submittedAt, effectiveTimeZone),
-      ),
-      ...reviewActivity.map((row) =>
-        formatDayInTimeZone(row.reviewedAt, effectiveTimeZone),
-      ),
-    ]);
 
     const activity: ActivityAnalyticsDto = {
       windowDays: ACTIVITY_WINDOW_DAYS,

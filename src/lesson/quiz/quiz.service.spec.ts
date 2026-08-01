@@ -1,6 +1,20 @@
 import { ConfigService } from '@nestjs/config';
 import { QuizService } from './quiz.service';
 
+// Sprint 10 — QuizService now hands each submit to GamificationService inside
+// the same transaction. Stubbed here: what an award is worth and when it is
+// idempotent belongs to gamification.service.spec.ts, and duplicating it would
+// mean two places to update. This file still owns grading and idempotency.
+const stubGamification = () =>
+  ({
+    recordProgress: jest.fn().mockResolvedValue({
+      xpAwarded: 0,
+      xp: { totalXp: 0, level: 1, intoLevel: 0, toNextLevel: 100, percent: 0 },
+      leveledUp: false,
+      unlockedAchievements: [],
+    }),
+  }) as any;
+
 // Sprint 06B — unit coverage for the pieces the e2e suite (which exercises
 // the service through a real Prisma/Postgres connection) can't isolate as
 // cheaply: the passing-score fallback and the attempt-duration cap. Every
@@ -47,7 +61,7 @@ describe('QuizService', () => {
           }),
         ),
       };
-      const service = new QuizService(prisma as any, buildConfig(65));
+      const service = new QuizService(prisma as any, buildConfig(65), stubGamification());
 
       const res = await service.startQuizAttempt('lesson-1', 'user-1');
       expect(res.quiz.passingScorePercent).toBe(65);
@@ -83,7 +97,7 @@ describe('QuizService', () => {
           }),
         ),
       };
-      const service = new QuizService(prisma as any, buildConfig(65));
+      const service = new QuizService(prisma as any, buildConfig(65), stubGamification());
 
       const res = await service.startQuizAttempt('lesson-1', 'user-1');
       expect(res.quiz.passingScorePercent).toBe(90);
@@ -141,12 +155,19 @@ describe('QuizService', () => {
           }),
         ),
       };
-      const service = new QuizService(prisma as any, buildConfig(70));
-      const result = await service.submitQuiz('lesson-1', 'user-1', {
+      const service = new QuizService(
+        prisma as any,
+        buildConfig(70),
+        stubGamification(),
+      );
+      // Sprint 10 — submitQuiz now returns { response, gamification }. The
+      // duration lives on `response`, which is the body that gets persisted
+      // and replayed; keeping XP out of it is the point of the split.
+      const { response } = await service.submitQuiz('lesson-1', 'user-1', {
         clientAttemptId: 'a1',
         answers: [{ questionId: 'q1', submitted: { value: true } }],
       });
-      return { result, update };
+      return { result: response, update };
     };
 
     it('reports elapsed time for a plausible attempt duration', async () => {

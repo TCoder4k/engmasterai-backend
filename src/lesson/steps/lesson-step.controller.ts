@@ -12,6 +12,7 @@ import { QuizRateLimitGuard } from '../quiz/rate-limit/quiz-rate-limit.guard';
 import { QuizRateLimit } from '../quiz/rate-limit/quiz-rate-limits.decorator';
 import { VideoProgressDto } from './dto/video-progress.dto';
 import { LessonStepService } from './lesson-step.service';
+import { StepWriteOutcome } from './lesson-step.types';
 
 // Sprint 07 — the write half for the VIDEO and THEORY steps.
 //
@@ -43,7 +44,9 @@ export class LessonStepController {
     @Body() dto: VideoProgressDto,
     @Req() req,
   ) {
-    return this.stepService.recordVideoProgress(lessonId, req.user.userId, dto);
+    return flatten(
+      await this.stepService.recordVideoProgress(lessonId, req.user.userId, dto),
+    );
   }
 
   // Fires when the theory pane opens, so it runs on every visit to a lesson
@@ -55,7 +58,7 @@ export class LessonStepController {
     @Param('lessonId', ParseUUIDPipe) lessonId: string,
     @Req() req,
   ) {
-    return this.stepService.startTheory(lessonId, req.user.userId);
+    return flatten(await this.stepService.startTheory(lessonId, req.user.userId));
   }
 
   // The explicit "Tôi đã đọc xong" action. Scroll position does not complete
@@ -67,6 +70,20 @@ export class LessonStepController {
     @Param('lessonId', ParseUUIDPipe) lessonId: string,
     @Req() req,
   ) {
-    return this.stepService.completeTheory(lessonId, req.user.userId);
+    return flatten(
+      await this.stepService.completeTheory(lessonId, req.user.userId),
+    );
   }
 }
+
+// Sprint 10 — merge the ephemeral gamification result onto the persisted step
+// shape, at the very edge.
+//
+// The wire format is unchanged apart from one added key, so existing clients
+// keep working. Crucially the merge happens HERE and not in the service: the
+// service's StepProgressDto flows on into the lesson aggregate and the course
+// aggregate, both pure reads, and XP has no business appearing there.
+const flatten = ({ step, gamification }: StepWriteOutcome) => ({
+  ...step,
+  gamification,
+});

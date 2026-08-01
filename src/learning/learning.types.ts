@@ -13,6 +13,12 @@ export interface ReviewResponseDto {
   repetitions: number;
   lapses: number;
   version: number;
+  // Sprint 10. Safe inline: this DTO is DERIVED from WordReviewLog by
+  // snapshotResponse on every call, never stored as a blob, so a replay
+  // reconstructs it and can report xpAwarded: 0 honestly. Compare
+  // SubmitQuizResponseDto, which IS persisted verbatim and therefore had to
+  // keep gamification in a sibling field instead.
+  gamification: import('../gamification/gamification.types').GamificationResultDto;
 }
 
 export interface DueQueueWordDto {

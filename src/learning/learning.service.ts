@@ -19,6 +19,12 @@ import {
   PreviewIntervals,
 } from './srs/scheduler';
 import { startOfDayInTimeZone } from './timezone.util';
+import { GamificationService } from '../gamification/gamification.service';
+import {
+  GamificationResultDto,
+  noAward,
+} from '../gamification/gamification.types';
+import { wordMasteredAward, wordReviewedAward } from '../gamification/xp-rules';
 import {
   DueQueueItemDto,
   DueQueueResponseDto,
@@ -68,6 +74,7 @@ export class LearningService {
     private readonly vocabDeckService: VocabDeckService,
     private readonly vocabLibraryService: VocabLibraryService,
     private readonly eventLogger: LearningEventLogger,
+    private readonly gamification: GamificationService,
   ) {}
 
   // GET /learning/reviews/due (sprint plan §8).
@@ -352,7 +359,13 @@ export class LearningService {
         rating: dto.rating,
         resultVersion: existingLog.resultVersion,
       });
-      return this.snapshotResponse(existingLog);
+      // Sprint 10 — a replay earns nothing. The current totals still come back
+      // so the client's level widget stays right after a retried request.
+      const user = await this.prisma.user.findUniqueOrThrow({
+        where: { id: userId },
+        select: { totalPoints: true },
+      });
+      return this.snapshotResponse(existingLog, noAward(user.totalPoints));
     }
 
     // Visibility gate, reached only on a fresh submission — an idempotent
@@ -467,7 +480,31 @@ export class LearningService {
           responseTimeMs: dto.responseTimeMs,
         });
 
-        return this.snapshotResponse(log);
+        // Sprint 10 — XP for the review, plus a one-off bonus the first time
+        // this word is ever mastered.
+        //
+        // WORD_MASTERED IS KEYED BY WORD ALONE, once per account for life, and
+        // that is a security property: masteredAt is NOT a one-way transition
+        // (srs/scheduler.ts clears it on a lapse and re-stamps it later), so a
+        // per-occurrence key would open a student-controlled farm — rate AGAIN,
+        // relearn, collect, repeat. See wordMasteredAward.
+        //
+        // ORDERING INVARIANT: the review log above is written FIRST. The streak
+        // scan reads WordReviewLog, and countCurrentStreak counts from
+        // yesterday when today looks empty — evaluating before this write would
+        // report a streak one day short and deliver the 3-day badge on day four.
+        const justMastered =
+          before.state !== 'MASTERED' && result.state === 'MASTERED';
+        const gamification = await this.gamification.recordProgress(tx, userId, {
+          at: now,
+          awards: [
+            wordReviewedAward(dto.clientReviewId),
+            ...(justMastered ? [wordMasteredAward(wordId)] : []),
+          ],
+          countsAsActivity: true,
+        });
+
+        return this.snapshotResponse(log, gamification);
       });
     } catch (error) {
       if (error instanceof RetrySignal) {
@@ -597,7 +634,12 @@ export class LearningService {
     newRepetitions: number;
     newLapses: number;
     resultVersion: number;
-  }): ReviewResponseDto {
+    },
+    // Sprint 10 — passed in rather than derived here: this helper is called
+    // from both the replay path (nothing earned) and the fresh-review path
+    // (the real award), and only the caller knows which.
+    gamification: GamificationResultDto,
+  ): ReviewResponseDto {
     return {
       state: log.newState,
       intervalDays: log.newIntervalDays,
@@ -606,6 +648,7 @@ export class LearningService {
       repetitions: log.newRepetitions,
       lapses: log.newLapses,
       version: log.resultVersion,
+      gamification,
     };
   }
 

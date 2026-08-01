@@ -14,7 +14,7 @@ import {
   PracticePrerequisitesNotMetException,
 } from './quiz.exceptions';
 import { resolvePracticePrerequisites } from './practice-prerequisites';
-import { AnswerQuestionResponseDto, SubmitQuizResponseDto } from './quiz.types';
+import { AnswerQuestionResponseDto, TaskSubmitOutcome } from './quiz.types';
 import {
   CourseStageProgressRowDto,
   GetPracticeResponseDto,
@@ -221,7 +221,7 @@ export class PracticeService {
     lessonId: string,
     userId: string,
     dto: SubmitQuizDto,
-  ): Promise<SubmitQuizResponseDto> {
+  ): Promise<TaskSubmitOutcome> {
     await assertLessonVisible(this.prisma, lessonId);
     this.assertPrerequisitesMet(
       await this.resolvePrerequisites(lessonId, userId),
