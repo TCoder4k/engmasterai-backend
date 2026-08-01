@@ -27,6 +27,13 @@ import { SetMetadata } from '@nestjs/common';
 // Sharing that bucket would consume it twice as fast on the busiest navigation
 // path in the app, and the symptom — "course progress sometimes fails to
 // load" — points nowhere near the analytics widget that caused it.
+// 'gamification' (Sprint 10) is its own kind for exactly the reason 'stats' is.
+// GET /gamification/profile backs the level widget, which StudentLayout renders
+// on EVERY student page, and /home issues it alongside GET /analytics/dashboard
+// ('stats') and GET /progress/courses ('read'). Filing it under 'stats' would
+// drain that bucket twice as fast on the busiest navigation path in the app,
+// and the symptom — "the dashboard sometimes fails to load" — points nowhere
+// near the widget that caused it.
 export type QuizRateLimitKind =
   | 'read'
   | 'answer'
@@ -34,6 +41,7 @@ export type QuizRateLimitKind =
   | 'submit'
   | 'step'
   | 'stats'
+  | 'gamification'
   | 'manage';
 
 export interface QuizRateLimitPolicy {

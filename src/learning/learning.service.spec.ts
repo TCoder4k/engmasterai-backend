@@ -168,7 +168,22 @@ describe('LearningService (integration — real Postgres)', () => {
         clientReviewId: idA,
       });
 
-      expect(replayOfA).toEqual(respA); // NOT respB's state
+      // The SRS SNAPSHOT replays byte for byte — NOT respB's state.
+      const srsFieldsOf = ({ gamification, ...srs }: typeof respA) => srs;
+      expect(srsFieldsOf(replayOfA)).toEqual(srsFieldsOf(respA));
+
+      // Sprint 10 — but the GAMIFICATION half must NOT replay, and that is the
+      // whole point of the split. The first submission earned 1 XP; replaying
+      // it earns nothing, because the ledger row already exists and
+      // ON CONFLICT DO NOTHING skipped the insert. A replay that re-reported
+      // the original award would fire the client's "+1 XP" toast a second time
+      // for XP that was never granted twice.
+      expect(respA.gamification.xpAwarded).toBe(1);
+      expect(replayOfA.gamification.xpAwarded).toBe(0);
+      // The running total still comes back, so the level widget stays right.
+      expect(replayOfA.gamification.xp.totalXp).toBe(
+        respB.gamification.xp.totalXp,
+      );
     });
 
     it('the same clientReviewId with a different rating throws IdempotencyKeyReusedException, never silently reprocessing', async () => {

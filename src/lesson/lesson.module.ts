@@ -3,6 +3,7 @@ import { LessonController } from './lesson.controller';
 import { LessonCourseController } from './lesson-course.controller';
 import { LessonService } from './lesson.service';
 import { PrismaModule } from '../prisma/prisma.module';
+import { GamificationModule } from '../gamification/gamification.module';
 import { QuizStudentController } from './quiz/quiz-student.controller';
 import { QuizAdminController } from './quiz/quiz-admin.controller';
 import { QuizCourseController } from './quiz/quiz-course.controller';
@@ -31,7 +32,10 @@ import { CourseProgressService } from './progress/course-progress.service';
 // need no import here either — AuthModule is @Global(), same as
 // LearningModule's own comment on this).
 @Module({
-  imports: [PrismaModule],
+  // Sprint 10 — GamificationModule imports only PrismaModule, so this
+  // direction is safe. It must never import LessonModule back; that is why it
+  // declares QuizRateLimitGuard as its own provider rather than importing here.
+  imports: [PrismaModule, GamificationModule],
   controllers: [
     LessonController,
     LessonCourseController,

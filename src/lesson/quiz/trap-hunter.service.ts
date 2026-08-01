@@ -12,6 +12,9 @@ import {
   TrapHintUnavailableException,
   TrapHunterNotAvailableException,
 } from './quiz.exceptions';
+import { GamificationService } from '../../gamification/gamification.service';
+import { noAward } from '../../gamification/gamification.types';
+import { trapClearedAward } from '../../gamification/xp-rules';
 import { buildTrapHints, HintableQuestion } from './trap-hints';
 import {
   AnswerTrapResponseDto,
@@ -180,7 +183,10 @@ const asHintable = (question: TrapQuestion): HintableQuestion => ({
 
 @Injectable()
 export class TrapHunterService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly gamification: GamificationService,
+  ) {}
 
   // Resolves the published quiz task for a lesson. Same 404 as the quiz
   // endpoints, via the shared helper, so Trap Hunter cannot be used to probe
@@ -365,6 +371,10 @@ export class TrapHunterService {
         // The same idempotent-replay contract POST /quiz/answer uses, and
         // the reason a double-click or a retried request can never inflate
         // an attempt count or reset a clear.
+        const user = await tx.user.findUniqueOrThrow({
+          where: { id: userId },
+          select: { totalPoints: true },
+        });
         return {
           questionId: question.id,
           isCorrect: true,
@@ -375,6 +385,9 @@ export class TrapHunterService {
           totalCount,
           currentStreak: trailingCleanClearStreak(state),
           allCleared: clearedCountOf(state) >= totalCount,
+          // Sprint 10 — a replay earns nothing. The current totals still come
+          // back so the client's level widget stays right.
+          gamification: noAward(user.totalPoints),
         };
       }
 
@@ -398,6 +411,22 @@ export class TrapHunterService {
         },
       });
 
+      // Sprint 10 — XP for the trap just cleared.
+      //
+      // countsAsActivity is FALSE, and that is a decision rather than an
+      // oversight. The write above touches exactly one JSON column on
+      // LessonTaskProgress, which carries no timestamp for it, so a trap clear
+      // is invisible to the dashboard's activity scan
+      // (shared/activity-window.ts) TODAY. Recording an activity day here would
+      // start lighting up calendar tiles Sprint 09 does not — quietly changing
+      // the streaks of students who have been using the product for weeks.
+      // Trap Hunter earns XP; it does not create an active day.
+      const gamification = await this.gamification.recordProgress(tx, userId, {
+        at: new Date(),
+        awards: isCorrect ? [trapClearedAward(task.id, question.id)] : [],
+        countsAsActivity: false,
+      });
+
       const clearedCount = clearedCountOf(nextState);
       return {
         questionId: question.id,
@@ -409,6 +438,7 @@ export class TrapHunterService {
         totalCount,
         currentStreak: trailingCleanClearStreak(nextState),
         allCleared: clearedCount >= totalCount,
+        gamification,
       };
     });
   }

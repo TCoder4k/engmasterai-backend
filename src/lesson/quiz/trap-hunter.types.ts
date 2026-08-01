@@ -107,6 +107,13 @@ export interface AnswerTrapResponseDto {
   // statistic, never a reward.
   currentStreak: number;
   allCleared: boolean;
+  // Sprint 10. Safe to carry inline here, unlike the quiz submit response:
+  // NOTHING PERSISTS THIS BODY. Trap Hunter writes one JSON column
+  // (trapHunterState) and rebuilds its replay from that state each time, so
+  // there is no stored copy that could re-announce an old award. Compare
+  // SubmitQuizResponseDto, which IS stored verbatim and therefore had to keep
+  // gamification in a sibling field.
+  gamification: import('../../gamification/gamification.types').GamificationResultDto;
 }
 
 export interface TrapHintResponseDto {

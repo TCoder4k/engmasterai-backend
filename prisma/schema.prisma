@@ -189,6 +189,26 @@ model User {
   avatarUrl String? //can be null
   role      UserRole @default(USER)
 
+  // Sprint 10 (Gamification) — BOTH OF THESE ARE CACHES, and that is the whole
+  // point of the design. XpTransaction is the single source of truth:
+  //
+  //   totalPoints  == SUM(XpTransaction.amount) for this user
+  //   level        == levelForXp(totalPoints)   -- a pure function
+  //
+  // Both are therefore REBUILDABLE from the ledger with one query and one pure
+  // call. That property is why the ledger exists at all: a running total with
+  // no event log behind it turns every awarding bug into permanent, unfixable
+  // data loss.
+  //
+  // Written ONLY by GamificationService.awardXp, always as
+  // `{ increment }` inside the caller's transaction — never read-modify-write.
+  // (UserService.updatePoints did exactly that and was deleted in Sprint 10;
+  // two concurrent awards would silently lose one.)
+  //
+  // KNOWN GAP, deliberate: the admin PUT /users/:id path can still set these
+  // directly, which desynchronises them from the ledger with nothing to detect
+  // it. It sits behind @Roles(ADMIN) so it is not a student-reachable path.
+  // The correct fix later is an ADMIN_ADJUSTMENT ledger row.
   totalPoints Int @default(0)
   level       Int @default(1)
 
@@ -218,6 +238,8 @@ model User {
   passwordResetTokens     PasswordResetToken[]
   wordProgress            UserWordProgress[]
   wordReviewLogs          WordReviewLog[]
+  xpTransactions          XpTransaction[]
+  dailyActivity           UserDailyActivity[]
 
   @@map("users") //users dùng cho query sql , còn User dùng cho code
 }
@@ -326,7 +348,7 @@ model Lesson {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  course       Course             @relation(fields: [courseId], references: [id])
+  course       Course               @relation(fields: [courseId], references: [id])
   tasks        LessonTask[]
   vocabularies LessonVocabulary[]
   stepProgress LessonStepProgress[]
@@ -352,7 +374,7 @@ model LessonStepProgress {
   //   startedAt   != null -> IN_PROGRESS
   //   neither             -> NOT_STARTED
   // One fact, one representation, nothing that can disagree with itself.
-  startedAt DateTime?
+  startedAt   DateTime?
   // Set once and NEVER cleared by any code path. Rewatching a finished video
   // or reopening finished theory updates lastActivityAt only — a review must
   // never cost a student their completion.
@@ -375,7 +397,7 @@ model LessonStepProgress {
   // durationSeconds: 1} payload would complete any video whose lesson has no
   // authored videoDurationMinutes — which is most of them, since the column
   // is nullable.
-  videoDurationSeconds Int?
+  videoDurationSeconds   Int?
 
   // Cascade on both sides. The user side matches LessonTaskProgress and
   // UserWordProgress (deleting an account takes its own progress with it).
@@ -413,7 +435,7 @@ model LessonTask {
   // Sprint 06B — a quiz with unsaved/incomplete authoring must not reach
   // students. Defaults false: an admin has to explicitly publish, mirroring
   // Lesson.isPublished's own default.
-  isPublished Boolean @default(false)
+  isPublished         Boolean @default(false)
   // Null falls back to the QUIZ_DEFAULT_PASSING_SCORE_PERCENT env default
   // (see QuizService) — never hardcoded per the sprint spec.
   passingScorePercent Int?
@@ -486,7 +508,7 @@ model LessonTaskProgress {
   // flight; submit() computes elapsed time as `now - attemptStartedAt`, so
   // the number reflects real time spent and survives a mid-quiz refresh
   // (the GET does not re-stamp an in-flight attempt).
-  attemptStartedAt DateTime?
+  attemptStartedAt    DateTime?
   // Null when the gap since attemptStartedAt exceeds a sane cap (a tab left
   // open overnight) — the summary omits the row rather than showing a
   // fabricated number, the same rule Sprint 06A uses for absent content
@@ -523,7 +545,7 @@ model LessonTaskProgress {
   // reshuffles on every request, so refreshing mid-quiz would visibly
   // re-order the options under an already-graded question. Answers are
   // recorded by option id, so correctness was never at risk — only display.
-  currentAttemptSeed String?
+  currentAttemptSeed    String?
 
   // Sprint 06C — Trap Hunter. The remedial pass over the mistakes of the
   // most recent COMPLETED attempt, shaped
@@ -798,7 +820,7 @@ model UserWordProgress {
   // Optimistic-concurrency guard — every write increments this; a write
   // whose `where` includes a stale version affects zero rows and is
   // surfaced as a 409, never silently overwritten. See LearningService.
-  version Int @default(0)
+  version   Int      @default(0)
 
   user User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   // Restrict (default, explicit here for clarity): a word with any
@@ -851,12 +873,12 @@ model WordReviewLog {
   newLapses            Int
   // The UserWordProgress.version value immediately after this review
   // committed — part of the response snapshot, not a live lookup.
-  resultVersion Int
+  resultVersion        Int
 
-  practiceMode PracticeSource
+  practiceMode   PracticeSource
   // Client-supplied correlation id — analytics only, never trusted for
   // scheduling or idempotency.
-  sessionId String?
+  sessionId      String?
   // The idempotency key. Scoped per-user (see the @@unique below, not a
   // bare global @unique) so one user's key space can never collide with
   // another's.
@@ -882,4 +904,115 @@ model WordReviewLog {
   @@index([userId, reviewedAt])
   @@index([wordId])
   @@map("word_review_logs")
+}
+
+// Sprint 10 — Gamification.
+//
+// SIX values. There is deliberately NO STREAK_MILESTONE: a day streak is
+// rewarded THROUGH the STREAK_3 / STREAK_7 achievements, not through a second
+// XP source beside them. One event -> one reward -> one ledger row. An earlier
+// draft had both and would have written two rows for the same moment.
+enum XpSource {
+  STAGE_COMPLETED // video / theory finished
+  TASK_PASSED // quiz / practice, FIRST pass only
+  TRAP_CLEARED
+  WORD_REVIEWED
+  WORD_MASTERED
+  ACHIEVEMENT
+}
+
+// The append-only XP ledger — the SINGLE SOURCE OF TRUTH for points, and also
+// the record of when each achievement was unlocked.
+//
+// WHY A LEDGER AND NOT A COUNTER. Every other progress model in this codebase
+// answers "what is the state now" and can be recomputed from its own rows at
+// any time. XP is an ACCUMULATION: without an event log, User.totalPoints is a
+// number nobody can rebuild, and every awarding bug becomes permanent silent
+// data loss. Sprint 10 exists on top of three sprints of progress corrections,
+// which is exactly the situation where that matters.
+//
+// EXACTLY-ONCE IS ENFORCED BY THE DATABASE, not by application checks.
+// @@unique([userId, sourceKey]) plus createManyAndReturn({ skipDuplicates })
+// (-> ON CONFLICT DO NOTHING ... RETURNING *) means a replayed request inserts
+// nothing and returns nothing, so the caller adds 0 and the student is not
+// paid twice. This is the same contract LessonTaskAttempt.clientAttemptId and
+// WordReviewLog.clientReviewId already use, one layer down.
+//
+// It also has to be conflict-free rather than caught: a failed statement
+// aborts the whole Postgres transaction and Prisma exposes no savepoint, so a
+// try/catch around the insert could not recover — see the long note in
+// QuizService.submitTask, which learned this the hard way.
+//
+// sourceKey IS SERVER-BUILT AND NEVER CLIENT-SUPPLIED, and its FORMAT IS A
+// PERMANENT CONTRACT: changing `step:{lessonId}:VIDEO` to anything else after
+// deploy would make every past award un-matchable and re-award the lot. It is
+// pinned by literal-string assertions in xp-rules.spec.ts for that reason.
+// It is scoped per-user by the unique below, so it never carries a userId.
+//
+// There is no `metadata` column. sourceKey already carries the lesson/task/
+// word id it would have held, and no Sprint 10 consumer reads anything else.
+model XpTransaction {
+  id        String   @id @default(uuid())
+  userId    String
+  amount    Int
+  source    XpSource
+  sourceKey String
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, sourceKey])
+  @@index([userId, createdAt])
+  // Serves the profile snapshot's single achievement query
+  // (source = ACHIEVEMENT), which doubles as the unlock record: the row's
+  // createdAt IS unlockedAt. That is why no UserAchievement table exists —
+  // it would have duplicated this row's uniqueness, timestamp and listing.
+  // The design holds only while EVERY achievement grants xp > 0 (a 0-XP
+  // achievement would write no row and be invisible); achievement-catalog.spec
+  // asserts exactly that.
+  @@index([userId, source])
+  @@map("xp_transactions")
+}
+
+// One row per (user, calendar day on which they did something).
+//
+// WRITTEN BY SPRINT 10, READ BY A LATER SPRINT. Nothing in Sprint 10 reads
+// this table for display — GET /analytics/dashboard keeps its existing
+// three-table scan untouched, because this table is empty at deploy and
+// switching the read over would blank the streak and the 7-day calendar for
+// every existing account. Sprint 09's streak is live; resetting it would be a
+// regression, not a fresh start (XP starting at zero is honest, a streak
+// dropping to zero is not).
+//
+// Its one Sprint 10 consumer is internal: creating a row is the trigger that
+// says "this is the first activity of a new day", which is when — and only
+// when — streak milestones are evaluated. See GamificationService.
+//
+// LessonTaskAttempt spent Sprint 07->08 in exactly this write-only state, kept
+// honest by an e2e test on the rows; this follows that precedent. Writing from
+// day one means the sprint that widens the streak past 7 days inherits real
+// history and needs no backfill.
+//
+// `day` IS BUCKETED AT WRITE TIME using the user's timezone, and never
+// re-derived on read. A day on which someone studied is a historical fact;
+// flying to another timezone does not move last Tuesday. It must be built only
+// via dayKeyToDate() — `new Date(...)` on a date string is UTC midnight, which
+// is the exact class of bug Sprint 09 found and fixed in startOfDayInTimeZone.
+model UserDailyActivity {
+  id     String   @id @default(uuid())
+  userId String
+  day    DateTime @db.Date
+
+  // The zone `day` was bucketed with. Not used to recompute anything — kept so
+  // the later read-side sprint can tell a UTC-bucketed row (written before the
+  // user's timezone was ever learned) from a real one.
+  timeZone String
+
+  firstActivityAt DateTime
+  lastActivityAt  DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, day])
+  @@map("user_daily_activity")
 }

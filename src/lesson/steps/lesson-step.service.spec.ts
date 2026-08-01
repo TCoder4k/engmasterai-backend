@@ -58,18 +58,47 @@ const build = (options: BuildOptions = {}) => {
     ),
   };
 
+  // Sprint 10 — the step transactions now also hand their outcome to
+  // GamificationService. Stubbed rather than exercised here: what XP an award
+  // is worth and when it is idempotent belongs to gamification.service.spec.ts,
+  // and duplicating it would mean two places to update. What this file still
+  // owns is the completion RULE, which must be unchanged by the hook.
+  const recordProgress = jest.fn().mockResolvedValue({
+    xpAwarded: 0,
+    xp: { totalXp: 0, level: 1, intoLevel: 0, toNextLevel: 100, percent: 0 },
+    leveledUp: false,
+    unlockedAchievements: [],
+  });
+
   return {
-    service: new LessonStepService(prisma as never),
+    service: new LessonStepService(prisma as never, {
+      recordProgress,
+    } as never),
     write,
+    recordProgress,
   };
 };
 
-const report = (
+// Sprint 10 — these endpoints now return { step, gamification }. The helpers
+// unwrap the step so every assertion below still reads as a statement about
+// the completion rule rather than about the envelope.
+const report = async (
   service: LessonStepService,
   positionSeconds: number,
   durationSeconds: number,
 ) =>
-  service.recordVideoProgress('l1', 'u1', { positionSeconds, durationSeconds });
+  (
+    await service.recordVideoProgress('l1', 'u1', {
+      positionSeconds,
+      durationSeconds,
+    })
+  ).step;
+
+const startTheory = async (service: LessonStepService) =>
+  (await service.startTheory('l1', 'u1')).step;
+
+const completeTheory = async (service: LessonStepService) =>
+  (await service.completeTheory('l1', 'u1')).step;
 
 describe('LessonStepService — video completion', () => {
   it('does not complete below the 90% threshold', async () => {
@@ -194,10 +223,103 @@ describe('LessonStepService — a finished step stays finished', () => {
   });
 });
 
+describe('LessonStepService — Sprint 10 gamification hook', () => {
+  const awardsOf = (recordProgress: jest.Mock) =>
+    (recordProgress.mock.calls[0][2] as { awards: { sourceKey: string }[] })
+      .awards;
+
+  it('awards the video stage on the report that completes it', async () => {
+    const { service, recordProgress } = build();
+    await report(service, 600, 600);
+    expect(awardsOf(recordProgress).map((a) => a.sourceKey)).toEqual([
+      'step:l1:VIDEO',
+    ]);
+  });
+
+  it('awards NOTHING on a mid-video report', async () => {
+    // ~86 of these arrive per ten-minute lesson. Only the one that crosses
+    // the threshold is worth anything.
+    const { service, recordProgress } = build();
+    await report(service, 400, 600);
+    expect(awardsOf(recordProgress)).toEqual([]);
+  });
+
+  it('awards NOTHING when the student rewatches a finished video', async () => {
+    // The award keys off the TRANSITION into completion. completedAt is never
+    // cleared, so this is the branch every replay takes.
+    const completedAt = new Date('2026-01-01T00:00:00.000Z');
+    const { service, recordProgress } = build({
+      existing: {
+        id: 's1',
+        startedAt: completedAt,
+        completedAt,
+        highestPositionSeconds: 600,
+        videoDurationSeconds: 600,
+      },
+    });
+    await report(service, 600, 600);
+    expect(awardsOf(recordProgress)).toEqual([]);
+  });
+
+  it('passes the previous lastActivityAt so the hot path can skip the day write', async () => {
+    const lastActivityAt = new Date('2026-01-01T00:00:00.000Z');
+    const { service, recordProgress } = build({
+      existing: {
+        id: 's1',
+        startedAt: lastActivityAt,
+        completedAt: null,
+        lastActivityAt,
+        highestPositionSeconds: 60,
+        videoDurationSeconds: 600,
+      },
+    });
+    await report(service, 100, 600);
+    expect(recordProgress.mock.calls[0][2]).toMatchObject({
+      knownLastActivityAt: lastActivityAt,
+      countsAsActivity: true,
+    });
+  });
+
+  it('awards the theory stage only on the completing call, not on start', async () => {
+    const start = build();
+    await startTheory(start.service);
+    expect(awardsOf(start.recordProgress)).toEqual([]);
+
+    const finish = build();
+    await completeTheory(finish.service);
+    expect(awardsOf(finish.recordProgress).map((a) => a.sourceKey)).toEqual([
+      'step:l1:THEORY',
+    ]);
+  });
+
+  it('awards NOTHING when finished theory is reopened', async () => {
+    const completedAt = new Date('2026-01-01T00:00:00.000Z');
+    const { service, recordProgress } = build({
+      existing: { id: 's1', startedAt: completedAt, completedAt },
+    });
+    await completeTheory(service);
+    expect(awardsOf(recordProgress)).toEqual([]);
+  });
+
+  it('keeps the gamification result OUT of the step DTO', async () => {
+    // StepProgressDto flows on into the lesson and course aggregates, which are
+    // pure reads. XP appearing there would have those endpoints report an
+    // "award" on every page load. The controller merges the two at the edge.
+    const { service } = build();
+    const outcome = await service.recordVideoProgress('l1', 'u1', {
+      positionSeconds: 600,
+      durationSeconds: 600,
+    });
+    expect(outcome.step).not.toHaveProperty('gamification');
+    expect(outcome.step).not.toHaveProperty('xpAwarded');
+    expect(outcome.gamification).toBeDefined();
+  });
+});
+
 describe('LessonStepService — theory', () => {
   it('start marks in progress without completing', async () => {
     const { service } = build();
-    const res = await service.startTheory('l1', 'u1');
+    const res = await startTheory(service);
     expect(res.startedAt).not.toBeNull();
     expect(res.completedAt).toBeNull();
   });
@@ -207,13 +329,13 @@ describe('LessonStepService — theory', () => {
     const { service } = build({
       existing: { id: 's1', startedAt, completedAt: null },
     });
-    const res = await service.startTheory('l1', 'u1');
+    const res = await startTheory(service);
     expect(res.startedAt).toBe(startedAt.toISOString());
   });
 
   it('complete without a prior start still yields a coherent row', async () => {
     const { service } = build();
-    const res = await service.completeTheory('l1', 'u1');
+    const res = await completeTheory(service);
     expect(res.startedAt).not.toBeNull();
     expect(res.completedAt).not.toBeNull();
   });
@@ -223,7 +345,7 @@ describe('LessonStepService — theory', () => {
     const { service } = build({
       existing: { id: 's1', startedAt: completedAt, completedAt },
     });
-    const res = await service.completeTheory('l1', 'u1');
+    const res = await completeTheory(service);
     expect(res.completedAt).toBe(completedAt.toISOString());
   });
 
@@ -243,7 +365,7 @@ describe('LessonStepService — derived state carries no stored status', () => {
   // is the second representation that made LessonTaskProgress.status wrong.
   it('returns timestamps and never a status field', async () => {
     const { service } = build();
-    const res = await service.startTheory('l1', 'u1');
+    const res = await startTheory(service);
     expect(res).not.toHaveProperty('status');
     expect(res.step).toBe(LessonStepKind.THEORY);
   });

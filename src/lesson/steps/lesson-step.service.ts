@@ -1,10 +1,17 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { LessonStepKind, LessonStepProgress, Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import { GamificationService } from '../../gamification/gamification.service';
+import { GamificationResultDto } from '../../gamification/gamification.types';
+import { stageAward } from '../../gamification/xp-rules';
 import { assertLessonVisible } from '../quiz/lesson-visibility';
 import { ProgressScope, scopeToLessonWhere } from '../quiz/progress-scope';
 import { VideoProgressDto } from './dto/video-progress.dto';
-import { LessonStepsDto, StepProgressDto } from './lesson-step.types';
+import {
+  LessonStepsDto,
+  StepProgressDto,
+  StepWriteOutcome,
+} from './lesson-step.types';
 
 // A lesson the student has never opened. Returned rather than null so callers
 // never have to distinguish "no rows" from "no lesson".
@@ -32,7 +39,10 @@ const MIN_COMPLETABLE_DURATION_SECONDS = 30;
 
 @Injectable()
 export class LessonStepService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly gamification: GamificationService,
+  ) {}
 
   // Read-only. Never creates a row: describing a step the student has never
   // touched must not make it look touched, and the lesson page reads this on
@@ -83,21 +93,15 @@ export class LessonStepService {
   async startTheory(
     lessonId: string,
     userId: string,
-  ): Promise<StepProgressDto> {
+  ): Promise<StepWriteOutcome> {
     const lesson = await this.assertStepAvailable(
       lessonId,
       LessonStepKind.THEORY,
     );
-    const row = await this.upsertStep(
-      userId,
-      lesson.id,
-      LessonStepKind.THEORY,
-      {
-        start: true,
-        complete: false,
-      },
-    );
-    return toDto(row);
+    return this.upsertStep(userId, lesson.id, LessonStepKind.THEORY, {
+      start: true,
+      complete: false,
+    });
   }
 
   // The explicit "Tôi đã đọc xong" action — the ONLY thing that completes
@@ -107,33 +111,27 @@ export class LessonStepService {
   async completeTheory(
     lessonId: string,
     userId: string,
-  ): Promise<StepProgressDto> {
+  ): Promise<StepWriteOutcome> {
     const lesson = await this.assertStepAvailable(
       lessonId,
       LessonStepKind.THEORY,
     );
-    const row = await this.upsertStep(
-      userId,
-      lesson.id,
-      LessonStepKind.THEORY,
-      {
-        start: true,
-        complete: true,
-      },
-    );
-    return toDto(row);
+    return this.upsertStep(userId, lesson.id, LessonStepKind.THEORY, {
+      start: true,
+      complete: true,
+    });
   }
 
   async recordVideoProgress(
     lessonId: string,
     userId: string,
     dto: VideoProgressDto,
-  ): Promise<StepProgressDto> {
+  ): Promise<StepWriteOutcome> {
     const lesson = await this.assertStepAvailable(
       lessonId,
       LessonStepKind.VIDEO,
     );
-    return toDto(await this.writeVideoProgress(lesson, userId, dto));
+    return this.writeVideoProgress(lesson, userId, dto);
   }
 
   // Separated so the whole read-then-write can be retried as a unit.
@@ -150,7 +148,7 @@ export class LessonStepService {
     userId: string,
     dto: VideoProgressDto,
     isRetry = false,
-  ): Promise<LessonStepProgress> {
+  ): Promise<StepWriteOutcome> {
     try {
       return await this.videoProgressTransaction(lesson, userId, dto);
     } catch (error) {
@@ -169,7 +167,7 @@ export class LessonStepService {
     lesson: { id: string; videoDurationMinutes: number | null },
     userId: string,
     dto: VideoProgressDto,
-  ): Promise<LessonStepProgress> {
+  ): Promise<StepWriteOutcome> {
     // An author's stated length beats anything the client reports. Stored in
     // whole minutes, so the 90% gate is accurate to within ~30s — acceptable,
     // and documented rather than silently assumed.
@@ -209,33 +207,59 @@ export class LessonStepService {
         highest / denominator >= VIDEO_COMPLETION_RATIO;
 
       const now = new Date();
-      if (!existing) {
-        return tx.lessonStepProgress.create({
-          data: {
-            userId,
-            lessonId: lesson.id,
-            step: LessonStepKind.VIDEO,
-            startedAt: now,
-            completedAt: canComplete ? now : null,
-            lastActivityAt: now,
-            highestPositionSeconds: highest,
-            videoDurationSeconds: frozenSeconds,
-          },
-        });
-      }
 
-      return tx.lessonStepProgress.update({
-        where: { id: existing.id },
-        data: {
-          startedAt: existing.startedAt ?? now,
-          // `??` and never a bare assignment: rewatching a finished video must
-          // not restamp its completion, and nothing may ever clear it.
-          completedAt: existing.completedAt ?? (canComplete ? now : null),
-          lastActivityAt: now,
-          highestPositionSeconds: highest,
-          videoDurationSeconds: existing.videoDurationSeconds ?? frozenSeconds,
-        },
+      // Sprint 10 — XP is due only on the transition into completion. Reuses
+      // the exact expression this method already computed to decide whether to
+      // stamp completedAt, rather than re-deriving it: one condition, one
+      // meaning. `existing.completedAt` is never cleared, so rewatching a
+      // finished video takes the `false` branch forever.
+      const justCompleted = !existing?.completedAt && canComplete;
+
+      const row = existing
+        ? await tx.lessonStepProgress.update({
+            where: { id: existing.id },
+            data: {
+              startedAt: existing.startedAt ?? now,
+              // `??` and never a bare assignment: rewatching a finished video
+              // must not restamp its completion, and nothing may ever clear it.
+              completedAt: existing.completedAt ?? (canComplete ? now : null),
+              lastActivityAt: now,
+              highestPositionSeconds: highest,
+              videoDurationSeconds:
+                existing.videoDurationSeconds ?? frozenSeconds,
+            },
+          })
+        : await tx.lessonStepProgress.create({
+            data: {
+              userId,
+              lessonId: lesson.id,
+              step: LessonStepKind.VIDEO,
+              startedAt: now,
+              completedAt: canComplete ? now : null,
+              lastActivityAt: now,
+              highestPositionSeconds: highest,
+              videoDurationSeconds: frozenSeconds,
+            },
+          });
+
+      // ORDERING INVARIANT: the step row above is written FIRST, then activity,
+      // then the streak. countCurrentStreak counts from yesterday when today
+      // looks empty, so evaluating before this write would report a streak one
+      // day short and deliver the 3-day badge on day four.
+      //
+      // `knownLastActivityAt` is the hot-path saver: a 10-minute video posts
+      // ~86 of these, and if the row we just read was already stamped today
+      // there is no activity row to create.
+      const gamification = await this.gamification.recordProgress(tx, userId, {
+        at: now,
+        awards: justCompleted
+          ? [stageAward(lesson.id, LessonStepKind.VIDEO)]
+          : [],
+        countsAsActivity: true,
+        knownLastActivityAt: existing?.lastActivityAt ?? null,
       });
+
+      return { step: toDto(row), gamification };
     });
   }
 
@@ -273,32 +297,49 @@ export class LessonStepService {
     lessonId: string,
     step: LessonStepKind,
     action: { start: boolean; complete: boolean },
-  ): Promise<LessonStepProgress> {
+  ): Promise<StepWriteOutcome> {
     const now = new Date();
     return this.prisma.$transaction(async (tx) => {
       const existing = await tx.lessonStepProgress.findUnique({
         where: { userId_lessonId_step: { userId, lessonId, step } },
       });
-      if (!existing) {
-        return tx.lessonStepProgress.create({
-          data: {
-            userId,
-            lessonId,
-            step,
-            startedAt: action.start ? now : null,
-            completedAt: action.complete ? now : null,
-            lastActivityAt: now,
-          },
-        });
-      }
-      return tx.lessonStepProgress.update({
-        where: { id: existing.id },
-        data: {
-          startedAt: existing.startedAt ?? (action.start ? now : null),
-          completedAt: existing.completedAt ?? (action.complete ? now : null),
-          lastActivityAt: now,
-        },
+
+      // Sprint 10 — the completion TRANSITION, not the completion state.
+      // Reopening finished theory calls this with complete: true every time,
+      // and `existing.completedAt` is never cleared, so this is true exactly
+      // once in an account's life for a given lesson-step.
+      const justCompleted = !existing?.completedAt && action.complete;
+
+      const row = existing
+        ? await tx.lessonStepProgress.update({
+            where: { id: existing.id },
+            data: {
+              startedAt: existing.startedAt ?? (action.start ? now : null),
+              completedAt:
+                existing.completedAt ?? (action.complete ? now : null),
+              lastActivityAt: now,
+            },
+          })
+        : await tx.lessonStepProgress.create({
+            data: {
+              userId,
+              lessonId,
+              step,
+              startedAt: action.start ? now : null,
+              completedAt: action.complete ? now : null,
+              lastActivityAt: now,
+            },
+          });
+
+      // After the step write — see the ordering note in videoProgressTransaction.
+      const gamification = await this.gamification.recordProgress(tx, userId, {
+        at: now,
+        awards: justCompleted ? [stageAward(lessonId, step)] : [],
+        countsAsActivity: true,
+        knownLastActivityAt: existing?.lastActivityAt ?? null,
       });
+
+      return { step: toDto(row), gamification };
     });
   }
 }

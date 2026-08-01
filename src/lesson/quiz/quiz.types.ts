@@ -105,6 +105,23 @@ export interface QuestionResultDto {
 
 // This is the ONLY response in the whole quiz surface that ever carries
 // correct answers — see QuestionResultDto.correctAnswer above.
+// Sprint 10 — what submitTask hands back internally.
+//
+// `response` IS THE PERSISTED BODY AND MUST STAY FREE OF GAMIFICATION.
+// SubmitQuizResponseDto is written verbatim into LessonTaskAttempt.result and
+// LessonTaskProgress.lastSubmitResult, and returned byte-for-byte when a client
+// replays a clientAttemptId. Embedding `xpAwarded: 30` in it would make every
+// replay re-announce an award that did not happen — the toast fires a second
+// time while the ledger, correctly, holds one row. The bug would look like
+// duplicate XP and be invisible in the data.
+//
+// So the two travel side by side and the controller merges them at the edge.
+// Same shape and same reason as StepWriteOutcome.
+export interface TaskSubmitOutcome {
+  response: SubmitQuizResponseDto;
+  gamification: import('../../gamification/gamification.types').GamificationResultDto;
+}
+
 export interface SubmitQuizResponseDto {
   correctCount: number;
   totalCount: number;

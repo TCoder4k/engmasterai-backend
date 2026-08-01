@@ -5,6 +5,7 @@ import type { App } from 'supertest/types';
 import { randomUUID } from 'crypto';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
+import { expectIdempotentReplay } from './replay-assertions';
 import { testFixtureName, TEST_FIXTURE_PREFIX } from './test-database.util';
 
 // Sprint 04B e2e coverage. Requires `docker-compose up -d` (Postgres +
@@ -229,7 +230,9 @@ describe('Learning Engine (e2e) — Sprint 04B: due queue + rating API', () => {
         .send(body);
 
       expect(replay.status).toBe(201);
-      expect(replay.body).toEqual(first.body);
+      // Sprint 10 — the SRS snapshot replays exactly; the award does not.
+      // One review is worth 1 XP, and replaying it is worth nothing.
+      expectIdempotentReplay(first.body, replay.body, 1);
     });
 
     it('the same clientReviewId with a different rating returns 409 IDEMPOTENCY_KEY_REUSED', async () => {
