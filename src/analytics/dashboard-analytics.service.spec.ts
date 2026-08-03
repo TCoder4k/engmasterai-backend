@@ -24,6 +24,7 @@ interface HarnessOptions {
   stepActivity?: Date[];
   attemptActivity?: Date[];
   reviewActivity?: Date[];
+  studySecondsToday?: number | null;
 }
 
 const buildHarness = (options: HarnessOptions = {}) => {
@@ -83,6 +84,16 @@ const buildHarness = (options: HarnessOptions = {}) => {
     },
     userWordProgress: {
       count: jest.fn(() => resolve(options.newWordsToday ?? 0)),
+    },
+    studyTimeEvent: {
+      // `null` is what Postgres actually returns for SUM over an empty set, so
+      // the default models an account with no heartbeats rather than one with
+      // a convenient zero.
+      aggregate: jest.fn(() =>
+        resolve({
+          _sum: { creditedSeconds: options.studySecondsToday ?? null },
+        }),
+      ),
     },
   };
 
@@ -417,13 +428,15 @@ describe('DashboardAnalyticsService — query cost', () => {
         { length: 5000 },
         () => new Date('2026-07-29T04:00:00.000Z'),
       ),
+      studySecondsToday: 5_400,
     });
     await busy.service.getDashboardAnalytics('user-1');
 
     expect(busy.calls.total).toBe(quiet.calls.total);
-    // 1 user read + 8 analytics reads. Update this number only alongside a
+    // 1 user read + 9 analytics reads. Update this number only alongside a
     // deliberate change to the query plan documented in the service.
-    expect(quiet.calls.total).toBe(9);
+    // Sprint 10.5 raised it from 9 to 10 by adding the study-seconds SUM.
+    expect(quiet.calls.total).toBe(10);
   });
 
   it('adds exactly one write when bootstrapping the timezone', async () => {
@@ -432,6 +445,47 @@ describe('DashboardAnalyticsService — query cost', () => {
 
     await service.getDashboardAnalytics('user-1', VN);
 
-    expect(calls.total).toBe(10);
+    expect(calls.total).toBe(11);
+  });
+});
+
+// Sprint 10.5 — the Daily Goal widget's numerator.
+describe('DashboardAnalyticsService — active study seconds', () => {
+  it('reports the summed study seconds for today', async () => {
+    freezeNow(NOW);
+    const { service } = buildHarness({
+      storedTimeZone: VN,
+      studySecondsToday: 1_080,
+    });
+
+    const { today } = await service.getDashboardAnalytics('user-1');
+
+    expect(today.activeStudySeconds).toBe(1_080);
+  });
+
+  it('reports 0 — not null — for an account with no heartbeats', async () => {
+    // Postgres SUM over an empty set is NULL. Letting that reach the DTO would
+    // render "null phút" on the widget, and `null` is the client's ERROR state.
+    freezeNow(NOW);
+    const { service } = buildHarness({
+      storedTimeZone: VN,
+      studySecondsToday: null,
+    });
+
+    const { today } = await service.getDashboardAnalytics('user-1');
+
+    expect(today.activeStudySeconds).toBe(0);
+  });
+
+  it('sums from the start of the day in the EFFECTIVE timezone', async () => {
+    freezeNow(NOW); // 11:00 in VN, 00:00 in NY
+    const { service, prisma } = buildHarness({ storedTimeZone: VN });
+
+    await service.getDashboardAnalytics('user-1', NY);
+
+    const where = whereOf(prisma.studyTimeEvent.aggregate);
+    expect(where.occurredAt).toEqual({
+      gte: new Date('2026-07-31T04:00:00.000Z'),
+    });
   });
 });

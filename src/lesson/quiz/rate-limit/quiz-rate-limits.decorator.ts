@@ -34,6 +34,13 @@ import { SetMetadata } from '@nestjs/common';
 // drain that bucket twice as fast on the busiest navigation path in the app,
 // and the symptom — "the dashboard sometimes fails to load" — points nowhere
 // near the widget that caused it.
+// 'study' (Sprint 10.5) is its own kind for exactly the reason 'step' is, and
+// against the same neighbour. POST /study-time/heartbeat fires once a minute
+// for as long as a student is actively learning — on the SAME pages where the
+// video player is already posting progress under 'step' roughly every seven
+// seconds. Sharing that bucket would let a long lesson exhaust it, and the
+// symptom — "video progress stops saving after a while" — points nowhere near
+// the heartbeat that drained it.
 export type QuizRateLimitKind =
   | 'read'
   | 'answer'
@@ -42,6 +49,7 @@ export type QuizRateLimitKind =
   | 'step'
   | 'stats'
   | 'gamification'
+  | 'study'
   | 'manage';
 
 export interface QuizRateLimitPolicy {

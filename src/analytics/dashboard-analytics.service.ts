@@ -3,6 +3,7 @@ import { LessonTaskType } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { collectActiveDays } from '../shared/activity-window';
 import { publishedLesson, publishedTask } from '../shared/published-scope';
+import { sumStudySecondsSince } from '../shared/study-time-window';
 import { startOfDayInTimeZone } from '../learning/timezone.util';
 import {
   countCurrentStreak,
@@ -29,7 +30,7 @@ const ACTIVITY_WINDOW_DAYS = 7;
 // User.timezone when that column is still null (see resolveTimeZone). Nothing
 // else here writes.
 //
-// QUERY COST: nine reads, and — the property that matters — that number is
+// QUERY COST: ten reads, and — the property that matters — that number is
 // CONSTANT. It does not grow with how much the student has studied, how many
 // courses exist, or how many lessons they contain. Every query is a bounded
 // range scan on an index whose leading column is userId.
@@ -43,9 +44,10 @@ const ACTIVITY_WINDOW_DAYS = 7;
 //   6     lessonStepProgress   lastActivityAt window     (calendar)
 //   7     lessonTaskAttempt    submittedAt    window     (calendar)
 //   8     wordReviewLog        reviewedAt     window     (calendar)
+//   9     studyTimeEvent       occurredAt     today      (study seconds)
 //
 // Plus ONE conditional write: the User.timezone bootstrap, which fires at most
-// once in an account's lifetime. 1-8 run in a single Promise.all; query 0 must
+// once in an account's lifetime. 1-9 run in a single Promise.all; query 0 must
 // precede them because it decides where the day boundaries are.
 //
 // THE PUBLICATION ASYMMETRY IS DELIBERATE. Queries 1-3 filter on
@@ -102,6 +104,7 @@ export class DashboardAnalyticsService {
       newWordsLearned,
       wordsReviewed,
       activeDays,
+      activeStudySeconds,
     ] = await Promise.all([
       // 1 — video/theory finished today. Index [userId, completedAt].
       this.prisma.lessonStepProgress.count({
@@ -158,6 +161,21 @@ export class DashboardAnalyticsService {
       // never arrives. Still three queries, still one Promise.all, still nine
       // reads in total.
       collectActiveDays(this.prisma, userId, windowStart, effectiveTimeZone),
+      // 9 — active study seconds today (Sprint 10.5). Index
+      // [userId, occurredAt]. Bucketed on READ rather than at write time, so a
+      // corrected timezone re-buckets past seconds — unlike UserDailyActivity
+      // .day, where a day the student studied is a historical fact that must
+      // not move.
+      //
+      // The helper is shared with StudyTimeService's own ceiling check
+      // (shared/study-time-window.ts) rather than reimplemented here. Two
+      // definitions would eventually disagree, and the symptom would be a cap
+      // refusing time this widget is simultaneously displaying.
+      //
+      // NO PUBLICATION FILTER, and there is nothing to filter on: a heartbeat
+      // records that the student was working, not what they were working on.
+      // StudyTimeEvent.activityId is an untrusted analytics dimension.
+      sumStudySecondsSince(this.prisma, userId, startOfToday),
     ]);
 
     const quiz = todayAttempts.filter(
@@ -173,6 +191,7 @@ export class DashboardAnalyticsService {
       taskAttempts: { quiz, practice, total: todayAttempts.length },
       newWordsLearned,
       wordsReviewed,
+      activeStudySeconds,
     };
 
     const activity: ActivityAnalyticsDto = {

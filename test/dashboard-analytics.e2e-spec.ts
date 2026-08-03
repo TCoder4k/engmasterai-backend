@@ -103,6 +103,7 @@ describe('Dashboard analytics (e2e) — Sprint 09', () => {
       taskAttempts: { quiz: number; practice: number; total: number };
       newWordsLearned: number;
       wordsReviewed: number;
+      activeStudySeconds: number;
     };
     activity: {
       windowDays: number;
@@ -168,6 +169,17 @@ describe('Dashboard analytics (e2e) — Sprint 09', () => {
       const res = await getDashboard(token).expect(200);
 
       expect((res.body as DashboardBody).effectiveTimeZone).toBe('UTC');
+    });
+
+    // Sprint 10.5 — the Daily Goal numerator joins this payload. A brand-new
+    // account must report a real 0, never null: `null` is the client's ERROR
+    // state, and Postgres SUM over an empty set is exactly that.
+    it('reports 0 active study seconds for a brand-new account', async () => {
+      const { token } = await registerAndLogin('nostudy');
+
+      const res = await getDashboard(token, 'Asia/Ho_Chi_Minh').expect(200);
+
+      expect((res.body as DashboardBody).today.activeStudySeconds).toBe(0);
     });
   });
 

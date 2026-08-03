@@ -14,6 +14,7 @@ import { VocabWordModule } from './vocab-word/vocab-word.module';
 import { LearningModule } from './learning/learning.module';
 import { AnalyticsModule } from './analytics/analytics.module';
 import { GamificationModule } from './gamification/gamification.module';
+import { StudyTimeModule } from './study-time/study-time.module';
 import { envValidationSchema } from './config/env.validation';
 
 @Module({
@@ -36,6 +37,7 @@ import { envValidationSchema } from './config/env.validation';
     LearningModule,
     AnalyticsModule,
     GamificationModule,
+    StudyTimeModule,
   ],
 })
 export class AppModule {}

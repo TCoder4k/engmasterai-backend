@@ -40,6 +40,24 @@ export interface TodayAnalyticsDto {
 
   /** SRS reviews submitted today, including repeats of the same word. */
   wordsReviewed: number;
+
+  /**
+   * Server-credited ACTIVE study seconds today (Sprint 10.5).
+   *
+   * Seconds, not minutes: the client floors to whole minutes for display, and
+   * rounding on the server would make two different widgets disagree about the
+   * same figure the moment a second one wants it.
+   *
+   * This is time the student was demonstrably working — a visible tab, a
+   * registered learning activity, and either recent interaction or playing
+   * media. Idle time, hidden tabs and duplicate tabs contribute nothing, and a
+   * per-day convergence ceiling stops concurrent devices multiplying it. It is
+   * NOT page-open time, and it must never be presented as such.
+   *
+   * 0 is a real answer for a student who has not studied today. The widget's
+   * loading and error states are separate, and neither may render as 0.
+   */
+  activeStudySeconds: number;
 }
 
 export interface ActivityDayDto {
