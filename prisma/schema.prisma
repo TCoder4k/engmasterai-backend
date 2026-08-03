@@ -240,6 +240,7 @@ model User {
   wordReviewLogs          WordReviewLog[]
   xpTransactions          XpTransaction[]
   dailyActivity           UserDailyActivity[]
+  studyTimeEvents         StudyTimeEvent[]
 
   @@map("users") //users dùng cho query sql , còn User dùng cho code
 }
@@ -1015,4 +1016,82 @@ model UserDailyActivity {
 
   @@unique([userId, day])
   @@map("user_daily_activity")
+}
+
+// Sprint 10.5 — what kind of learning the student was doing when a heartbeat
+// was credited.
+//
+// An ANALYTICS DIMENSION, not an authorisation input. Nothing branches on it:
+// the number of seconds credited is identical whichever value arrives. See the
+// note on StudyTimeEvent.activityId.
+enum StudyActivityType {
+  VIDEO
+  THEORY
+  QUIZ
+  PRACTICE
+  TRAP_HUNTER
+  SRS_REVIEW
+  VOCAB_PRACTICE
+  LISTENING
+}
+
+// One row per credited heartbeat window. Append-only; the SINGLE source of
+// truth for "how long has this student actually been studying".
+//
+// WHY A LEDGER RATHER THAN A COUNTER, and why no daily rollup yet.
+//
+// A running total with no event log behind it turns every crediting bug into
+// permanent, unfixable data loss — the same reasoning that made XpTransaction a
+// ledger in Sprint 10. Today's figure is SUM(creditedSeconds) over ~30 rows, so
+// a rollup would buy nothing but a second source of truth to keep in step.
+// UserDailyActivity.activeSeconds is the rollup to add IF this table is ever
+// measured to be slow; note that its hot-path skip (GamificationService
+// .recordActivityDay) returns before the update, so that is not a free change.
+//
+// SECONDS ARE NEVER CLIENT-AUTHORITATIVE. The client reports how long it
+// believes it was active; the server decides what to store, clamped by
+// creditableSeconds() against real time elapsed since the student's local
+// midnight. No DTO carries a total, a percentage or an XP amount, and study
+// time awards no XP at all — so there is no reward to farm by inflating it.
+//
+// occurredAt IS THE SERVER'S CLOCK, always. No request field sets it. Bucketing
+// into a local day happens on READ (startOfDayInTimeZone), unlike
+// UserDailyActivity.day which is bucketed at write time: an activity DAY is a
+// historical fact that should not move, whereas study seconds are a quantity
+// summed over a window and must re-bucket if the student's timezone is
+// corrected.
+model StudyTimeEvent {
+  id     String @id @default(uuid())
+  userId String
+
+  activityType StudyActivityType
+
+  // CLIENT-SUPPLIED AND DELIBERATELY NOT TRUSTED — the same standing as
+  // WordReviewLog.sessionId ("analytics only, never trusted"). It is not
+  // validated against lesson visibility, and that is a considered trade rather
+  // than an oversight: the credited amount does not depend on it, study time
+  // grants no XP and unlocks nothing, so a forged id can only dirty a
+  // dimension. Checking it would add a lesson lookup to every heartbeat —
+  // doubling the write cost of the feature to protect a column nothing reads.
+  // WRITE-ONLY for now, exactly as LessonTaskAttempt was across Sprint 07-08.
+  activityId String?
+
+  // Idempotency is enforced by the database, never by an application check:
+  // @@unique([userId, clientSessionId, sequence]) plus a conflict-free insert
+  // (createManyAndReturn + skipDuplicates). A client retrying a timed-out
+  // heartbeat is therefore free, and a replayed one credits nothing.
+  clientSessionId String
+  sequence        Int
+
+  creditedSeconds Int
+  occurredAt      DateTime
+  createdAt       DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, clientSessionId, sequence])
+  // Serves both reads this table has: the per-heartbeat SUM for today's cap,
+  // and the dashboard's SUM for the Daily Goal widget.
+  @@index([userId, occurredAt])
+  @@map("study_time_events")
 }
