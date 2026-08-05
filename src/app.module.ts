@@ -15,6 +15,7 @@ import { LearningModule } from './learning/learning.module';
 import { AnalyticsModule } from './analytics/analytics.module';
 import { GamificationModule } from './gamification/gamification.module';
 import { StudyTimeModule } from './study-time/study-time.module';
+import { ListeningModule } from './listening/listening.module';
 import { envValidationSchema } from './config/env.validation';
 
 @Module({
@@ -38,6 +39,7 @@ import { envValidationSchema } from './config/env.validation';
     AnalyticsModule,
     GamificationModule,
     StudyTimeModule,
+    ListeningModule,
   ],
 })
 export class AppModule {}

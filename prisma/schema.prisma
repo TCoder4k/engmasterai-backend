@@ -1095,3 +1095,165 @@ model StudyTimeEvent {
   @@index([userId, occurredAt])
   @@map("study_time_events")
 }
+
+// Sprint 11 — Listening content.
+//
+// THE POINT OF THIS MODULE IS THAT ONE RECORDING IS AUTHORED ONCE AND SERVES
+// EVERY PRACTICE MODE. Before it, Listening was the only module with no backend
+// at all: content was a client-side seed file (listeningContent.ts, ids were
+// slugs) and progress lived in an in-memory Map that a refresh erased.
+//
+// Deliberately NOT built on Lesson. `deriveLessonStatus` (lesson-status.ts) is
+// where Invariant A lives, and adding a listening stage there would make every
+// Grammar course answer "does this lesson have a shadowing stage?" — exactly
+// the coupling the three *IsGeneric tests exist to prevent. A Listening catalog
+// also has no concept of a course, which is the shape the product wants.
+
+/**
+ * A practice mode a piece of listening content supports.
+ *
+ * AN ENUM ARRAY (`ListeningContent.supportedModes`) RATHER THAN BOOLEAN
+ * COLUMNS. `isDictationEnabled` + `isShadowingEnabled` costs one column per
+ * mode and makes "no mode enabled" representable in two places; a mode
+ * configuration table costs a join to answer a yes/no question. Adding
+ * LISTENING_COMPREHENSION later is one enum value and no migration of shape.
+ */
+enum ListeningMode {
+  DICTATION
+  SHADOWING
+}
+
+enum ListeningMediaType {
+  VIDEO
+  AUDIO
+}
+
+/**
+ * Where the media is hosted.
+ *
+ * PROVIDER-NEUTRAL ON PURPOSE. The frontend commits to rendering YouTube (it
+ * already owns youtubeUrlParser + the IFrame API loader for lesson videos);
+ * the domain model does not. This mirrors the decision already recorded for
+ * `Lesson.videoUrl`, whose DTO is a generic `@IsUrl` that happens to accept
+ * YouTube URLs. `youtubeVideoId` as a column would have made an audio-only
+ * recording unrepresentable.
+ */
+enum ListeningMediaProvider {
+  YOUTUBE
+  CLOUDINARY
+  EXTERNAL_URL
+}
+
+/// A topic grouping for the Listening catalog — one section per category.
+///
+/// A REAL MODEL, NOT A STRING OR A FRONTEND ENUM. The seed file it replaces
+/// declared its topics as a TypeScript union (`ListeningTopic`), which is the
+/// same shape as the still-open "Grammar collection chips are derived from
+/// course titles, not stored" debt: an admin could not add or rename one.
+model ListeningCategory {
+  id          String  @id @default(uuid())
+  name        String
+  nameVi      String
+  orderIndex  Int
+  isPublished Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  contents ListeningContent[]
+
+  @@map("listening_categories")
+}
+
+/// One authored recording, plus the modes it can be practised in.
+model ListeningContent {
+  id          String    @id @default(uuid())
+  categoryId  String
+  title       String
+  description String?
+  level       CefrLevel
+  thumbnailUrl String?
+
+  // Attribution. REQUIRED AT PUBLISH TIME when the provider is YOUTUBE — the
+  // platform is embedded, never downloaded or re-hosted, and the channel it
+  // came from has to remain visible to the student. Enforced in
+  // segment-validation.ts rather than by a nullability constraint, because a
+  // draft is allowed to be incomplete.
+  sourceName String?
+  sourceUrl  String?
+
+  mediaType       ListeningMediaType
+  mediaProvider   ListeningMediaProvider
+  // Empty string is legal on a DRAFT and blocks publish. Seeded content starts
+  // this way: the five migrated recordings have real transcripts but no legally
+  // cleared media yet.
+  mediaUrl        String
+  // The provider's own id (a YouTube video id, a Cloudinary public id). Kept
+  // beside mediaUrl rather than parsed on every read.
+  externalMediaId String?
+  durationMs      Int?
+
+  supportedModes ListeningMode[]
+
+  orderIndex  Int     @default(0)
+  isPublished Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Restrict: a category holding content cannot be deleted, only unpublished —
+  // the same rule CourseService.remove enforces for courses holding lessons,
+  // and enforced the same way (count first, FK as the backstop for the race).
+  category ListeningCategory  @relation(fields: [categoryId], references: [id])
+  segments ListeningSegment[]
+
+  @@index([categoryId, isPublished, orderIndex])
+  @@index([isPublished, level])
+  @@map("listening_contents")
+}
+
+/// One sentence of a recording. SHARED BY EVERY MODE — this is what makes
+/// "one video, two modes" true rather than a claim. Dictation and Shadowing
+/// read the same row; only their progress is separate.
+model ListeningSegment {
+  id         String @id @default(uuid())
+  contentId  String
+  orderIndex Int
+
+  text String
+  /// Scoring input, computed at write time. NEVER SENT TO A STUDENT — the
+  /// client must not be able to reconstruct the comparison the server will
+  /// make, and it has no rendering use.
+  normalizedText String
+  ipa            String?
+  translationVi  String?
+  notes          String?
+
+  // MILLISECONDS, as Int. The YouTube IFrame API speaks decimal seconds, but
+  // Float makes boundary comparisons unreliable and Decimal is a heavy Prisma
+  // type for plain arithmetic. Converted at the player boundary only. Same
+  // reasoning that made LessonStepProgress.highestPositionSeconds an Int.
+  startTimeMs Int
+  endTimeMs   Int
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // CASCADE, deliberately — and this is the one FK decision in this module
+  // worth reading twice.
+  //
+  // A segment is CONTENT, so it has the same standing as a Question, which the
+  // quiz's whole-document upsert deletes freely (QuizService.upsertTask). The
+  // Restrict-because-a-student-worked-here rule lives one level up, on the
+  // CONTAINER (LessonTask.lesson), and this module puts it in the matching
+  // place: on ListeningContent, once Phase 4A adds progress.
+  //
+  // Restrict here would have made the admin editor unusable — removing a
+  // sentence from a live recording would throw P2003 the moment any student had
+  // practised it, and fixing a typo would be impossible.
+  content ListeningContent @relation(fields: [contentId], references: [id], onDelete: Cascade)
+
+  @@unique([contentId, orderIndex])
+  @@index([contentId])
+  @@map("listening_segments")
+}
