@@ -100,6 +100,31 @@ export async function sweepTestFixtures(): Promise<void> {
     await prisma.course.deleteMany({
       where: { title: { startsWith: TEST_FIXTURE_PREFIX } },
     });
+
+    // Sprint 11 (Listening content) — content BEFORE categories, because
+    // ListeningContent.category is `Restrict`: a fixture category holding a
+    // recording cannot be deleted, and leaving it behind would poison every
+    // later suite in the run exactly as an unswept LessonTask does.
+    //
+    // Matched on the content's own title OR its category's name, so a
+    // recording still gets swept if a future test forgets to namespace it.
+    //
+    // NOTE: listeningSegment needs NO entry. ListeningSegment.content is
+    // onDelete: Cascade, so segments go with the content below. Adding a
+    // deleteMany for it would be harmless but misleading — it would imply a
+    // Restrict relation that does not exist. Same reasoning as the
+    // lessonStepProgress note above; do not "fix" this omission.
+    await prisma.listeningContent.deleteMany({
+      where: {
+        OR: [
+          { title: { startsWith: TEST_FIXTURE_PREFIX } },
+          { category: { name: { startsWith: TEST_FIXTURE_PREFIX } } },
+        ],
+      },
+    });
+    await prisma.listeningCategory.deleteMany({
+      where: { name: { startsWith: TEST_FIXTURE_PREFIX } },
+    });
   } finally {
     await prisma.$disconnect();
   }
