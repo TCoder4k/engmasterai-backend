@@ -114,6 +114,36 @@ export async function sweepTestFixtures(): Promise<void> {
     // deleteMany for it would be harmless but misleading — it would imply a
     // Restrict relation that does not exist. Same reasoning as the
     // lessonStepProgress note above; do not "fix" this omission.
+    //
+    // Sprint 11 Phase 4A — these two DO need entries, and they must run
+    // BEFORE the content delete below. Both hold `content` as **Restrict**
+    // (that is the whole point of those relations: they stop an admin from
+    // deleting a recording students have practised), so a leftover attempt or
+    // progress row makes the content delete throw P2003 and every later suite
+    // in the run inherits the wreckage.
+    //
+    // Attempts first, then progress: no FK links them, but keeping the order
+    // "most dependent first" is what makes this list readable as a graph.
+    await prisma.listeningDictationAttempt.deleteMany({
+      where: {
+        content: {
+          OR: [
+            { title: { startsWith: TEST_FIXTURE_PREFIX } },
+            { category: { name: { startsWith: TEST_FIXTURE_PREFIX } } },
+          ],
+        },
+      },
+    });
+    await prisma.listeningDictationSegmentProgress.deleteMany({
+      where: {
+        content: {
+          OR: [
+            { title: { startsWith: TEST_FIXTURE_PREFIX } },
+            { category: { name: { startsWith: TEST_FIXTURE_PREFIX } } },
+          ],
+        },
+      },
+    });
     await prisma.listeningContent.deleteMany({
       where: {
         OR: [

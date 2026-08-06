@@ -50,6 +50,12 @@ export type QuizRateLimitKind =
   | 'stats'
   | 'gamification'
   | 'study'
+  // Sprint 11 Phase 4A. Its own bucket because a dictation sitting is many
+  // small writes from one page: fifteen sentences at three tries each is 45
+  // submissions, and sharing `submit` (30/600s) would throttle precisely the
+  // student practising hardest. Named for what it is — there is no speech in
+  // this path; Shadowing's kind, if it needs one, arrives with Shadowing.
+  | 'dictation'
   | 'manage';
 
 export interface QuizRateLimitPolicy {

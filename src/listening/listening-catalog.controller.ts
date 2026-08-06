@@ -4,6 +4,7 @@ import {
   Param,
   ParseUUIDPipe,
   Query,
+  Req,
   UseGuards,
   ValidationPipe,
 } from '@nestjs/common';
@@ -11,6 +12,7 @@ import { JwtAuthGuard } from '../auth/guards';
 import { QuizRateLimitGuard } from '../lesson/quiz/rate-limit/quiz-rate-limit.guard';
 import { QuizRateLimit } from '../lesson/quiz/rate-limit/quiz-rate-limits.decorator';
 import { ListeningContentService } from './listening-content.service';
+import { DictationService } from './dictation/dictation.service';
 import { QueryListeningCatalogDto } from './dto';
 
 // Sprint 11 — the student-facing Listening reads.
@@ -39,7 +41,10 @@ const queryPipe = new ValidationPipe({ transform: true });
 
 @Controller('listening')
 export class ListeningCatalogController {
-  constructor(private readonly contentService: ListeningContentService) {}
+  constructor(
+    private readonly contentService: ListeningContentService,
+    private readonly dictationService: DictationService,
+  ) {}
 
   @UseGuards(JwtAuthGuard, QuizRateLimitGuard)
   @QuizRateLimit({ kind: 'read', max: 60, windowSeconds: 60 })
@@ -54,7 +59,25 @@ export class ListeningCatalogController {
   @UseGuards(JwtAuthGuard, QuizRateLimitGuard)
   @QuizRateLimit({ kind: 'read', max: 60, windowSeconds: 60 })
   @Get('contents/:contentId')
-  async findOne(@Param('contentId', ParseUUIDPipe) contentId: string) {
-    return this.contentService.findOneVisible(contentId);
+  async findOne(
+    @Req() req: { user: { userId: string } },
+    @Param('contentId', ParseUUIDPipe) contentId: string,
+  ) {
+    const content = await this.contentService.findOneVisible(contentId);
+
+    // Sprint 11 Phase 4A. Composed HERE rather than inside
+    // ListeningContentService, which is about content and has no business
+    // knowing who is reading it. Progress is still absent for a recording
+    // that does not enable DICTATION — null, not an empty summary, because
+    // "this mode is off" and "you have done none of it" are different facts.
+    return {
+      ...content,
+      dictationProgress: content.supportedModes.includes('DICTATION')
+        ? await this.dictationService.findContentProgress(
+            req.user.userId,
+            contentId,
+          )
+        : null,
+    };
   }
 }
