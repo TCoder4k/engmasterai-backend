@@ -242,6 +242,9 @@ model User {
   dailyActivity           UserDailyActivity[]
   studyTimeEvents         StudyTimeEvent[]
 
+  dictationSegmentProgress ListeningDictationSegmentProgress[]
+  dictationAttempts        ListeningDictationAttempt[]
+
   @@map("users") //users dùng cho query sql , còn User dùng cho code
 }
 
@@ -1207,6 +1210,13 @@ model ListeningContent {
   category ListeningCategory  @relation(fields: [categoryId], references: [id])
   segments ListeningSegment[]
 
+  // Sprint 11 Phase 4A. Both are Restrict from the other side, which is what
+  // finally arms the "students have already practised this" guard that
+  // ListeningContentService.remove has carried since Phase 1 with nothing to
+  // trigger it.
+  dictationSegmentProgress ListeningDictationSegmentProgress[]
+  dictationAttempts        ListeningDictationAttempt[]
+
   @@index([categoryId, isPublished, orderIndex])
   @@index([isPublished, level])
   @@map("listening_contents")
@@ -1253,7 +1263,132 @@ model ListeningSegment {
   // practised it, and fixing a typo would be impossible.
   content ListeningContent @relation(fields: [contentId], references: [id], onDelete: Cascade)
 
+  dictationProgress ListeningDictationSegmentProgress[]
+  dictationAttempts ListeningDictationAttempt[]
+
   @@unique([contentId, orderIndex])
   @@index([contentId])
   @@map("listening_segments")
+}
+
+/// One student's standing on one sentence, for DICTATION only.
+///
+/// >>> NAMED FOR DICTATION, NOT FOR "A MODE" — DELIBERATELY <<<
+/// The Sprint 11 architecture plan proposed a generic `ListeningSegmentProgress`
+/// carrying a `mode` column so Shadowing could share the table. That was
+/// rejected for Phase 4A on the owner's instruction, and the instruction is
+/// right: Shadowing has no submit path yet, so its shape is a prediction. The
+/// four fields below happen to look mode-neutral today, but `assisted` is
+/// meaningless for Shadowing and a Shadowing row would want a confidence and a
+/// transcript source that Dictation has no use for. A table generalised to fit
+/// one real user and one imagined one fits the imagined one badly.
+///
+/// The cost is named rather than hidden: if 4B turns out to need exactly this
+/// shape, it either adds a sibling table or renames this one in a migration.
+/// That is a known, bounded cost paid later, against a guaranteed cost of
+/// carrying a discriminator column no query filters on today.
+///
+/// NOTHING HERE IS A CACHE OF A COUNT. There is no `completedSegmentCount` and
+/// no `bestAverageAccuracy` anywhere in this module: content-level completion
+/// is derived per request from these rows against the live segment count, so
+/// an admin adding or removing a sentence re-derives every student's standing
+/// with no counter to recount. That is what makes segment editing safe on live
+/// content, and it is the reason `ListeningSegment.content` can be Cascade.
+model ListeningDictationSegmentProgress {
+  id        String @id @default(uuid())
+  userId    String
+  segmentId String
+
+  /// DUPLICATED FROM `segment.contentId`, and it is a FK — not a derived
+  /// aggregate. A segment never changes content, so this value cannot drift.
+  /// It exists because Prisma `groupBy` cannot group by a relation field:
+  /// without it, "how many sentences has this student finished in each of
+  /// these 20 recordings?" becomes one query per recording. It is assigned
+  /// from `segment.contentId` on write and NEVER from a request body.
+  contentId String
+
+  /// Set once, on the first fully-correct submission, and never cleared —
+  /// the same contract as `LessonStepProgress.completedAt`. Content-level
+  /// completion is still derived, so adding a sentence correctly drops a
+  /// recording back to in-progress without rewriting anyone's history.
+  completedAt DateTime?
+
+  /// Monotonic: `max(stored, new)`. A retry can never lower it, because
+  /// punishing a student for practising again is the opposite of the point.
+  bestAccuracyPercent Int?
+  attemptCount        Int      @default(0)
+  /// True once any attempt revealed a word. Sticky, like `completedAt`: a
+  /// sentence solved with help was not solved unaided, and a later clean run
+  /// does not rewrite that. Excluded from `wordsCorrect` at scoring time too.
+  assisted            Boolean  @default(false)
+  lastAttemptAt       DateTime @default(now())
+
+  user    User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// CASCADE with the segment: an admin must stay able to fix or remove a
+  /// sentence on live content, exactly as they can delete a Question.
+  segment ListeningSegment @relation(fields: [segmentId], references: [id], onDelete: Cascade)
+  /// RESTRICT on the content: this is the row that protects a recording
+  /// students have practised from being deleted. `ListeningContentService.remove`
+  /// has carried the matching guard and the P2003 backstop since Phase 1 —
+  /// this relation is the first thing that can actually make it fire.
+  content ListeningContent @relation(fields: [contentId], references: [id])
+
+  @@unique([userId, segmentId])
+  @@index([userId, contentId, completedAt])
+  @@map("listening_dictation_segment_progress")
+}
+
+/// One submitted dictation attempt. APPEND-ONLY.
+///
+/// WHY A TABLE AND NOT A COLUMN ON THE PROGRESS ROW. Idempotency was required
+/// at the database level, and a unique constraint needs a row per attempt —
+/// `LessonTaskProgress.lastClientAttemptId` is a compare-and-replay against
+/// the most recent attempt only, which is weaker and cannot survive a client
+/// replaying an id from two attempts ago.
+///
+/// KNOWN DEBT, STATED UP FRONT: this table is WRITE-ONLY in Phase 4A. Nothing
+/// reads it, exactly as `LessonTaskAttempt` was write-only across Sprints
+/// 07–08. It is accepted here because the unique constraint is the feature —
+/// but the first reader (an attempt-history surface) should not be deferred
+/// indefinitely, and until then an e2e assertion on the row set after a retry
+/// is what keeps it from rotting.
+model ListeningDictationAttempt {
+  id        String @id @default(uuid())
+  userId    String
+  segmentId String
+  contentId String
+
+  /// What the student typed, verbatim. Stored because it is the only thing
+  /// that can explain a score to a student who disputes it.
+  typedText          String
+  revealedWordCount  Int
+
+  /// The reference sentence AS IT WAS WHEN GRADED. Admins may fix a typo on a
+  /// live recording; without this snapshot an old attempt's score would be
+  /// unexplainable against the edited text. One text column on an append-only
+  /// table buys that, with no content versioning.
+  referenceTextSnapshot String
+
+  /// SERVER-COMPUTED, every one of them. No DTO carries these fields, so a
+  /// client-supplied score is a shape that does not exist.
+  accuracyPercent Int
+  wordsCorrect    Int
+  wordsTotal      Int
+  solved          Boolean
+
+  submittedAt DateTime @default(now())
+
+  /// The idempotency key, scoped per user by the unique below rather than
+  /// globally — one student's key space can never collide with another's.
+  /// Same contract as `LessonTaskAttempt.clientAttemptId` and
+  /// `WordReviewLog.clientReviewId`.
+  clientAttemptId String
+
+  user    User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  segment ListeningSegment @relation(fields: [segmentId], references: [id], onDelete: Cascade)
+  content ListeningContent @relation(fields: [contentId], references: [id])
+
+  @@unique([userId, clientAttemptId])
+  @@index([userId, segmentId, submittedAt])
+  @@map("listening_dictation_attempts")
 }

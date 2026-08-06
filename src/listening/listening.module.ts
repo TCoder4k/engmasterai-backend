@@ -5,6 +5,8 @@ import { ListeningAdminController } from './listening-admin.controller';
 import { ListeningCatalogController } from './listening-catalog.controller';
 import { ListeningCategoryService } from './listening-category.service';
 import { ListeningContentService } from './listening-content.service';
+import { DictationController } from './dictation/dictation.controller';
+import { DictationService } from './dictation/dictation.service';
 
 // Sprint 11 — Listening content.
 //
@@ -33,10 +35,15 @@ import { ListeningContentService } from './listening-content.service';
 // that, not smuggled into a feature sprint.
 @Module({
   imports: [PrismaModule],
-  controllers: [ListeningCatalogController, ListeningAdminController],
+  controllers: [
+    ListeningCatalogController,
+    ListeningAdminController,
+    DictationController,
+  ],
   providers: [
     ListeningCategoryService,
     ListeningContentService,
+    DictationService,
     QuizRateLimitGuard,
   ],
   exports: [ListeningContentService],

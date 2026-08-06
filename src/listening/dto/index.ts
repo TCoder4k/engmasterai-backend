@@ -14,3 +14,7 @@ export {
   QueryListeningCatalogDto,
   QueryListeningManageDto,
 } from './query-listening.dto';
+export {
+  SubmitDictationAttemptDto,
+  QueryListeningProgressDto,
+} from './dictation.dto';

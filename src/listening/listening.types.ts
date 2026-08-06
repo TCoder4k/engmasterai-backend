@@ -137,3 +137,89 @@ export interface ListeningCatalogResponseDto {
    */
   categories: (ListeningCategoryDto & { contentCount: number })[];
 }
+
+/* ── Sprint 11 Phase 4A — Dictation progress ─────────────────────────────── */
+
+/**
+ * One student's standing on one sentence.
+ *
+ * Only sentences the student has actually attempted appear. There is no row of
+ * zeroes for an untouched sentence: absence IS "not started", and inventing a
+ * placeholder would make "has this student begun?" a question about field
+ * values instead of about row existence.
+ */
+export interface DictationSegmentProgressDto {
+  segmentId: string;
+  completedAt: Date | null;
+  bestAccuracyPercent: number | null;
+  attemptCount: number;
+  assisted: boolean;
+}
+
+/**
+ * Content-level Dictation standing, DERIVED on every read.
+ *
+ * `completedSegments` is counted against the live segment list at request
+ * time; it is not stored anywhere. That is what lets an admin add a sentence
+ * to a finished recording and have every student's card correctly drop back to
+ * in-progress, with no counter to recount and no backfill.
+ */
+export interface ListeningDictationSummaryDto {
+  totalSegments: number;
+  completedSegments: number;
+  completed: boolean;
+  /**
+   * The most recent attempt on any sentence of this recording, or null when
+   * the student has never attempted one.
+   *
+   * There is deliberately no `startedAt` beside it. `min(lastAttemptAt)` would
+   * be the obvious derivation and it would be WRONG -- that column is
+   * overwritten on every attempt -- and the accurate source (the append-only
+   * attempt table) costs a query nothing currently reads.
+   */
+  lastActivityAt: Date | null;
+}
+
+/** The batch catalog read: one entry per requested, still-visible recording. */
+export interface ListeningProgressSummaryDto {
+  contentId: string;
+  /** Null when the recording does not enable DICTATION at all. */
+  dictation: ListeningDictationSummaryDto | null;
+}
+
+/**
+ * What a submitted attempt returns.
+ *
+ * Carries the recalculated segment row AND the recalculated content summary so
+ * the client can update both without a second request — and, more importantly,
+ * so it never has to compute either itself.
+ */
+export interface SubmitDictationAttemptResultDto {
+  accuracyPercent: number;
+  wordsCorrect: number;
+  wordsTotal: number;
+  solved: boolean;
+  assisted: boolean;
+  segment: DictationSegmentProgressDto;
+  content: ListeningDictationSummaryDto;
+}
+
+/** The content-detail block: the derived summary plus the per-sentence rows. */
+export interface ListeningDictationProgressDto extends ListeningDictationSummaryDto {
+  segments: DictationSegmentProgressDto[];
+}
+
+/**
+ * What `GET /listening/contents/:id` actually returns.
+ *
+ * Content PLUS the reader's progress, and they are separate types on purpose:
+ * `ListeningContentDetailDto` is a fact about a recording, this is a fact
+ * about a recording *and a student*. Keeping the progress out of the content
+ * service's return type is what stops that service from ever needing to know
+ * who is asking.
+ */
+export interface StudentListeningContentResponseDto
+  extends ListeningContentDetailDto {
+  /** Null when the recording does not enable DICTATION at all. */
+  dictationProgress: ListeningDictationProgressDto | null;
+}
