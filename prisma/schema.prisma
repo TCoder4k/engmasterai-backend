@@ -244,6 +244,8 @@ model User {
 
   dictationSegmentProgress ListeningDictationSegmentProgress[]
   dictationAttempts        ListeningDictationAttempt[]
+  shadowingSegmentProgress ListeningShadowingSegmentProgress[]
+  shadowingAttempts        ListeningShadowingAttempt[]
 
   @@map("users") //users dùng cho query sql , còn User dùng cho code
 }
@@ -1114,7 +1116,6 @@ model StudyTimeEvent {
 
 /**
  * A practice mode a piece of listening content supports.
- *
  * AN ENUM ARRAY (`ListeningContent.supportedModes`) RATHER THAN BOOLEAN
  * COLUMNS. `isDictationEnabled` + `isShadowingEnabled` costs one column per
  * mode and makes "no mode enabled" representable in two places; a mode
@@ -1133,7 +1134,6 @@ enum ListeningMediaType {
 
 /**
  * Where the media is hosted.
- *
  * PROVIDER-NEUTRAL ON PURPOSE. The frontend commits to rendering YouTube (it
  * already owns youtubeUrlParser + the IFrame API loader for lesson videos);
  * the domain model does not. This mirrors the decision already recorded for
@@ -1170,11 +1170,11 @@ model ListeningCategory {
 
 /// One authored recording, plus the modes it can be practised in.
 model ListeningContent {
-  id          String    @id @default(uuid())
-  categoryId  String
-  title       String
-  description String?
-  level       CefrLevel
+  id           String    @id @default(uuid())
+  categoryId   String
+  title        String
+  description  String?
+  level        CefrLevel
   thumbnailUrl String?
 
   // Attribution. REQUIRED AT PUBLISH TIME when the provider is YOUTUBE — the
@@ -1216,6 +1216,8 @@ model ListeningContent {
   // trigger it.
   dictationSegmentProgress ListeningDictationSegmentProgress[]
   dictationAttempts        ListeningDictationAttempt[]
+  shadowingSegmentProgress ListeningShadowingSegmentProgress[]
+  shadowingAttempts        ListeningShadowingAttempt[]
 
   @@index([categoryId, isPublished, orderIndex])
   @@index([isPublished, level])
@@ -1230,7 +1232,7 @@ model ListeningSegment {
   contentId  String
   orderIndex Int
 
-  text String
+  text           String
   /// Scoring input, computed at write time. NEVER SENT TO A STUDENT — the
   /// client must not be able to reconstruct the comparison the server will
   /// make, and it has no rendering use.
@@ -1265,6 +1267,8 @@ model ListeningSegment {
 
   dictationProgress ListeningDictationSegmentProgress[]
   dictationAttempts ListeningDictationAttempt[]
+  shadowingProgress ListeningShadowingSegmentProgress[]
+  shadowingAttempts ListeningShadowingAttempt[]
 
   @@unique([contentId, orderIndex])
   @@index([contentId])
@@ -1360,8 +1364,8 @@ model ListeningDictationAttempt {
 
   /// What the student typed, verbatim. Stored because it is the only thing
   /// that can explain a score to a student who disputes it.
-  typedText          String
-  revealedWordCount  Int
+  typedText         String
+  revealedWordCount Int
 
   /// The reference sentence AS IT WAS WHEN GRADED. Admins may fix a typo on a
   /// live recording; without this snapshot an old attempt's score would be
@@ -1391,4 +1395,141 @@ model ListeningDictationAttempt {
   @@unique([userId, clientAttemptId])
   @@index([userId, segmentId, submittedAt])
   @@map("listening_dictation_attempts")
+}
+
+/// Where a transcript came from.
+///
+/// One value today, and the enum exists anyway: the whole point of
+/// `SpeechToTextProvider` is that the engine is replaceable, and an attempt
+/// whose score is disputed months from now is unexplainable if nobody can tell
+/// which engine produced its transcript. `BROWSER_SPEECH_API` is deliberately
+/// ABSENT — the browser recogniser was removed in Phase 3.1 and no row may
+/// ever claim to have come from it.
+enum TranscriptSource {
+  GEMINI
+}
+
+/// One student's standing on one sentence, for SHADOWING only.
+///
+/// SEPARATE FROM DICTATION, and not a generic table with a `mode` column. The
+/// two modes looked similar enough to merge right up until they were both
+/// built: Dictation carries `assisted` (words revealed) which is meaningless
+/// for speech, Shadowing carries a pass threshold which Dictation does not have
+/// (it demands 100%), and their attempt rows share not one column beyond the
+/// idempotency key. A `mode` column would have bought a shared index and cost
+/// every query a filter it can never forget.
+model ListeningShadowingSegmentProgress {
+  id        String @id @default(uuid())
+  userId    String
+  segmentId String
+
+  /// Duplicated FK, exactly as on the dictation row and for the same reason:
+  /// Prisma `groupBy` cannot group by a relation field, so without it the
+  /// batch catalog read is one query per recording. Assigned from
+  /// `segment.contentId` on write, never from a request.
+  contentId String
+
+  /// Set once, on the first attempt that reaches the pass threshold, and never
+  /// cleared. Content-level completion is still DERIVED against the live
+  /// segment list — there is no cached count in this module.
+  completedAt DateTime?
+
+  /// Monotonic: `max(stored, new)`. A retry can never lower it.
+  bestAccuracyPercent Int?
+  attemptCount        Int      @default(0)
+  lastAttemptAt       DateTime @default(now())
+
+  user    User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  segment ListeningSegment @relation(fields: [segmentId], references: [id], onDelete: Cascade)
+  /// RESTRICT on the content, matching dictation: this row is what protects a
+  /// recording students have practised from being deleted.
+  content ListeningContent @relation(fields: [contentId], references: [id])
+
+  @@unique([userId, segmentId])
+  @@index([userId, contentId, completedAt])
+  @@map("listening_shadowing_segment_progress")
+}
+
+/// One submitted shadowing attempt. APPEND-ONLY.
+///
+/// >>> NO AUDIO IS STORED HERE, OR ANYWHERE. <<<
+/// The uploaded blob exists as a Buffer for the lifetime of one request and is
+/// never written to disk, Cloudinary, S3 or this table. There is deliberately
+/// no `audioUrl` column: a column is an invitation, and the product decision
+/// was that a student's voice is processed and discarded. What survives is the
+/// TRANSCRIPT — text the student can read, dispute and understand, which is
+/// the minimum needed to explain a score and the maximum that should be kept.
+model ListeningShadowingAttempt {
+  id        String @id @default(uuid())
+  userId    String
+  segmentId String
+  contentId String
+
+  /// Exactly what the engine returned, before any normalization. Kept because
+  /// it is the only thing that can explain a score to a student who disputes
+  /// it — and because it is the evidence that distinguishes "the student
+  /// misread the sentence" from "the engine misheard them".
+  rawTranscript        String
+  /// The form the alignment actually ran on. Stored alongside the raw text
+  /// because the normalizer's rules can widen later, and an old score has to
+  /// stay reproducible against the rules that produced it.
+  normalizedTranscript String
+  transcriptSource     TranscriptSource
+
+  /// The reference sentence AS IT WAS WHEN GRADED. Admins may fix a typo on a
+  /// live recording; without this an old attempt's score is unexplainable.
+  referenceTextSnapshot String
+
+  /// SERVER-COMPUTED, all of them. No DTO carries any of these fields, so a
+  /// client-supplied score is a shape that does not exist.
+  accuracyPercent      Int
+  wordsCorrect         Int
+  wordsTotal           Int
+  /// The three ways a transcript can differ from the reference. Stored rather
+  /// than derived because the alignment is not reproducible from the two texts
+  /// alone once the normalizer changes.
+  substitutions        Int
+  insertions           Int
+  deletions            Int
+  passed               Boolean
+  /// The threshold this attempt was judged against. An env-configurable pass
+  /// mark that is not recorded per attempt makes every historical score
+  /// meaningless the day it is tuned.
+  passThresholdPercent Int
+
+  /// Advisory, from the client. NOT trusted and NOT used for any limit — the
+  /// enforced cap is the upload byte size, which the client cannot misreport.
+  durationMs Int?
+
+  submittedAt DateTime @default(now())
+
+  /// Sprint 11 Phase 4C — optional AI pronunciation coaching for this attempt.
+  ///
+  /// NULL MEANS "NOT ASKED FOR", not "nothing to say": feedback is requested by
+  /// an explicit second action and most attempts never have one. Stored so a
+  /// second press returns the SAME advice instead of buying a second opinion —
+  /// this call costs money and is not deterministic, exactly like transcription,
+  /// and coaching that changes its mind on a re-read is worse than none.
+  ///
+  /// It is PROSE AND ONLY PROSE. There is no aiScore column and there must
+  /// never be one: this attempt already has one number, computed from the
+  /// alignment, and a second number from a model that heard one clip would be a
+  /// fabricated measurement sitting next to a real one.
+  aiFeedback      String?
+  aiFeedbackAt    DateTime?
+  /// Which engine wrote it, so old advice stays attributable after a model swap.
+  aiFeedbackModel String?
+
+  /// The idempotency key, scoped per user. Checked BEFORE the speech engine is
+  /// called, so a replay costs nothing and returns the original verdict rather
+  /// than paying for a second transcription that could disagree with the first.
+  clientAttemptId String
+
+  user    User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  segment ListeningSegment @relation(fields: [segmentId], references: [id], onDelete: Cascade)
+  content ListeningContent @relation(fields: [contentId], references: [id])
+
+  @@unique([userId, clientAttemptId])
+  @@index([userId, segmentId, submittedAt])
+  @@map("listening_shadowing_attempts")
 }

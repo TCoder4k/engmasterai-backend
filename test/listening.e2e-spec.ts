@@ -686,4 +686,63 @@ describe('Listening module (e2e) — Sprint 11: content authoring', () => {
       expect(fixtureCategory?.contentCount).toBe(publishedCount);
     });
   });
+
+  describe('card thumbnails', () => {
+    it('falls back to the real YouTube frame when no thumbnailUrl was set', async () => {
+      const contentId = await createContent();
+      await putSegments(contentId, [
+        { text: 'Stable.', startTimeMs: 0, endTimeMs: 3_000 },
+      ]).expect(200);
+      await request(app.getHttpServer())
+        .patch(`/listening/manage/contents/${contentId}/publish`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .expect(200);
+
+      // Scoped to this fixture's own category — the shared test database also
+      // carries whatever other suites publish, and an unscoped page-1 query
+      // would flake the moment another suite's content pushes this one past
+      // the default page size.
+      const res = await request(app.getHttpServer())
+        .get(`/listening/catalog?categoryId=${categoryId}`)
+        .set('Authorization', `Bearer ${studentToken}`)
+        .expect(200);
+
+      const card = (res.body.data as { id: string; thumbnailUrl: string }[]).find(
+        (c) => c.id === contentId,
+      );
+      // YOUTUBE_URL is https://www.youtube.com/watch?v=dQw4w9WgXcQ — the video
+      // id parsed out of it, never a stock placeholder.
+      expect(card?.thumbnailUrl).toBe('https://img.youtube.com/vi/dQw4w9WgXcQ/hqdefault.jpg');
+    });
+
+    it('prefers an author-supplied thumbnailUrl over the YouTube fallback', async () => {
+      const contentId = await createContent();
+      await request(app.getHttpServer())
+        .patch(`/listening/manage/contents/${contentId}`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ thumbnailUrl: 'https://cdn.example.com/custom-cover.jpg' })
+        .expect(200);
+      await putSegments(contentId, [
+        { text: 'Stable.', startTimeMs: 0, endTimeMs: 3_000 },
+      ]).expect(200);
+      await request(app.getHttpServer())
+        .patch(`/listening/manage/contents/${contentId}/publish`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .expect(200);
+
+      // Scoped to this fixture's own category — the shared test database also
+      // carries whatever other suites publish, and an unscoped page-1 query
+      // would flake the moment another suite's content pushes this one past
+      // the default page size.
+      const res = await request(app.getHttpServer())
+        .get(`/listening/catalog?categoryId=${categoryId}`)
+        .set('Authorization', `Bearer ${studentToken}`)
+        .expect(200);
+
+      const card = (res.body.data as { id: string; thumbnailUrl: string }[]).find(
+        (c) => c.id === contentId,
+      );
+      expect(card?.thumbnailUrl).toBe('https://cdn.example.com/custom-cover.jpg');
+    });
+  });
 });

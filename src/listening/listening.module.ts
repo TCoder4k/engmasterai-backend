@@ -7,6 +7,12 @@ import { ListeningCategoryService } from './listening-category.service';
 import { ListeningContentService } from './listening-content.service';
 import { DictationController } from './dictation/dictation.controller';
 import { DictationService } from './dictation/dictation.service';
+import { ShadowingController } from './shadowing/shadowing.controller';
+import { ShadowingService } from './shadowing/shadowing.service';
+import { GeminiSpeechToTextProvider } from './shadowing/gemini-speech-to-text.provider';
+import { SPEECH_TO_TEXT_PROVIDER } from './shadowing/speech-to-text.provider';
+import { GeminiPronunciationFeedbackProvider } from './shadowing/gemini-pronunciation-feedback.provider';
+import { PRONUNCIATION_FEEDBACK_PROVIDER } from './shadowing/pronunciation-feedback.provider';
 
 // Sprint 11 — Listening content.
 //
@@ -39,11 +45,27 @@ import { DictationService } from './dictation/dictation.service';
     ListeningCatalogController,
     ListeningAdminController,
     DictationController,
+    ShadowingController,
   ],
   providers: [
     ListeningCategoryService,
     ListeningContentService,
     DictationService,
+    ShadowingService,
+    // Phase 4B — bound through a token, not by class. The token is what lets
+    // e2e and unit tests substitute a fake engine; without it the entire
+    // Shadowing write path would be untestable without a paid API call, which
+    // in practice means untested.
+    { provide: SPEECH_TO_TEXT_PROVIDER, useClass: GeminiSpeechToTextProvider },
+    // Phase 4C — a SECOND token, bound to a second class, for a second job.
+    // They are not one provider with two methods on purpose: only this one may
+    // be told what the student was supposed to say, and keeping that difference
+    // at the type level is what stops the reference sentence from ever reaching
+    // the engine whose output is graded.
+    {
+      provide: PRONUNCIATION_FEEDBACK_PROVIDER,
+      useClass: GeminiPronunciationFeedbackProvider,
+    },
     QuizRateLimitGuard,
   ],
   exports: [ListeningContentService],

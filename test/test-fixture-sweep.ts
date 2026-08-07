@@ -124,6 +124,30 @@ export async function sweepTestFixtures(): Promise<void> {
     //
     // Attempts first, then progress: no FK links them, but keeping the order
     // "most dependent first" is what makes this list readable as a graph.
+    // Sprint 11 Phase 4B. Both shadowing tables are Restrict on the CONTENT,
+    // exactly as the dictation pair is, so both must be gone before the
+    // content delete below or it throws P2003 and poisons every later suite.
+    await prisma.listeningShadowingAttempt.deleteMany({
+      where: {
+        content: {
+          OR: [
+            { title: { startsWith: TEST_FIXTURE_PREFIX } },
+            { category: { name: { startsWith: TEST_FIXTURE_PREFIX } } },
+          ],
+        },
+      },
+    });
+    await prisma.listeningShadowingSegmentProgress.deleteMany({
+      where: {
+        content: {
+          OR: [
+            { title: { startsWith: TEST_FIXTURE_PREFIX } },
+            { category: { name: { startsWith: TEST_FIXTURE_PREFIX } } },
+          ],
+        },
+      },
+    });
+
     await prisma.listeningDictationAttempt.deleteMany({
       where: {
         content: {

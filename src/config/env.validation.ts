@@ -324,6 +324,51 @@ export const envValidationSchema = Joi.object({
     .min(1)
     .max(100)
     .default(70),
+
+  // Sprint 11 Phase 4B — Shadowing speech-to-text.
+  //
+  // OPTIONAL, and deliberately not `.required()`. A deployment without a key
+  // must still boot: every other module works, and Shadowing reports itself
+  // unavailable at the point of use rather than taking the whole API down.
+  // Failing startup here would make one optional feature's configuration a
+  // hard dependency of the login page.
+  GEMINI_API_KEY: Joi.string().allow('').optional(),
+
+  GEMINI_STT_MODEL: Joi.string().default('gemini-2.5-flash'),
+
+  // Bounded, always. Without a ceiling a hung provider holds the student's
+  // request, their browser and a server connection until something else gives
+  // up first.
+  SHADOWING_STT_TIMEOUT_MS: Joi.number()
+    .integer()
+    .min(1000)
+    .max(60000)
+    .default(20000),
+
+  // PROVISIONAL. 70 matches QUIZ_DEFAULT_PASSING_SCORE_PERCENT because that is
+  // this codebase's existing answer to "good enough", NOT because anyone has
+  // measured what a competent learner scores against this engine. Every
+  // attempt records the threshold it was judged against, so tuning this cannot
+  // silently rewrite the meaning of scores already given.
+  SHADOWING_PASSING_ACCURACY_PERCENT: Joi.number()
+    .integer()
+    .min(1)
+    .max(100)
+    .default(70),
+
+  // Sprint 11 Phase 4C — AI pronunciation feedback.
+  //
+  // Its own model variable, sharing GEMINI_API_KEY. Separate because the two
+  // calls have different jobs: transcription wants the cheapest model that
+  // hears accurately, coaching wants the one that writes usefully, and pinning
+  // both to one name would force an operator to trade one against the other.
+  GEMINI_FEEDBACK_MODEL: Joi.string().default('gemini-2.5-flash'),
+
+  SHADOWING_FEEDBACK_TIMEOUT_MS: Joi.number()
+    .integer()
+    .min(1000)
+    .max(60000)
+    .default(25000),
 })
   // Cloudinary/other unrelated vars are intentionally out of this sprint's
   // scope (see docs/sprints/sprint-01C-security-hardening.md) — `unknown`
