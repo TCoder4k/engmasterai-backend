@@ -18,3 +18,7 @@ export {
   SubmitDictationAttemptDto,
   QueryListeningProgressDto,
 } from './dictation.dto';
+export {
+  SubmitShadowingAttemptDto,
+  RequestShadowingFeedbackDto,
+} from './shadowing.dto';

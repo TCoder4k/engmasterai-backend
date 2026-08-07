@@ -18,6 +18,7 @@ import {
   validateSegmentDocument,
 } from './segment-validation';
 import { normalizeReferenceText } from './text-normalization';
+import { buildYouTubeThumbnailUrl, parseYouTubeVideoId } from './youtube-media';
 import {
   ListeningCatalogResponseDto,
   ListeningContentDetailDto,
@@ -108,7 +109,7 @@ export class ListeningContentService {
         title: content.title,
         description: content.description,
         level: content.level,
-        thumbnailUrl: content.thumbnailUrl,
+        thumbnailUrl: resolveCardThumbnail(content),
         durationMs: content.durationMs,
         segmentCount: content._count.segments,
         supportedModes: content.supportedModes,
@@ -574,12 +575,38 @@ const CARD_SELECT = {
   description: true,
   level: true,
   thumbnailUrl: true,
+  // Read ONLY to feed resolveCardThumbnail's fallback below — never returned
+  // as-is on the card DTO, which has no mediaUrl field. The detail route
+  // already exposes the real mediaUrl for whatever needs it.
+  mediaProvider: true,
+  mediaUrl: true,
   durationMs: true,
   supportedModes: true,
   sourceName: true,
   category: { select: CATEGORY_PUBLIC_SELECT },
   _count: { select: { segments: true } },
 } as const;
+
+/**
+ * A card's thumbnail, with a real fallback instead of a placeholder icon.
+ *
+ * `thumbnailUrl` is an author-supplied override (Sprint 11 shipped no upload
+ * UI for it, so it is null on every seeded recording today). Falling back to
+ * YouTube's own CDN image means the catalog shows the ACTUAL video's frame —
+ * not a stock photo and not a generic icon — for every YouTube recording,
+ * with zero admin work and zero extra requests: the id is parsed from a
+ * column already being read.
+ */
+const resolveCardThumbnail = (content: {
+  thumbnailUrl: string | null;
+  mediaProvider: string;
+  mediaUrl: string;
+}): string | null => {
+  if (content.thumbnailUrl) return content.thumbnailUrl;
+  if (content.mediaProvider !== 'YOUTUBE') return null;
+  const videoId = parseYouTubeVideoId(content.mediaUrl);
+  return videoId ? buildYouTubeThumbnailUrl(videoId) : null;
+};
 
 // NOTE the segment select: `normalizedText` and `notes` are absent, and must
 // stay absent. The mapper builds the student DTO field by field as a second

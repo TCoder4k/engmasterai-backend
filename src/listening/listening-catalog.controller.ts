@@ -13,6 +13,7 @@ import { QuizRateLimitGuard } from '../lesson/quiz/rate-limit/quiz-rate-limit.gu
 import { QuizRateLimit } from '../lesson/quiz/rate-limit/quiz-rate-limits.decorator';
 import { ListeningContentService } from './listening-content.service';
 import { DictationService } from './dictation/dictation.service';
+import { ShadowingService } from './shadowing/shadowing.service';
 import { QueryListeningCatalogDto } from './dto';
 
 // Sprint 11 — the student-facing Listening reads.
@@ -44,6 +45,7 @@ export class ListeningCatalogController {
   constructor(
     private readonly contentService: ListeningContentService,
     private readonly dictationService: DictationService,
+    private readonly shadowingService: ShadowingService,
   ) {}
 
   @UseGuards(JwtAuthGuard, QuizRateLimitGuard)
@@ -70,14 +72,18 @@ export class ListeningCatalogController {
     // knowing who is reading it. Progress is still absent for a recording
     // that does not enable DICTATION — null, not an empty summary, because
     // "this mode is off" and "you have done none of it" are different facts.
-    return {
-      ...content,
-      dictationProgress: content.supportedModes.includes('DICTATION')
-        ? await this.dictationService.findContentProgress(
-            req.user.userId,
-            contentId,
-          )
-        : null,
-    };
+    // Both modes resolved together rather than in sequence: they are
+    // independent reads and a student who has both enabled should not pay for
+    // two round trips to see one page.
+    const [dictationProgress, shadowingProgress] = await Promise.all([
+      content.supportedModes.includes('DICTATION')
+        ? this.dictationService.findContentProgress(req.user.userId, contentId)
+        : Promise.resolve(null),
+      content.supportedModes.includes('SHADOWING')
+        ? this.shadowingService.findContentProgress(req.user.userId, contentId)
+        : Promise.resolve(null),
+    ]);
+
+    return { ...content, dictationProgress, shadowingProgress };
   }
 }

@@ -70,3 +70,15 @@ export function isHttpsUrl(url: string | null | undefined): boolean {
     return false;
   }
 }
+
+/**
+ * YouTube's own thumbnail CDN, no API key and no network call required.
+ *
+ * `hqdefault.jpg` is guaranteed to exist for every uploaded video (unlike
+ * `maxresdefault.jpg`, which 404s for older or low-resolution uploads); a
+ * fixed 480x360 image is the correct trade for a catalog card, which never
+ * renders larger than that.
+ */
+export function buildYouTubeThumbnailUrl(videoId: string): string {
+  return `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`;
+}

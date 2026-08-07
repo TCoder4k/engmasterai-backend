@@ -56,6 +56,20 @@ export type QuizRateLimitKind =
   // student practising hardest. Named for what it is — there is no speech in
   // this path; Shadowing's kind, if it needs one, arrives with Shadowing.
   | 'dictation'
+  // Sprint 11 Phase 4B. Its own bucket for a reason none of the others have:
+  // every request in it costs money at an external speech provider. Sharing
+  // `dictation` would let typed practice drain the budget that guards a paid
+  // API, and the symptom — "speaking practice randomly stops working" — points
+  // nowhere near the typing that caused it.
+  | 'speech'
+  // Sprint 11 Phase 4C. Its own bucket even though it shares `speech`'s reason
+  // — a paid external call — precisely BECAUSE it shares it. Filing AI feedback
+  // under `speech` would let a student who asks for coaching on six sentences
+  // exhaust the budget for submitting attempts at all, and the symptom
+  // ("speaking practice stopped accepting recordings") points nowhere near the
+  // feedback button that drained it. It is also the cheaper request to lose:
+  // feedback is optional, submitting an attempt is the feature.
+  | 'aiFeedback'
   | 'manage';
 
 export interface QuizRateLimitPolicy {
