@@ -1,0 +1,43 @@
+{
+  "id": "1000-common-words",
+  "mapper": "generic",
+  "importSource": "IMPORT",
+  "files": {
+    "table": "1000-common-words/source/words.csv",
+    "format": "csv"
+  },
+  "library": {
+    "name": "1000 Từ Tiếng Anh Thông Dụng",
+    "description": "1000 từ vựng tiếng Anh thông dụng nhất, chia theo chủ đề."
+  },
+  "deckFrom": { "column": "Topic" },
+  "columns": {
+    "text": "Word",
+    "ipa": "Phonetics",
+    "meanings": [
+      { "from": "VietnameseTranslation", "posFrom": "PartOfSpeech" },
+      { "from": "EnglishDefinition", "posFrom": "PartOfSpeech" },
+      { "from": "VietnameseDefinition", "posFrom": "PartOfSpeech" }
+    ],
+    "examples": [
+      { "sentence": "ExampleSentence", "translation": "ExampleTranslation" }
+    ]
+  },
+  "posAliases": {
+    "n": "NOUN",
+    "v": "VERB",
+    "adj": "ADJECTIVE",
+    "adv": "ADVERB"
+  },
+  "cefrAliases": {},
+  "media": {
+    "audio": {
+      "root": "1000-common-words/media/audio",
+      "slug": "none"
+    },
+    "image": {
+      "root": "1000-common-words/media/img",
+      "slug": "none"
+    }
+  }
+}

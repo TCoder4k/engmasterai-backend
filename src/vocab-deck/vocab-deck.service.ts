@@ -348,6 +348,86 @@ export class VocabDeckService {
     await this.prismaService.vocabDeck.delete({ where: { id } });
   }
 
+  // Guess-the-Word progress (persistent, per-deck) — see VocabGuessProgress
+  // in schema.prisma for why this is a separate, deliberately non-SRS
+  // model. All three methods reuse assertDeckAccessibleToUser, the same
+  // gate findWordsByDeck above uses.
+  async getGuessProgress(deckId: string, user: { userId: string }) {
+    await this.assertDeckAccessibleToUser(deckId, user);
+
+    const [totalWords, learned] = await Promise.all([
+      this.prismaService.vocabDeckWord.count({ where: { deckId } }),
+      // Nothing is cached here — always recomputed against the live rows,
+      // matching this codebase's "no cache of a count" convention (see
+      // ListeningDictationSegmentProgress). learnedAt IS-NOT-NULL is the
+      // whole definition of "learned"; every row in this table happens to
+      // have it set today (see markWordLearned below), but filtering on it
+      // explicitly keeps that a stated rule rather than an accident of the
+      // only write path that currently exists.
+      this.prismaService.vocabGuessProgress.findMany({
+        where: { userId: user.userId, deckId, learnedAt: { not: null } },
+        select: { wordId: true },
+      }),
+    ]);
+
+    return {
+      deckId,
+      totalWords,
+      learnedWordIds: learned.map((row) => row.wordId),
+    };
+  }
+
+  // Sticky, first-correct-wins upsert. A wrong/skipped answer never calls
+  // this at all — the absence of a row already means "not learned" — and a
+  // repeat call for an already-learned word is a harmless no-op (`update:
+  // {}` touches nothing but the auto-managed `updatedAt`), which is what
+  // lets this endpoint skip the idempotency-key machinery
+  // POST /learning/words/:wordId/review needs for its much harder SM-2
+  // problem.
+  async markWordLearned(
+    deckId: string,
+    wordId: string,
+    user: { userId: string },
+  ) {
+    await this.assertDeckAccessibleToUser(deckId, user);
+    await this.assertWordInDeck(deckId, wordId);
+
+    const row = await this.prismaService.vocabGuessProgress.upsert({
+      where: {
+        userId_deckId_wordId: { userId: user.userId, deckId, wordId },
+      },
+      create: { userId: user.userId, deckId, wordId, learnedAt: new Date() },
+      update: {},
+    });
+    return { wordId, learnedAt: row.learnedAt };
+  }
+
+  // Powers "Học lại toàn bộ" — DELETES the rows rather than clearing
+  // learnedAt, so a reload afterward genuinely shows 0/N again for this
+  // deck. Scoped to (userId, deckId) only: the same word practised via a
+  // different deck is untouched, by construction of the unique key.
+  async resetGuessProgress(
+    deckId: string,
+    user: { userId: string },
+  ): Promise<void> {
+    await this.assertDeckAccessibleToUser(deckId, user);
+
+    await this.prismaService.vocabGuessProgress.deleteMany({
+      where: { userId: user.userId, deckId },
+    });
+  }
+
+  private async assertWordInDeck(deckId: string, wordId: string) {
+    const deckWord = await this.prismaService.vocabDeckWord.findUnique({
+      where: { deckId_wordId: { deckId, wordId } },
+    });
+    if (!deckWord) {
+      throw new NotFoundException(
+        `Word ${wordId} is not attached to deck ${deckId}`,
+      );
+    }
+  }
+
   private async findOneOrThrow(id: string) {
     const deck = await this.prismaService.vocabDeck.findUnique({
       where: { id },
