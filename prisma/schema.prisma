@@ -247,6 +247,8 @@ model User {
   shadowingSegmentProgress ListeningShadowingSegmentProgress[]
   shadowingAttempts        ListeningShadowingAttempt[]
 
+  guessWordProgress VocabGuessProgress[]
+
   @@map("users") //users dùng cho query sql , còn User dùng cho code
 }
 
@@ -723,6 +725,8 @@ model VocabDeck {
   library   VocabLibrary    @relation(fields: [libraryId], references: [id])
   deckWords VocabDeckWord[]
 
+  guessProgress VocabGuessProgress[]
+
   @@index([libraryId])
   @@map("vocab_decks")
 }
@@ -752,6 +756,12 @@ model VocabWord {
   // for this; these relations are the defense-in-depth backstop.
   progressRows UserWordProgress[]
   reviewLogs   WordReviewLog[]
+
+  // Sprint — persistent Guess-the-Word progress (per deck, not per word —
+  // see VocabGuessProgress). Restrict for the same reason as
+  // progressRows/reviewLogs above: a word with any learning history cannot
+  // be deleted at all.
+  guessProgress VocabGuessProgress[]
 
   @@index([text])
   @@map("vocab_words")
@@ -798,6 +808,42 @@ model VocabDeckWord {
   @@unique([deckId, wordId])
   @@index([wordId])
   @@map("vocab_deck_words")
+}
+
+// Persistent, per-deck progress for the "Guess the Word" vocabulary
+// practice mode. Deliberately NOT the SRS engine below (UserWordProgress /
+// WordReviewLog): no easeFactor/interval/due-date, and scoped per
+// (user, deck, word) rather than UserWordProgress's global per (user, word)
+// key, because the same word can appear in multiple decks and this mode's
+// "learned" concept is explicitly per-deck (confirmed with the product
+// owner). A correct answer is a naturally idempotent upsert — setting
+// learnedAt when it is already set is a no-op — so none of
+// UserWordProgress's version-conflict/idempotency-key machinery is needed
+// here, and a wrong/skipped answer needs no write at all: the absence of a
+// row already means "not learned". See VocabDeckService's guess-progress
+// methods.
+model VocabGuessProgress {
+  id     String @id @default(uuid())
+  userId String
+  deckId String
+  wordId String
+
+  // Set once, on the first correct answer, and never cleared except by an
+  // explicit whole-deck reset ("Học lại toàn bộ", which DELETES rows for
+  // this (user, deck) pair rather than clearing the field — see
+  // VocabDeckService.resetGuessProgress) — same sticky contract as
+  // LessonStepProgress.completedAt.
+  learnedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  user User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deck VocabDeck @relation(fields: [deckId], references: [id], onDelete: Restrict)
+  word VocabWord @relation(fields: [wordId], references: [id], onDelete: Restrict)
+
+  @@unique([userId, deckId, wordId])
+  @@index([userId, deckId])
+  @@map("vocab_guess_progress")
 }
 
 // Sprint 04 — Learning Engine (SRS). One row per (user, word): the

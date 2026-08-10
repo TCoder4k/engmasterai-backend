@@ -66,6 +66,13 @@ export async function sweepTestFixtures(): Promise<void> {
 
     const fixtureWords = { text: { startsWith: TEST_FIXTURE_PREFIX } };
 
+    // NOTE: vocabGuessProgress needs NO entry here, same reasoning as
+    // userWordProgress just above (no entry for it either): its `user`
+    // relation is Cascade and its `deck`/`word` relations are Restrict, so
+    // the user sweep above already removes every fixture-owned row before
+    // the deck/word deletes below run. A row would only survive to block
+    // those deletes if it belonged to a non-`@example.test` user, which no
+    // guess-progress e2e test should ever create.
     await prisma.vocabDeckWord.deleteMany({
       where: {
         OR: [

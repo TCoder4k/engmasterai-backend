@@ -19,6 +19,7 @@
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./test/jest-e2e.json",
     "vocab-import": "ts-node -r tsconfig-paths/register src/vocab-import/cli.ts",
+    "vocab:import-1000-common-words": "ts-node -r tsconfig-paths/register src/vocab-import/scripts/run-1000-common-words.ts",
     "seed:grammar-quizzes": "ts-node -r tsconfig-paths/register prisma/seeds/grammar-quizzes.seed.ts",
     "seed:grammar-practice": "ts-node -r tsconfig-paths/register prisma/seeds/grammar-practice.seed.ts",
     "seed:grammar-theory": "ts-node -r tsconfig-paths/register prisma/seeds/grammar-theory.seed.ts",
