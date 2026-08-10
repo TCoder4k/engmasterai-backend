@@ -20,6 +20,7 @@
     "test:e2e": "jest --config ./test/jest-e2e.json",
     "vocab-import": "ts-node -r tsconfig-paths/register src/vocab-import/cli.ts",
     "seed:grammar-quizzes": "ts-node -r tsconfig-paths/register prisma/seeds/grammar-quizzes.seed.ts",
+    "seed:grammar-practice": "ts-node -r tsconfig-paths/register prisma/seeds/grammar-practice.seed.ts",
     "seed:grammar-theory": "ts-node -r tsconfig-paths/register prisma/seeds/grammar-theory.seed.ts",
     "seed:listening": "ts-node -r tsconfig-paths/register prisma/seeds/listening-content.seed.ts"
   },
