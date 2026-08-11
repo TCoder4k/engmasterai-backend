@@ -49,3 +49,30 @@ export interface PlacementResultDto {
   durationSeconds: number | null;
   completedAt: string;
 }
+
+// GET /placement/roadmap — Phase 4. courseTitle/courseThumbnail are joined
+// fresh from a LIVE Course row on every read (never denormalized into
+// Roadmap.items — see roadmap-algorithm.ts's header note), so an item whose
+// course has since been unpublished or deleted is dropped entirely rather
+// than shown with stale data.
+export interface RoadmapItemViewDto {
+  phase: number;
+  courseType: CourseType;
+  courseId: string;
+  courseTitle: string;
+  courseThumbnail: string | null;
+  reason: string;
+}
+
+export interface RoadmapViewDto {
+  goal: LearningGoal;
+  estimatedLevel: CefrLevel | null;
+  // Null on the beginner-skip path — no test was ever taken.
+  placementAttemptId: string | null;
+  generatedAt: string;
+  // Phase 6 (AI roadmap narration) populates this; null until then and for
+  // any roadmap nobody has asked to narrate — see Roadmap.aiSummary's
+  // schema comment.
+  aiSummary: string | null;
+  items: RoadmapItemViewDto[];
+}

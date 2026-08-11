@@ -26,6 +26,7 @@ describe('Placement test flow (e2e)', () => {
 
   const createdUserEmails: string[] = [];
   const createdQuestionIds: string[] = [];
+  const createdCourseIds: string[] = [];
 
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -46,11 +47,37 @@ describe('Placement test flow (e2e)', () => {
         where: { id: { in: createdQuestionIds } },
       });
     }
+    if (createdCourseIds.length) {
+      await prisma.course.deleteMany({ where: { id: { in: createdCourseIds } } });
+    }
     if (createdUserEmails.length) {
       await prisma.user.deleteMany({ where: { email: { in: createdUserEmails } } });
     }
     await app.close();
   });
+
+  // An artificially ancient createdAt so this fixture always wins
+  // generateRoadmap's "earliest-authored" tiebreak (used on the beginner-
+  // skip path) regardless of what other suites publish concurrently in the
+  // shared test database — without this, a course from another suite could
+  // legitimately be picked instead and these tests would be flaky.
+  async function seedPublishedCourse(
+    type: 'GRAMMAR' | 'VOCABULARY' | 'LISTENING',
+    title: string,
+  ) {
+    const course = await prisma.course.create({
+      data: {
+        title: testFixtureName(title),
+        type,
+        description: 'Roadmap e2e fixture course',
+        thumbnail: 'https://example.test/thumb.png',
+        isPublished: true,
+        createdAt: new Date('2000-01-01T00:00:00Z'),
+      },
+    });
+    createdCourseIds.push(course.id);
+    return course;
+  }
 
   async function seedMinimumBank(): Promise<void> {
     const sections = ['GRAMMAR', 'VOCABULARY', 'LISTENING'] as const;
@@ -360,6 +387,88 @@ describe('Placement test flow (e2e)', () => {
           .set('Authorization', `Bearer ${token}`)
           .expect(201);
       }
+    });
+  });
+
+  describe('GET /placement/roadmap', () => {
+    it('404s before onboarding — no roadmap has been generated yet', async () => {
+      const token = await registerStudent('roadmap-404');
+      await request(app.getHttpServer())
+        .get('/placement/roadmap')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(404);
+    });
+
+    it('reflects the LIVE course title/thumbnail, not a stored snapshot', async () => {
+      const course = await seedPublishedCourse('GRAMMAR', 'Roadmap live-join fixture');
+      const token = await registerStudent('roadmap-live');
+      await setGoal(token, 'GENERAL_ENGLISH');
+      await request(app.getHttpServer())
+        .post('/placement/start-beginner')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(201);
+
+      const res = await request(app.getHttpServer())
+        .get('/placement/roadmap')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      const item = (res.body.items as Array<{ courseType: string; courseId: string; courseTitle: string; courseThumbnail: string | null }>)
+        .find((i) => i.courseType === 'GRAMMAR');
+      expect(item).toBeDefined();
+      expect(item!.courseId).toBe(course.id);
+      expect(item!.courseTitle).toBe(course.title);
+      expect(item!.courseThumbnail).toBe(course.thumbnail);
+    });
+
+    it('drops an item whose course is later unpublished — never serves it stale', async () => {
+      const course = await seedPublishedCourse('LISTENING', 'Roadmap unpublish fixture');
+      const token = await registerStudent('roadmap-unpublish');
+      await setGoal(token, 'GENERAL_ENGLISH');
+      await request(app.getHttpServer())
+        .post('/placement/start-beginner')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(201);
+
+      const before = await request(app.getHttpServer())
+        .get('/placement/roadmap')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+      expect(
+        (before.body.items as Array<{ courseId: string }>).some((i) => i.courseId === course.id),
+      ).toBe(true);
+
+      await prisma.course.update({ where: { id: course.id }, data: { isPublished: false } });
+
+      const after = await request(app.getHttpServer())
+        .get('/placement/roadmap')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+      expect(
+        (after.body.items as Array<{ courseId: string }>).some((i) => i.courseId === course.id),
+      ).toBe(false);
+
+      // Restore, so this fixture's afterAll delete doesn't race a Restrict/
+      // FK concern and so the row's final state on disk matches what a real
+      // admin "unpublish" action would look like (nothing else depends on
+      // this here, but leaving it published is the more honest end state).
+      await prisma.course.update({ where: { id: course.id }, data: { isPublished: true } });
+    });
+
+    it('aiSummary is null until Phase 6 populates it', async () => {
+      const token = await registerStudent('roadmap-aisummary');
+      await setGoal(token, 'GENERAL_ENGLISH');
+      await request(app.getHttpServer())
+        .post('/placement/start-beginner')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(201);
+
+      const res = await request(app.getHttpServer())
+        .get('/placement/roadmap')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+      expect(res.body.aiSummary).toBeNull();
+      expect(res.body.placementAttemptId).toBeNull(); // beginner-skip path, no test taken
     });
   });
 });

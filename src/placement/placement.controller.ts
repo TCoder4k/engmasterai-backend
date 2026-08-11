@@ -80,4 +80,12 @@ export class PlacementController {
   ) {
     return this.placementService.submit(req.user.userId, attemptId);
   }
+
+  // Same generous read-side bucket as GET /placement/attempt.
+  @UseGuards(JwtAuthGuard, QuizRateLimitGuard)
+  @QuizRateLimit({ kind: 'read', max: 60, windowSeconds: 60 })
+  @Get('roadmap')
+  async getRoadmap(@Req() req) {
+    return this.placementService.getRoadmap(req.user.userId);
+  }
 }
