@@ -133,6 +133,18 @@ enum CefrLevel {
   C2
 }
 
+// Personalized Onboarding & Placement Test — the six goal choices offered on
+// the onboarding wizard's first step. Closed on purpose, same discipline as
+// CourseType: a new goal needs a migration, not a free-text column.
+enum LearningGoal {
+  FOUNDATION
+  TOEIC_450
+  TOEIC_650
+  TOEIC_800
+  GENERAL_ENGLISH
+  REGULAR_PRACTICE
+}
+
 enum PartOfSpeech {
   NOUN
   VERB
@@ -230,6 +242,23 @@ model User {
   // day-bucketing falls back to UTC.
   timezone String?
 
+  // Personalized Onboarding & Placement Test. `learningGoal` is a simple
+  // current-value field, same shape as `timezone` above — no history, freely
+  // overwritable via PUT /placement/goal.
+  //
+  // `onboardedAt` is the ONE gate signal, same shape as `emailVerifiedAt`
+  // above: a historical "when did X happen" timestamp, never a synced status
+  // enum. Set exactly once, inside the finalize step that successfully
+  // generates a Roadmap (either the beginner-skip path or a graded placement
+  // submit) — never re-set afterward. The migration that introduces this
+  // column backfills it to `createdAt` for every pre-existing row, so no
+  // account that predates this feature is ever gated into onboarding; a NULL
+  // value means "genuinely hasn't onboarded yet," never "predates the
+  // feature." GET /users/me derives `onboarded: onboardedAt !== null` the
+  // same way it already derives `emailVerified`.
+  learningGoal LearningGoal?
+  onboardedAt  DateTime?
+
   taskProgress            LessonTaskProgress[]
   taskAttempts            LessonTaskAttempt[]
   stepProgress            LessonStepProgress[]
@@ -248,6 +277,9 @@ model User {
   shadowingAttempts        ListeningShadowingAttempt[]
 
   guessWordProgress VocabGuessProgress[]
+
+  placementAttempts PlacementAttempt[]
+  roadmap           Roadmap?
 
   @@map("users") //users dùng cho query sql , còn User dùng cho code
 }
@@ -328,6 +360,16 @@ model Course {
   description String
   thumbnail   String?
   isPublished Boolean    @default(false)
+
+  // Personalized Onboarding & Placement Test — admin-settable, optional.
+  // Lets the roadmap algorithm match a placement result's weak sections to
+  // an appropriately-leveled course. Reuses the existing CefrLevel enum
+  // (already used by VocabDeck/VocabWord/ListeningContent) rather than
+  // inventing a course-specific scale. Until an admin sets this, the roadmap
+  // falls back to ordering by createdAt (see roadmap-algorithm.ts) — the
+  // same implicit "earlier-authored = more foundational" assumption
+  // GrammarCourseCard's title-regex level parsing already makes.
+  level CefrLevel?
 
   createdAt DateTime @default(now())
 
@@ -1578,4 +1620,162 @@ model ListeningShadowingAttempt {
   @@unique([userId, clientAttemptId])
   @@index([userId, segmentId, submittedAt])
   @@map("listening_shadowing_attempts")
+}
+
+// ============================================================================
+// Personalized Onboarding & Placement Test
+// ============================================================================
+//
+// Dedicated question bank — deliberately NOT sampled from real Lesson/Question
+// rows (product decision), but shaped identically to Question so
+// grade-question.ts's gradeQuestion()/validateQuestionContent() work
+// unmodified: they only ever need {type, options, correctAnswer}.
+model PlacementQuestion {
+  id            String              @id @default(uuid())
+  // Which pillar this question screens. Reuses CourseType rather than a new
+  // enum — Grammar/Vocabulary/Listening is a closed set matching the
+  // product's three pillars, and the Placement Test never needs a fourth.
+  section       CourseType
+  type          QuestionType
+  // Required here (unlike the optional Question.difficulty, which is
+  // authored-but-inert everywhere it's used today) — selection genuinely
+  // depends on it: POST /placement/start samples a fixed 2 EASY / 1 MEDIUM /
+  // 1 HARD per section.
+  difficulty    QuestionDifficulty
+  content       String
+  options       Json?
+  correctAnswer Json
+  explanation   String?
+  // Listening-section items only.
+  audioUrl      String?
+  imageUrl      String?
+  isPublished   Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([section, difficulty, isPublished])
+  @@map("placement_questions")
+}
+
+// One row per attempt. Mutable while in-progress (its child PlacementAnswer
+// rows accumulate as the student answers), effectively append-only once
+// completedAt is set. Deliberately ONE table, not the LessonTaskProgress +
+// LessonTaskAttempt pair the quiz engine uses — that split exists because one
+// LessonTask is retaken many times under a single (userId, taskId) row and
+// needs a separate cache of "the latest completed attempt" apart from
+// per-attempt history. A PlacementAttempt has no such ambiguity: every
+// attempt already gets its own server-minted id, so "the current attempt" and
+// "a specific historical attempt" are never in tension — see
+// placement.service.ts's design note on why clientAttemptId does not exist
+// anywhere in this feature.
+model PlacementAttempt {
+  id     String @id @default(uuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Snapshot of User.learningGoal at the moment this attempt started — so a
+  // goal change mid-attempt (PUT /placement/goal, always allowed) cannot
+  // retroactively change what this attempt is scored/explained against.
+  goal LearningGoal?
+
+  // The resolved, ordered set of 12 question ids, frozen here at creation.
+  // Never reshuffled on refresh — this row, once created, IS the test; a
+  // resumed session always sees the exact same questions in the exact same
+  // order.
+  questionIds Json
+
+  startedAt DateTime @default(now())
+  // Hard 5-minute server-authoritative deadline, computed ONCE at creation
+  // and never recomputed. Because POST /placement/start is idempotent purely
+  // on "does an incomplete attempt already exist for this user" (no
+  // client-supplied token involved), a refresh or a repeated start call can
+  // never push this forward — that is what makes "refresh never resets the
+  // timer" true by construction rather than a special case. Enforcement is
+  // lazy (see PlacementService.finalizeIfDue): the backend does not depend on
+  // any client call arriving at or after this moment to consider the attempt
+  // over — the next request of ANY kind that touches this row finalizes it.
+  expiresAt   DateTime
+  completedAt DateTime?
+
+  // Section scores are 0-100, always a multiple of 25 (4 questions/section).
+  // Unanswered questions count as incorrect — finalize iterates questionIds
+  // and treats a missing PlacementAnswer row as a wrong answer, no special
+  // casing beyond "absence = 0".
+  grammarScore    Int?
+  vocabularyScore Int?
+  listeningScore  Int?
+  overallScore    Int?
+  estimatedLevel  CefrLevel?
+  durationSeconds Int?
+
+  answers PlacementAnswer[]
+
+  @@index([userId, completedAt])
+  @@map("placement_attempts")
+}
+
+// One row per (attempt, question) — deliberately NOT a single JSON blob of
+// all answers on PlacementAttempt. A shared JSON blob updated by
+// read-modify-write under Postgres READ COMMITTED has a real lost-update
+// race: two concurrent answers to DIFFERENT questions can both read the same
+// old blob and the second write silently discards the first question's
+// answer, with or without a surrounding transaction (only the eventual
+// UPDATE statement takes a row lock — by then both transactions already read
+// the stale value). A child table with @@unique([attemptId, questionId]),
+// written via upsert, makes this impossible by construction: concurrent
+// answers to different questions touch different rows and never contend: a
+// concurrent double-submit of the SAME question resolves as ordinary
+// last-write-wins on that one row, which is the correct, harmless outcome.
+model PlacementAnswer {
+  id         String           @id @default(uuid())
+  attemptId  String
+  attempt    PlacementAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  questionId String
+  // The SubmittedAnswer-shaped value — one of the four QuestionType
+  // submission shapes from grade-question.ts (optionId / value / text /
+  // orderedOptionIds).
+  submitted  Json
+  answeredAt DateTime @default(now())
+
+  @@unique([attemptId, questionId])
+  @@map("placement_answers")
+}
+
+// The deterministic roadmap plus an optional, advisory, cached AI narrative.
+// Persisted (not derived on every read) for two reasons: it is the
+// existence-signal a completed onboarding leaves behind for the wizard's own
+// fine-grained resume logic (GET /placement/status), and the AI summary is
+// expensive/non-deterministic and must be cached exactly like Shadowing's
+// aiFeedback — regenerating it on every dashboard visit would be both slow
+// and liable to contradict itself between visits.
+model Roadmap {
+  id     String @id @default(uuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  goal               LearningGoal
+  // Null on the beginner-skip path (no test was ever taken).
+  placementAttemptId String?
+  estimatedLevel     CefrLevel?
+
+  // Ordered [{ phase, courseType, courseId, reason }] — deliberately NO
+  // title/thumbnail here. Those are joined fresh from Course on every read
+  // (GET /placement/roadmap): denormalizing display data into this snapshot
+  // would create a second source of truth that silently goes stale the
+  // moment an admin renames or unpublishes a recommended course.
+  items Json
+
+  // Advisory only — see roadmap/roadmap-analysis.provider.ts. Structurally
+  // incapable of altering `items`: the provider interface returns prose,
+  // never course ids. Checked-before-called caching, same shape as
+  // ListeningShadowingAttempt.aiFeedback: NULL means "not asked for", not
+  // "nothing to say".
+  aiSummary      String?
+  aiSummaryAt    DateTime?
+  aiSummaryModel String?
+
+  generatedAt DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("roadmaps")
 }

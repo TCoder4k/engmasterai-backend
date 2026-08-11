@@ -14,6 +14,15 @@ import * as argon from 'argon2';
 // emailVerifiedAt is selected only so toSafeUser() below can derive the
 // boolean `emailVerified` — the raw timestamp itself is never returned to a
 // client (Sprint 02B: avoids leaking exactly when verification happened).
+//
+// Personalized Onboarding & Placement Test: onboardedAt is selected for the
+// exact same reason and derived into `onboarded` the same way — the raw
+// timestamp is never returned, only the boolean. This is what lets
+// OnboardingGateBoundary decide synchronously from the profile the app
+// already fetches at login (GET /users/me), with no separate network call
+// and no new failure mode on session boot. learningGoal IS returned raw
+// (real multi-valued data, not a boolean derivation) so the onboarding
+// wizard and any "your current goal" UI can read it directly.
 const SAFE_USER_SELECT = {
   id: true,
   email: true,
@@ -24,13 +33,16 @@ const SAFE_USER_SELECT = {
   level: true,
   createdAt: true,
   emailVerifiedAt: true,
+  onboardedAt: true,
+  learningGoal: true,
 };
 
 type SafeUserRow = Prisma.UserGetPayload<{ select: typeof SAFE_USER_SELECT }>;
 
-const toSafeUser = ({ emailVerifiedAt, ...rest }: SafeUserRow) => ({
+const toSafeUser = ({ emailVerifiedAt, onboardedAt, ...rest }: SafeUserRow) => ({
   ...rest,
   emailVerified: emailVerifiedAt !== null,
+  onboarded: onboardedAt !== null,
 });
 
 const MAX_LIMIT = 100;
