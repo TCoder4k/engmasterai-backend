@@ -70,7 +70,23 @@ export type QuizRateLimitKind =
   // feedback button that drained it. It is also the cheaper request to lose:
   // feedback is optional, submitting an attempt is the feature.
   | 'aiFeedback'
-  | 'manage';
+  | 'manage'
+  // Personalized Onboarding & Placement Test (Phase 3). Its own bucket for
+  // the same reason 'answer' is its own bucket: one attempt writes up to 12
+  // of these, and sharing 'placementSubmit''s tight bucket would throttle a
+  // student honestly working through the 12-question test they were given.
+  | 'placementAnswer'
+  // Covers PUT /placement/goal, POST /placement/start(-beginner) and
+  // POST /placement/attempt/:id/submit. Budget check against the MVP spec: a
+  // full attempt is start(1) + up to 12x answer + submit(1) = 14 requests,
+  // only 2 of which are this kind — two full retakes inside one 10-minute
+  // window is 4 calls, comfortably inside 30/600, so this bucket can never
+  // contradict the product's "unrestricted retakes" policy.
+  | 'placementSubmit'
+  // Split from 'placementSubmit' for the same reason 'aiFeedback' is split
+  // from 'speech': optional AI roadmap narration must never drain the budget
+  // for the actual test flow.
+  | 'placementAnalysis';
 
 export interface QuizRateLimitPolicy {
   kind: QuizRateLimitKind;

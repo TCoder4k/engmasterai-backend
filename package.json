@@ -23,7 +23,8 @@
     "seed:grammar-quizzes": "ts-node -r tsconfig-paths/register prisma/seeds/grammar-quizzes.seed.ts",
     "seed:grammar-practice": "ts-node -r tsconfig-paths/register prisma/seeds/grammar-practice.seed.ts",
     "seed:grammar-theory": "ts-node -r tsconfig-paths/register prisma/seeds/grammar-theory.seed.ts",
-    "seed:listening": "ts-node -r tsconfig-paths/register prisma/seeds/listening-content.seed.ts"
+    "seed:listening": "ts-node -r tsconfig-paths/register prisma/seeds/listening-content.seed.ts",
+    "seed:placement-questions": "ts-node -r tsconfig-paths/register prisma/seeds/placement-questions.seed.ts"
   },
   "dependencies": {
     "@nestjs-modules/ioredis": "^2.0.2",
