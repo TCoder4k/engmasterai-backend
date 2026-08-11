@@ -186,6 +186,25 @@ export async function sweepTestFixtures(): Promise<void> {
     await prisma.listeningCategory.deleteMany({
       where: { name: { startsWith: TEST_FIXTURE_PREFIX } },
     });
+
+    // Personalized Onboarding & Placement Test.
+    //
+    // NOTE: placementAttempt, placementAnswer and roadmap need NO entry
+    // here. All three are onDelete: Cascade on `user` (placementAnswer via
+    // its own cascade-on-attempt, attempt via cascade-on-user, roadmap
+    // directly on user) — the user sweep above already removes every
+    // fixture-owned row of all three before this point runs. Adding a
+    // deleteMany for them would be harmless but misleading, the same
+    // reasoning as the lessonStepProgress/vocabGuessProgress/
+    // listeningSegment notes elsewhere in this file; do not "fix" this
+    // omission.
+    //
+    // placementQuestion DOES need an entry: it is admin-authored content
+    // with no relation to User at all (PlacementAttempt.questionIds is a
+    // Json snapshot, not a foreign key), so nothing else sweeps it.
+    await prisma.placementQuestion.deleteMany({
+      where: { content: { startsWith: TEST_FIXTURE_PREFIX } },
+    });
   } finally {
     await prisma.$disconnect();
   }
