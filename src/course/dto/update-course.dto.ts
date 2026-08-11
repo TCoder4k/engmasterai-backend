@@ -1,5 +1,5 @@
 import { IsEnum, IsOptional, IsString } from 'class-validator';
-import { CourseType } from '@prisma/client';
+import { CefrLevel, CourseType } from '@prisma/client';
 
 export class UpdateCourseDto {
   @IsString()
@@ -17,4 +17,8 @@ export class UpdateCourseDto {
   @IsString()
   @IsOptional()
   thumbnail?: string;
+
+  @IsEnum(CefrLevel)
+  @IsOptional()
+  level?: CefrLevel;
 }
