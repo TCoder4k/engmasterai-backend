@@ -19,6 +19,7 @@ import {
   PlacementAttemptStateDto,
   PlacementQuestionPublicDto,
   PlacementResultDto,
+  RoadmapViewDto,
 } from './placement.types';
 
 // Invariant 9's exact discipline, restated for Placement: no correctAnswer,
@@ -223,6 +224,50 @@ export class PlacementService {
     const finalized =
       attempt.completedAt !== null ? attempt : await this.finalizeNow(attempt);
     return this.toResultDto(finalized);
+  }
+
+  // Joins Roadmap.items against LIVE Course rows on every read — never a
+  // stored snapshot (see roadmap-algorithm.ts's header note and Roadmap's
+  // own schema comment on `items`). An item whose course has since been
+  // unpublished or deleted is dropped, mirroring filterAccessibleCourses'
+  // discipline (lesson-visibility.ts): stale content is omitted, not
+  // surfaced with a broken title.
+  async getRoadmap(userId: string): Promise<RoadmapViewDto> {
+    const roadmap = await this.prisma.roadmap.findUnique({ where: { userId } });
+    if (!roadmap) {
+      throw new NotFoundException('No roadmap has been generated yet.');
+    }
+
+    const items = roadmap.items as unknown as RoadmapItem[];
+    const courses = await this.prisma.course.findMany({
+      where: { id: { in: items.map((i) => i.courseId) }, isPublished: true },
+      select: { id: true, title: true, thumbnail: true },
+    });
+    const courseById = new Map(courses.map((c) => [c.id, c]));
+
+    const viewItems = items
+      .map((item) => {
+        const course = courseById.get(item.courseId);
+        if (!course) return null;
+        return {
+          phase: item.phase,
+          courseType: item.courseType,
+          courseId: item.courseId,
+          courseTitle: course.title,
+          courseThumbnail: course.thumbnail,
+          reason: item.reason,
+        };
+      })
+      .filter((i): i is NonNullable<typeof i> => i != null);
+
+    return {
+      goal: roadmap.goal,
+      estimatedLevel: roadmap.estimatedLevel,
+      placementAttemptId: roadmap.placementAttemptId,
+      generatedAt: roadmap.generatedAt.toISOString(),
+      aiSummary: roadmap.aiSummary,
+      items: viewItems,
+    };
   }
 
   // --- internal ---------------------------------------------------------

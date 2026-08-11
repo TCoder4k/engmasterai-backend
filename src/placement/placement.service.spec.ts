@@ -108,6 +108,7 @@ const buildHarness = (
   const placementAnswerFindMany = jest.fn(() => Promise.resolve([] as never));
   const placementAnswerUpsert = jest.fn(() => Promise.resolve({} as never));
   const roadmapUpsert = jest.fn((args: { create: unknown }) => Promise.resolve(args.create as never));
+  const roadmapFindUnique = jest.fn(() => Promise.resolve(null as never));
   const courseFindMany = jest.fn(() => Promise.resolve([] as never));
 
   const prisma = {
@@ -119,7 +120,7 @@ const buildHarness = (
     user: { findUniqueOrThrow: userFindUniqueOrThrow, update: userUpdate },
     placementQuestion: { findMany: placementQuestionFindMany },
     placementAnswer: { findMany: placementAnswerFindMany, upsert: placementAnswerUpsert },
-    roadmap: { upsert: roadmapUpsert },
+    roadmap: { upsert: roadmapUpsert, findUnique: roadmapFindUnique },
     course: { findMany: courseFindMany },
     $transaction: jest.fn((ops: Promise<unknown>[]) => Promise.all(ops)),
   };
@@ -139,6 +140,7 @@ const buildHarness = (
     placementAnswerFindMany,
     placementAnswerUpsert,
     roadmapUpsert,
+    roadmapFindUnique,
     courseFindMany,
   };
 };
@@ -303,5 +305,78 @@ describe('PlacementService.start', () => {
     placementAttemptFindFirst.mockResolvedValueOnce(null as never);
     placementQuestionFindMany.mockResolvedValueOnce([] as never); // empty bank
     await expect(service.start('user-1')).rejects.toBeInstanceOf(ServiceUnavailableException);
+  });
+});
+
+describe('PlacementService.getRoadmap', () => {
+  it('404s when the caller has no roadmap yet', async () => {
+    const { service } = buildHarness(); // roadmapFindUnique defaults to null
+    await expect(service.getRoadmap('user-1')).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('joins items against LIVE Course rows — never the stored snapshot', async () => {
+    const { service, roadmapFindUnique, courseFindMany } = buildHarness();
+    roadmapFindUnique.mockResolvedValueOnce({
+      goal: 'TOEIC_450',
+      estimatedLevel: 'B1',
+      placementAttemptId: 'attempt-1',
+      generatedAt: NOW,
+      aiSummary: null,
+      items: [
+        { phase: 1, courseType: 'VOCABULARY', courseId: 'c1', reason: 'Weakest section (25%) — recommended first.' },
+      ],
+    } as never);
+    courseFindMany.mockResolvedValueOnce([
+      { id: 'c1', title: 'Live Course Title', thumbnail: 'thumb.png' },
+    ] as never);
+
+    const result = await service.getRoadmap('user-1');
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0].courseTitle).toBe('Live Course Title');
+    expect(result.items[0].courseThumbnail).toBe('thumb.png');
+    // Only published courses are ever queried for the join.
+    expect(courseFindMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ isPublished: true }) }),
+    );
+  });
+
+  it('drops an item whose course has since been unpublished or deleted — never serves it stale', async () => {
+    const { service, roadmapFindUnique, courseFindMany } = buildHarness();
+    roadmapFindUnique.mockResolvedValueOnce({
+      goal: 'TOEIC_450',
+      estimatedLevel: 'B1',
+      placementAttemptId: 'attempt-1',
+      generatedAt: NOW,
+      aiSummary: null,
+      items: [
+        { phase: 1, courseType: 'VOCABULARY', courseId: 'still-published', reason: 'x' },
+        { phase: 2, courseType: 'GRAMMAR', courseId: 'now-unpublished', reason: 'y' },
+      ],
+    } as never);
+    // The unpublished course is simply absent from the (isPublished: true)
+    // query result — same as if it had been deleted entirely.
+    courseFindMany.mockResolvedValueOnce([
+      { id: 'still-published', title: 'Still here', thumbnail: null },
+    ] as never);
+
+    const result = await service.getRoadmap('user-1');
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0].courseId).toBe('still-published');
+  });
+
+  it('surfaces aiSummary verbatim (null until Phase 6 populates it)', async () => {
+    const { service, roadmapFindUnique, courseFindMany } = buildHarness();
+    roadmapFindUnique.mockResolvedValueOnce({
+      goal: 'FOUNDATION',
+      estimatedLevel: null,
+      placementAttemptId: null,
+      generatedAt: NOW,
+      aiSummary: null,
+      items: [],
+    } as never);
+    courseFindMany.mockResolvedValueOnce([] as never);
+    const result = await service.getRoadmap('user-1');
+    expect(result.aiSummary).toBeNull();
+    expect(result.placementAttemptId).toBeNull();
   });
 });
