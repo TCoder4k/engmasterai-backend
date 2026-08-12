@@ -25,6 +25,7 @@ interface HarnessOptions {
   attemptActivity?: Date[];
   reviewActivity?: Date[];
   studySecondsToday?: number | null;
+  recentAccuracyAttempts?: number[];
 }
 
 const buildHarness = (options: HarnessOptions = {}) => {
@@ -59,11 +60,19 @@ const buildHarness = (options: HarnessOptions = {}) => {
     lessonTaskAttempt: {
       findMany: jest.fn(
         (args: { select?: Record<string, unknown> }): Promise<unknown> => {
-          // The two lessonTaskAttempt reads are told apart by their select:
-          // today's asks for the task relation, the window's for a timestamp.
+          // The three lessonTaskAttempt reads are told apart by their select:
+          // today's asks for the task relation, the window's for a timestamp,
+          // recent-accuracy's for accuracyPercent.
           if (args?.select && 'task' in args.select) {
             return resolve(
               (options.attemptsToday ?? []).map((type) => ({ task: { type } })),
+            );
+          }
+          if (args?.select && 'accuracyPercent' in args.select) {
+            return resolve(
+              (options.recentAccuracyAttempts ?? []).map((accuracyPercent) => ({
+                accuracyPercent,
+              })),
             );
           }
           return resolve(
@@ -433,10 +442,11 @@ describe('DashboardAnalyticsService — query cost', () => {
     await busy.service.getDashboardAnalytics('user-1');
 
     expect(busy.calls.total).toBe(quiet.calls.total);
-    // 1 user read + 9 analytics reads. Update this number only alongside a
+    // 1 user read + 10 analytics reads. Update this number only alongside a
     // deliberate change to the query plan documented in the service.
-    // Sprint 10.5 raised it from 9 to 10 by adding the study-seconds SUM.
-    expect(quiet.calls.total).toBe(10);
+    // Sprint 10.5 raised it from 9 to 10 by adding the study-seconds SUM; this
+    // change raised it from 10 to 11 by adding the recent-accuracy read.
+    expect(quiet.calls.total).toBe(11);
   });
 
   it('adds exactly one write when bootstrapping the timezone', async () => {
@@ -445,7 +455,7 @@ describe('DashboardAnalyticsService — query cost', () => {
 
     await service.getDashboardAnalytics('user-1', VN);
 
-    expect(calls.total).toBe(11);
+    expect(calls.total).toBe(12);
   });
 });
 
@@ -487,5 +497,71 @@ describe('DashboardAnalyticsService — active study seconds', () => {
     expect(where.occurredAt).toEqual({
       gte: new Date('2026-07-31T04:00:00.000Z'),
     });
+  });
+});
+
+describe('DashboardAnalyticsService — recent accuracy', () => {
+  it('averages accuracyPercent across the recent attempts', async () => {
+    freezeNow(NOW);
+    const { service } = buildHarness({
+      recentAccuracyAttempts: [100, 50, 75],
+    });
+
+    const { recentAccuracyPercent } = await service.getDashboardAnalytics(
+      'user-1',
+      VN,
+    );
+
+    expect(recentAccuracyPercent).toBe(75);
+  });
+
+  it('rounds to the nearest whole percent', async () => {
+    freezeNow(NOW);
+    const { service } = buildHarness({
+      recentAccuracyAttempts: [100, 100, 0],
+    });
+
+    const { recentAccuracyPercent } = await service.getDashboardAnalytics(
+      'user-1',
+      VN,
+    );
+
+    expect(recentAccuracyPercent).toBe(67);
+  });
+
+  // null, not 0 — a student who has never taken a graded attempt has not
+  // "scored 0%", they have no score at all. Same discipline as
+  // activeStudySeconds' own 0-vs-null distinction, just the other value.
+  it('reports null — not 0 — for a student with no graded attempts', async () => {
+    freezeNow(NOW);
+    const { service } = buildHarness({ recentAccuracyAttempts: [] });
+
+    const { recentAccuracyPercent } = await service.getDashboardAnalytics(
+      'user-1',
+      VN,
+    );
+
+    expect(recentAccuracyPercent).toBeNull();
+  });
+
+  it('only reads attempts on published tasks', async () => {
+    freezeNow(NOW);
+    const { service, prisma } = buildHarness();
+
+    await service.getDashboardAnalytics('user-1', VN);
+
+    const accuracyCall = prisma.lessonTaskAttempt.findMany.mock.calls.find(
+      (call) => call[0]?.select && 'accuracyPercent' in call[0].select,
+    )?.[0] as unknown as {
+      where: { task: Record<string, unknown> };
+      take: number;
+      orderBy: Record<string, unknown>;
+    };
+    expect(accuracyCall.where.task).toEqual({
+      isPublished: true,
+      lesson: { isPublished: true, course: { isPublished: true } },
+    });
+    expect(accuracyCall.take).toBe(20);
+    expect(accuracyCall.orderBy).toEqual({ submittedAt: 'desc' });
   });
 });

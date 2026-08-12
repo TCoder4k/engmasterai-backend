@@ -6,6 +6,47 @@ import { randomUUID } from 'crypto';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { testFixtureName } from './test-database.util';
+import {
+  ROADMAP_ANALYSIS_PROVIDER,
+  RoadmapAnalysisError,
+  RoadmapAnalysisProvider,
+  RoadmapAnalysisRequest,
+} from '../src/placement/roadmap/roadmap-analysis.provider';
+
+/**
+ * Phase 6 — a narration engine under the test's control, the same seam
+ * FakePronunciationFeedback exercises in listening-shadowing.e2e-spec.ts.
+ * Without this token the AI narration path could only be exercised by
+ * making paid, non-deterministic calls to Gemini from CI — which in
+ * practice means it would ship untested.
+ *
+ * `seenRequests` proves the seam actually receives what the roadmap
+ * computed (goal/level/scores/phases), not just that SOME string comes back.
+ */
+class FakeRoadmapAnalysis implements RoadmapAnalysisProvider {
+  readonly model = 'fake-roadmap-model';
+  static summary = 'Đây là một lộ trình học tập được cá nhân hoá cho bạn.';
+  static failWith: RoadmapAnalysisError | null = null;
+  static seenRequests: RoadmapAnalysisRequest[] = [];
+  static callCount = 0;
+
+  static reset(): void {
+    FakeRoadmapAnalysis.summary =
+      'Đây là một lộ trình học tập được cá nhân hoá cho bạn.';
+    FakeRoadmapAnalysis.failWith = null;
+    FakeRoadmapAnalysis.seenRequests = [];
+    FakeRoadmapAnalysis.callCount = 0;
+  }
+
+  generate(request: RoadmapAnalysisRequest) {
+    FakeRoadmapAnalysis.callCount += 1;
+    FakeRoadmapAnalysis.seenRequests.push(request);
+    if (FakeRoadmapAnalysis.failWith) {
+      return Promise.reject(FakeRoadmapAnalysis.failWith);
+    }
+    return Promise.resolve({ summary: FakeRoadmapAnalysis.summary });
+  }
+}
 
 // Personalized Onboarding & Placement Test, Phase 3 — the student-facing
 // flow (goal, start-beginner, start/attempt/answer/submit, finalizeIfDue,
@@ -31,7 +72,10 @@ describe('Placement test flow (e2e)', () => {
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
-    }).compile();
+    })
+      .overrideProvider(ROADMAP_ANALYSIS_PROVIDER)
+      .useClass(FakeRoadmapAnalysis)
+      .compile();
 
     app = moduleFixture.createNestApplication();
     app.useGlobalPipes(new ValidationPipe());
@@ -41,6 +85,10 @@ describe('Placement test flow (e2e)', () => {
     await seedMinimumBank();
   });
 
+  beforeEach(() => {
+    FakeRoadmapAnalysis.reset();
+  });
+
   afterAll(async () => {
     if (createdQuestionIds.length) {
       await prisma.placementQuestion.deleteMany({
@@ -48,10 +96,14 @@ describe('Placement test flow (e2e)', () => {
       });
     }
     if (createdCourseIds.length) {
-      await prisma.course.deleteMany({ where: { id: { in: createdCourseIds } } });
+      await prisma.course.deleteMany({
+        where: { id: { in: createdCourseIds } },
+      });
     }
     if (createdUserEmails.length) {
-      await prisma.user.deleteMany({ where: { email: { in: createdUserEmails } } });
+      await prisma.user.deleteMany({
+        where: { email: { in: createdUserEmails } },
+      });
     }
     await app.close();
   });
@@ -81,7 +133,9 @@ describe('Placement test flow (e2e)', () => {
 
   async function seedMinimumBank(): Promise<void> {
     const sections = ['GRAMMAR', 'VOCABULARY', 'LISTENING'] as const;
-    const perDifficulty: Array<[difficulty: 'EASY' | 'MEDIUM' | 'HARD', count: number]> = [
+    const perDifficulty: Array<
+      [difficulty: 'EASY' | 'MEDIUM' | 'HARD', count: number]
+    > = [
       ['EASY', 2],
       ['MEDIUM', 1],
       ['HARD', 1],
@@ -111,7 +165,18 @@ describe('Placement test flow (e2e)', () => {
     const res = await request(app.getHttpServer())
       .post('/auth/register')
       .send({ name: `Placement ${label}`, email, password: 'password123' });
-    return (res.body as { accessToken: string }).accessToken;
+    const accessToken = (res.body as { accessToken?: string }).accessToken;
+    // Fails loudly at the registration step itself rather than silently
+    // handing back `undefined` — a bug here (e.g. a label long enough to
+    // push the generated email's local-part past RFC 5321's 64-character
+    // limit) would otherwise surface as a confusing 401 on whatever
+    // authenticated call happens to run next.
+    if (!accessToken) {
+      throw new Error(
+        `registerStudent('${label}') did not receive an accessToken — register responded ${res.status}: ${JSON.stringify(res.body)}`,
+      );
+    }
+    return accessToken;
   }
 
   async function setGoal(token: string, goal: string): Promise<void> {
@@ -357,7 +422,8 @@ describe('Placement test flow (e2e)', () => {
         .expect(201);
 
       expect(second.body.attemptId).not.toBe(first.body.attemptId);
-      const remainingMs = new Date(second.body.expiresAt).getTime() - Date.now();
+      const remainingMs =
+        new Date(second.body.expiresAt).getTime() - Date.now();
       expect(remainingMs).toBeGreaterThan(4 * 60 * 1000);
     });
   });
@@ -400,7 +466,10 @@ describe('Placement test flow (e2e)', () => {
     });
 
     it('reflects the LIVE course title/thumbnail, not a stored snapshot', async () => {
-      const course = await seedPublishedCourse('GRAMMAR', 'Roadmap live-join fixture');
+      const course = await seedPublishedCourse(
+        'GRAMMAR',
+        'Roadmap live-join fixture',
+      );
       const token = await registerStudent('roadmap-live');
       await setGoal(token, 'GENERAL_ENGLISH');
       await request(app.getHttpServer())
@@ -413,8 +482,14 @@ describe('Placement test flow (e2e)', () => {
         .set('Authorization', `Bearer ${token}`)
         .expect(200);
 
-      const item = (res.body.items as Array<{ courseType: string; courseId: string; courseTitle: string; courseThumbnail: string | null }>)
-        .find((i) => i.courseType === 'GRAMMAR');
+      const item = (
+        res.body.items as Array<{
+          courseType: string;
+          courseId: string;
+          courseTitle: string;
+          courseThumbnail: string | null;
+        }>
+      ).find((i) => i.courseType === 'GRAMMAR');
       expect(item).toBeDefined();
       expect(item!.courseId).toBe(course.id);
       expect(item!.courseTitle).toBe(course.title);
@@ -422,7 +497,10 @@ describe('Placement test flow (e2e)', () => {
     });
 
     it('drops an item whose course is later unpublished — never serves it stale', async () => {
-      const course = await seedPublishedCourse('LISTENING', 'Roadmap unpublish fixture');
+      const course = await seedPublishedCourse(
+        'LISTENING',
+        'Roadmap unpublish fixture',
+      );
       const token = await registerStudent('roadmap-unpublish');
       await setGoal(token, 'GENERAL_ENGLISH');
       await request(app.getHttpServer())
@@ -435,27 +513,37 @@ describe('Placement test flow (e2e)', () => {
         .set('Authorization', `Bearer ${token}`)
         .expect(200);
       expect(
-        (before.body.items as Array<{ courseId: string }>).some((i) => i.courseId === course.id),
+        (before.body.items as Array<{ courseId: string }>).some(
+          (i) => i.courseId === course.id,
+        ),
       ).toBe(true);
 
-      await prisma.course.update({ where: { id: course.id }, data: { isPublished: false } });
+      await prisma.course.update({
+        where: { id: course.id },
+        data: { isPublished: false },
+      });
 
       const after = await request(app.getHttpServer())
         .get('/placement/roadmap')
         .set('Authorization', `Bearer ${token}`)
         .expect(200);
       expect(
-        (after.body.items as Array<{ courseId: string }>).some((i) => i.courseId === course.id),
+        (after.body.items as Array<{ courseId: string }>).some(
+          (i) => i.courseId === course.id,
+        ),
       ).toBe(false);
 
       // Restore, so this fixture's afterAll delete doesn't race a Restrict/
       // FK concern and so the row's final state on disk matches what a real
       // admin "unpublish" action would look like (nothing else depends on
       // this here, but leaving it published is the more honest end state).
-      await prisma.course.update({ where: { id: course.id }, data: { isPublished: true } });
+      await prisma.course.update({
+        where: { id: course.id },
+        data: { isPublished: true },
+      });
     });
 
-    it('aiSummary is null until Phase 6 populates it', async () => {
+    it('aiSummary is null until POST /placement/roadmap/analysis is called', async () => {
       const token = await registerStudent('roadmap-aisummary');
       await setGoal(token, 'GENERAL_ENGLISH');
       await request(app.getHttpServer())
@@ -469,6 +557,298 @@ describe('Placement test flow (e2e)', () => {
         .expect(200);
       expect(res.body.aiSummary).toBeNull();
       expect(res.body.placementAttemptId).toBeNull(); // beginner-skip path, no test taken
+    });
+  });
+
+  describe('GET /placement/status', () => {
+    it('a fresh student sees no goal, no attempt, no roadmap', async () => {
+      const token = await registerStudent('status-fresh');
+      const res = await request(app.getHttpServer())
+        .get('/placement/status')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+      expect(res.body).toEqual({
+        onboarded: false,
+        learningGoal: null,
+        hasInProgressAttempt: false,
+        attemptExpiresAt: null,
+        hasRoadmap: false,
+      });
+    });
+
+    it('reflects the chosen goal and an in-progress attempt with its expiresAt', async () => {
+      const token = await registerStudent('status-inprogress');
+      await setGoal(token, 'TOEIC_650');
+      const startRes = await request(app.getHttpServer())
+        .post('/placement/start')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(201);
+
+      const res = await request(app.getHttpServer())
+        .get('/placement/status')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+      expect(res.body.learningGoal).toBe('TOEIC_650');
+      expect(res.body.hasInProgressAttempt).toBe(true);
+      expect(res.body.attemptExpiresAt).toBe(startRes.body.expiresAt);
+      expect(res.body.onboarded).toBe(false);
+    });
+
+    it('lazily finalizes an expired attempt when the wizard calls status — self-corrects onboarded/hasRoadmap', async () => {
+      // Label kept short deliberately: registerStudent()'s email template is
+      // `placement-${label}-${randomUUID()}@example.test`, and a longer
+      // label here once pushed the local-part past RFC 5321's 64-character
+      // limit, making @IsEmail() correctly reject the register call — the
+      // resulting undefined accessToken then surfaced as a confusing 401 on
+      // the FIRST authenticated call after registration, not as a register
+      // failure. Keep future labels in this file short for the same reason.
+      const token = await registerStudent('status-lazy');
+      await setGoal(token, 'TOEIC_650');
+      const startRes = await request(app.getHttpServer())
+        .post('/placement/start')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(201);
+
+      await prisma.placementAttempt.update({
+        where: { id: startRes.body.attemptId },
+        data: { expiresAt: new Date(Date.now() - 1000) },
+      });
+
+      // No GET /placement/attempt and no submit was ever called — status
+      // itself is what finalizes it, and the response reflects the fresh
+      // post-finalize state, not a stale pre-finalize snapshot.
+      const res = await request(app.getHttpServer())
+        .get('/placement/status')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+      expect(res.body.hasInProgressAttempt).toBe(false);
+      expect(res.body.attemptExpiresAt).toBeNull();
+      expect(res.body.onboarded).toBe(true);
+      expect(res.body.hasRoadmap).toBe(true);
+    });
+
+    it('reflects onboarded/hasRoadmap after the beginner-skip path', async () => {
+      const token = await registerStudent('status-beginner');
+      await setGoal(token, 'GENERAL_ENGLISH');
+      await request(app.getHttpServer())
+        .post('/placement/start-beginner')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(201);
+
+      const res = await request(app.getHttpServer())
+        .get('/placement/status')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+      expect(res.body.onboarded).toBe(true);
+      expect(res.body.hasRoadmap).toBe(true);
+      expect(res.body.hasInProgressAttempt).toBe(false);
+    });
+  });
+
+  describe('POST /placement/roadmap/analysis', () => {
+    it('404s before onboarding — no roadmap has been generated yet', async () => {
+      const token = await registerStudent('analysis-404');
+      await request(app.getHttpServer())
+        .post('/placement/roadmap/analysis')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(404);
+    });
+
+    it('generates once on the beginner-skip path, with sectionScores omitted, and caches it', async () => {
+      const token = await registerStudent('analysis-new');
+      await setGoal(token, 'GENERAL_ENGLISH');
+      await request(app.getHttpServer())
+        .post('/placement/start-beginner')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(201);
+
+      const first = await request(app.getHttpServer())
+        .post('/placement/roadmap/analysis')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(201);
+      expect(first.body.cached).toBe(false);
+      expect(first.body.summary).toBe(FakeRoadmapAnalysis.summary);
+      expect(first.body.model).toBe('fake-roadmap-model');
+      expect(FakeRoadmapAnalysis.callCount).toBe(1);
+      // The beginner-skip path never took a test — nothing to score.
+      expect(FakeRoadmapAnalysis.seenRequests[0].sectionScores).toBeNull();
+      expect(FakeRoadmapAnalysis.seenRequests[0].estimatedLevel).toBeNull();
+      expect(FakeRoadmapAnalysis.seenRequests[0].goal).toBe('GENERAL_ENGLISH');
+      expect(FakeRoadmapAnalysis.seenRequests[0].phases.length).toBeGreaterThan(
+        0,
+      );
+
+      // A second request returns the STORED answer — never a second (paid)
+      // call to the engine — same discipline Shadowing's own cache-check has.
+      const second = await request(app.getHttpServer())
+        .post('/placement/roadmap/analysis')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(201);
+      expect(second.body.cached).toBe(true);
+      expect(second.body.summary).toBe(first.body.summary);
+      expect(second.body.generatedAt).toBe(first.body.generatedAt);
+      expect(FakeRoadmapAnalysis.callCount).toBe(1);
+
+      // GET /placement/roadmap reflects the same cached narrative — it is
+      // the same Roadmap.aiSummary column both endpoints read.
+      const roadmap = await request(app.getHttpServer())
+        .get('/placement/roadmap')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+      expect(roadmap.body.aiSummary).toBe(first.body.summary);
+    });
+
+    it('on the graded path, passes the real section scores through to the engine', async () => {
+      const token = await registerStudent('analysis-scored');
+      await setGoal(token, 'TOEIC_450');
+
+      const startRes = await request(app.getHttpServer())
+        .post('/placement/start')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(201);
+      const attemptId: string = startRes.body.attemptId;
+      const questionIds: string[] = startRes.body.questions.map(
+        (q: { id: string }) => q.id,
+      );
+      const adminQuestions = await prisma.placementQuestion.findMany({
+        where: { id: { in: questionIds } },
+      });
+      // Answer every question correctly — a clean, unambiguous 100% to
+      // assert on, distinct from the '25% per section' fixture already used
+      // by the scoring-lifecycle test above.
+      for (const question of adminQuestions) {
+        await request(app.getHttpServer())
+          .post(`/placement/attempt/${attemptId}/answer`)
+          .set('Authorization', `Bearer ${token}`)
+          .send({
+            questionId: question.id,
+            submitted: buildCorrectSubmission(question),
+          })
+          .expect(201);
+      }
+      await request(app.getHttpServer())
+        .post(`/placement/attempt/${attemptId}/submit`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(201);
+
+      await request(app.getHttpServer())
+        .post('/placement/roadmap/analysis')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(201);
+
+      const seen = FakeRoadmapAnalysis.seenRequests[0];
+      expect(seen.sectionScores).toEqual({
+        grammar: 100,
+        vocabulary: 100,
+        listening: 100,
+      });
+      expect(seen.estimatedLevel).toBe('C1');
+    });
+
+    it('maps a provider failure to 503 and writes nothing — a retry can still succeed', async () => {
+      const token = await registerStudent('analysis-fail');
+      await setGoal(token, 'GENERAL_ENGLISH');
+      await request(app.getHttpServer())
+        .post('/placement/start-beginner')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(201);
+
+      FakeRoadmapAnalysis.failWith = new RoadmapAnalysisError(
+        'UNAVAILABLE',
+        'simulated outage',
+      );
+      await request(app.getHttpServer())
+        .post('/placement/roadmap/analysis')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(503);
+
+      const roadmap = await request(app.getHttpServer())
+        .get('/placement/roadmap')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+      expect(roadmap.body.aiSummary).toBeNull();
+
+      // The engine recovers; a retry with no other state change succeeds.
+      FakeRoadmapAnalysis.failWith = null;
+      const retry = await request(app.getHttpServer())
+        .post('/placement/roadmap/analysis')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(201);
+      expect(retry.body.cached).toBe(false);
+    });
+  });
+
+  describe('retake regenerates the roadmap (Phase 7)', () => {
+    it('start-beginner called again clears a stale cached aiSummary', async () => {
+      const token = await registerStudent('retake-beginner');
+      await setGoal(token, 'GENERAL_ENGLISH');
+      await request(app.getHttpServer())
+        .post('/placement/start-beginner')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(201);
+      await request(app.getHttpServer())
+        .post('/placement/roadmap/analysis')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(201);
+
+      const before = await request(app.getHttpServer())
+        .get('/placement/roadmap')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+      expect(before.body.aiSummary).not.toBeNull();
+
+      // The retake: same endpoint, called again on an already-onboarded
+      // account. onboardedAt must not move (already set); the Roadmap row
+      // DOES regenerate, and any narrative cached against the OLD roadmap
+      // must not survive to describe the new one.
+      const retake = await request(app.getHttpServer())
+        .post('/placement/start-beginner')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(201);
+      expect(retake.body.roadmapGenerated).toBe(true);
+
+      const after = await request(app.getHttpServer())
+        .get('/placement/roadmap')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+      expect(after.body.aiSummary).toBeNull();
+
+      const me = await request(app.getHttpServer())
+        .get('/users/me')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+      expect(me.body.onboarded).toBe(true);
+    });
+
+    it('a full retest (POST start -> submit) on an already-onboarded account clears a stale cached aiSummary', async () => {
+      const token = await registerStudent('retake-full');
+      await setGoal(token, 'GENERAL_ENGLISH');
+      await request(app.getHttpServer())
+        .post('/placement/start-beginner')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(201);
+      await request(app.getHttpServer())
+        .post('/placement/roadmap/analysis')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(201);
+
+      const startRes = await request(app.getHttpServer())
+        .post('/placement/start')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(201);
+      await request(app.getHttpServer())
+        .post(`/placement/attempt/${startRes.body.attemptId}/submit`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(201);
+
+      const after = await request(app.getHttpServer())
+        .get('/placement/roadmap')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+      expect(after.body.aiSummary).toBeNull();
+      // A fresh, real placementAttemptId — proof this is the NEW test's
+      // roadmap, not a leftover from the beginner-skip path.
+      expect(after.body.placementAttemptId).toBe(startRes.body.attemptId);
     });
   });
 });

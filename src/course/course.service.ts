@@ -7,6 +7,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CreateCourseDto } from './dto/create-course.dto';
 import { UpdateCourseDto } from './dto/update-course.dto';
 import { CourseType } from '@prisma/client';
+import { getEstimatedMinutesByCourseId } from '../shared/estimated-minutes';
 
 const PUBLIC_SELECT = {
   id: true,
@@ -60,24 +61,19 @@ export class CourseService {
   // the same for every student, so putting it in a per-user, uncacheable
   // response would be duplicating course metadata into a progress read.
   //
-  // Prisma cannot sum a relation inside `select`, so it is one groupBy over the
-  // ids already fetched — one extra query, constant in page size, no N+1.
+  // Prisma cannot sum a relation inside `select`, so this is one groupBy over
+  // the ids already fetched — one extra query, constant in page size, no N+1.
+  // The groupBy itself lives in shared/estimated-minutes.ts, shared with
+  // PlacementService's roadmap duration estimate — see that file's header for
+  // why. This method's job is only the courses[] <-> Map join.
   private async withEstimatedMinutes<T extends CourseRow>(
     courses: T[],
   ): Promise<(T & { totalEstimatedMinutes: number })[]> {
     if (courses.length === 0) return [];
 
-    const grouped = await this.prismaService.lesson.groupBy({
-      by: ['courseId'],
-      where: {
-        courseId: { in: courses.map((course) => course.id) },
-        isPublished: true,
-      },
-      _sum: { estimatedStudyMinutes: true },
-    });
-
-    const minutesByCourse = new Map(
-      grouped.map((row) => [row.courseId, row._sum.estimatedStudyMinutes ?? 0]),
+    const minutesByCourse = await getEstimatedMinutesByCourseId(
+      this.prismaService,
+      courses.map((course) => course.id),
     );
 
     // 0, not null, when no lesson carries a study time — the client already

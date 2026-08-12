@@ -50,6 +50,14 @@ export class CreatePlacementQuestionDto {
   @IsString()
   audioUrl?: string;
 
+  // Listening-section items only. Spoken dialogue, read aloud client-side
+  // (Web Speech API today; a real recorded audioUrl, once available, takes
+  // precedence over transcript playback) — never rendered as text. `content`
+  // holds only the question/statement/prompt actually shown on screen.
+  @IsOptional()
+  @IsString()
+  transcript?: string;
+
   @IsOptional()
   @IsString()
   imageUrl?: string;

@@ -92,6 +92,7 @@ describe('PlacementQuestionService', () => {
           'correctAnswer',
           'explanation',
           'audioUrl',
+          'transcript',
           'imageUrl',
         ].sort(),
       );

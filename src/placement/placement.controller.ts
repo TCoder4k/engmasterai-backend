@@ -81,11 +81,51 @@ export class PlacementController {
     return this.placementService.submit(req.user.userId, attemptId);
   }
 
+  // "Xem chi tiết bài làm" — same generous read-side bucket as the other
+  // GETs here. Rejects (ConflictException) if the attempt isn't completed
+  // yet; see PlacementService.getAttemptReview's own guard comment.
+  @UseGuards(JwtAuthGuard, QuizRateLimitGuard)
+  @QuizRateLimit({ kind: 'read', max: 60, windowSeconds: 60 })
+  @Get('attempt/:attemptId/review')
+  async getAttemptReview(
+    @Param('attemptId', ParseUUIDPipe) attemptId: string,
+    @Req() req,
+  ) {
+    return this.placementService.getAttemptReview(req.user.userId, attemptId);
+  }
+
   // Same generous read-side bucket as GET /placement/attempt.
   @UseGuards(JwtAuthGuard, QuizRateLimitGuard)
   @QuizRateLimit({ kind: 'read', max: 60, windowSeconds: 60 })
   @Get('roadmap')
   async getRoadmap(@Req() req) {
     return this.placementService.getRoadmap(req.user.userId);
+  }
+
+  // Phase 5 — wizard-internal resume authority. Called ONLY from inside
+  // /onboarding, never from the app-wide gate (see PlacementStatusDto's
+  // header note in placement.types.ts).
+  @UseGuards(JwtAuthGuard, QuizRateLimitGuard)
+  @QuizRateLimit({ kind: 'read', max: 60, windowSeconds: 60 })
+  @Get('status')
+  async getStatus(@Req() req) {
+    return this.placementService.getStatus(req.user.userId);
+  }
+
+  // Phase 6 — optional, cached AI narrative on top of the deterministic
+  // roadmap. No body: everything it needs (goal, level, section scores, the
+  // finished phase list) is read from the caller's own stored Roadmap/
+  // PlacementAttempt rows, never from the request — the same reasoning
+  // `submit` already applies (see placement.service.ts's header note there).
+  //
+  // OWN RATE-LIMIT KIND `placementAnalysis`, split from `placementSubmit` for
+  // the same reason Shadowing's `aiFeedback` is split from `speech`: this is
+  // a second, optional, PAID request, and letting it share the budget that
+  // guards the actual test flow would break the feature to protect the extra.
+  @UseGuards(JwtAuthGuard, QuizRateLimitGuard)
+  @QuizRateLimit({ kind: 'placementAnalysis', max: 10, windowSeconds: 600 })
+  @Post('roadmap/analysis')
+  async requestRoadmapAnalysis(@Req() req) {
+    return this.placementService.requestRoadmapAnalysis(req.user.userId);
   }
 }

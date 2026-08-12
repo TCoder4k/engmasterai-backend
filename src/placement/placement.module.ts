@@ -5,14 +5,21 @@ import { PlacementQuestionController } from './placement-question.controller';
 import { PlacementQuestionService } from './placement-question.service';
 import { PlacementController } from './placement.controller';
 import { PlacementService } from './placement.service';
+import { GeminiRoadmapAnalysisProvider } from './roadmap/gemini-roadmap-analysis.provider';
+import { ROADMAP_ANALYSIS_PROVIDER } from './roadmap/roadmap-analysis.provider';
 
 // Personalized Onboarding & Placement Test.
 //
 // Phase 2 added the admin question bank (PlacementQuestionController/
 // Service). Phase 3 adds the student-facing flow (goal, start-beginner,
 // start/attempt/answer/submit, finalizeIfDue) via PlacementController/
-// Service. The AI roadmap narration (RoadmapAnalysisProvider) and its own
-// controller land in Phase 6 as this module keeps growing.
+// Service. Phase 6 adds the AI roadmap narration (POST
+// /placement/roadmap/analysis, still on PlacementController — there is no
+// separate controller for it, only a separate provider) behind its own
+// DI token, the same reason ListeningModule binds Shadowing's two Gemini
+// providers behind two tokens rather than one: it is what lets e2e and unit
+// tests substitute a fake engine, without which the whole narration path
+// would be untestable without a real, paid API call.
 //
 // QuizRateLimitGuard is declared as a local PROVIDER rather than obtained by
 // importing LessonModule — the pattern study-time.module.ts and
@@ -21,6 +28,14 @@ import { PlacementService } from './placement.service';
 @Module({
   imports: [PrismaModule],
   controllers: [PlacementQuestionController, PlacementController],
-  providers: [PlacementQuestionService, PlacementService, QuizRateLimitGuard],
+  providers: [
+    PlacementQuestionService,
+    PlacementService,
+    {
+      provide: ROADMAP_ANALYSIS_PROVIDER,
+      useClass: GeminiRoadmapAnalysisProvider,
+    },
+    QuizRateLimitGuard,
+  ],
 })
 export class PlacementModule {}
