@@ -16,10 +16,12 @@ import { validateQuestionContent } from '../../src/lesson/quiz/grade-question';
 // validateQuestionContent() before any write, so this script cannot seed
 // content the real grader would reject.
 //
-// LISTENING items here are text-based comprehension (a short written
-// exchange, not real recorded audio) — audioUrl stays null. This is
-// placeholder dev content for exercising the pipeline; real audio-backed
-// Listening items are separate follow-up content work, not a code gap.
+// LISTENING items: `content` holds ONLY the question/statement/prompt shown
+// on screen; `transcript` holds the spoken dialogue and is never rendered as
+// text — the client reads it aloud (Web Speech API, via
+// PlacementAudioPlayer) since there is no real recorded audioUrl yet.
+// audioUrl stays null; once a real recording is attached for a question,
+// the client prefers audioUrl over transcript playback automatically.
 //
 // Run with:  npm run seed:placement-questions
 
@@ -33,6 +35,9 @@ interface SeedQuestion {
   options?: { id: string; text: string }[];
   correctAnswer: unknown;
   explanation?: string;
+  // Listening-section items only — the spoken dialogue, read aloud
+  // client-side rather than shown as text alongside `content`.
+  transcript?: string;
 }
 
 const GRAMMAR: SeedQuestion[] = [
@@ -241,8 +246,9 @@ const LISTENING: SeedQuestion[] = [
     section: 'LISTENING',
     type: 'MULTIPLE_CHOICE',
     difficulty: 'EASY',
-    content:
-      'A: "Excuse me, where is the nearest bus stop?" B: "It\'s just around the corner, next to the bakery." Where is the bus stop?',
+    transcript:
+      'A: "Excuse me, where is the nearest bus stop?" B: "It\'s just around the corner, next to the bakery."',
+    content: 'Where is the bus stop?',
     options: [
       { id: 'a', text: 'Next to the bakery' },
       { id: 'b', text: 'Inside the bakery' },
@@ -255,16 +261,17 @@ const LISTENING: SeedQuestion[] = [
     section: 'LISTENING',
     type: 'TRUE_FALSE',
     difficulty: 'EASY',
-    content:
-      'A: "Would you like tea or coffee?" B: "Coffee, please, no sugar." — The speaker asked for tea with sugar. True or false?',
+    transcript: 'A: "Would you like tea or coffee?" B: "Coffee, please, no sugar."',
+    content: 'True or false: The speaker asked for tea with sugar.',
     correctAnswer: { value: false },
   },
   {
     section: 'LISTENING',
     type: 'MULTIPLE_CHOICE',
     difficulty: 'EASY',
-    content:
-      'A: "What time does the meeting start?" B: "It was moved from 9 to 10 because of the traffic." What time does the meeting start now?',
+    transcript:
+      'A: "What time does the meeting start?" B: "It was moved from 9 to 10 because of the traffic."',
+    content: 'What time does the meeting start now?',
     options: [
       { id: 'a', text: '9 o\'clock' },
       { id: 'b', text: '10 o\'clock' },
@@ -277,16 +284,17 @@ const LISTENING: SeedQuestion[] = [
     section: 'LISTENING',
     type: 'FILL_BLANK',
     difficulty: 'EASY',
-    content:
-      'A: "Can you pass me the ___?" B: "Sure, here you go." (The word for a small book used for writing notes.)',
+    transcript: 'A: "Can you pass me the notebook?" B: "Sure, here you go."',
+    content: 'What did speaker A ask for? Type the word you hear.',
     correctAnswer: { accepted: ['notebook'] },
   },
   {
     section: 'LISTENING',
     type: 'MULTIPLE_CHOICE',
     difficulty: 'MEDIUM',
-    content:
-      'A: "The flight to Chicago has been delayed by two hours." B: "That\'s a shame, I have a connecting flight at noon." A: "Don\'t worry, the new departure time still gives you enough time to connect." What can we conclude?',
+    transcript:
+      'A: "The flight to Chicago has been delayed by two hours." B: "That\'s a shame, I have a connecting flight at noon." A: "Don\'t worry, the new departure time still gives you enough time to connect."',
+    content: 'What can we conclude?',
     options: [
       { id: 'a', text: 'The delay will not affect the connecting flight' },
       { id: 'b', text: 'The connecting flight has also been delayed' },
@@ -300,8 +308,9 @@ const LISTENING: SeedQuestion[] = [
     section: 'LISTENING',
     type: 'MULTIPLE_CHOICE',
     difficulty: 'MEDIUM',
-    content:
-      'A: "Did you finish the quarterly report?" B: "Almost — I just need the sales figures from Minh before I can submit it." What is B still waiting for?',
+    transcript:
+      'A: "Did you finish the quarterly report?" B: "Almost — I just need the sales figures from Minh before I can submit it."',
+    content: 'What is B still waiting for?',
     options: [
       { id: 'a', text: 'Approval from the manager' },
       { id: 'b', text: 'Sales figures from a colleague' },
@@ -314,8 +323,9 @@ const LISTENING: SeedQuestion[] = [
     section: 'LISTENING',
     type: 'MULTIPLE_CHOICE',
     difficulty: 'HARD',
-    content:
-      'A: "I thought the new policy would cut costs, but expenses actually went up." B: "That\'s not entirely fair to say — costs went up in shipping, but they dropped significantly in storage, so overall we did save money." What is B\'s main point?',
+    transcript:
+      'A: "I thought the new policy would cut costs, but expenses actually went up." B: "That\'s not entirely fair to say — costs went up in shipping, but they dropped significantly in storage, so overall we did save money."',
+    content: 'What is B\'s main point?',
     options: [
       { id: 'a', text: 'The new policy was a complete failure' },
       { id: 'b', text: 'Overall costs decreased despite one category rising' },
@@ -329,8 +339,9 @@ const LISTENING: SeedQuestion[] = [
     section: 'LISTENING',
     type: 'MULTIPLE_CHOICE',
     difficulty: 'HARD',
-    content:
-      'A: "We could launch the product next month, but the marketing materials won\'t be ready." B: "Right, and launching without proper marketing has burned us before — remember last year?" A: "Fair point. Let\'s push it to the following month then." What did the speakers decide?',
+    transcript:
+      'A: "We could launch the product next month, but the marketing materials won\'t be ready." B: "Right, and launching without proper marketing has burned us before — remember last year?" A: "Fair point. Let\'s push it to the following month then."',
+    content: 'What did the speakers decide?',
     options: [
       { id: 'a', text: 'Launch next month without marketing materials' },
       { id: 'b', text: 'Cancel the launch entirely' },
@@ -343,8 +354,34 @@ const LISTENING: SeedQuestion[] = [
 
 const ALL_QUESTIONS = [...GRAMMAR, ...VOCABULARY, ...LISTENING];
 
+// This script matches existing rows by exact `content` text (see header
+// comment) — LISTENING's `content` used to be the full dialogue-plus-question
+// string, now split into `transcript` + a trimmed `content`. Without this
+// one-time cleanup, re-running the seed would leave those old, pre-split
+// rows behind as orphaned duplicates instead of updating them in place.
+// Safe to delete outright: PlacementQuestion has no FK from PlacementAttempt
+// (a Json id snapshot, not a relation — see the schema's own comment), so
+// this cannot violate a constraint even for a row frozen into a past attempt.
+const LEGACY_LISTENING_CONTENT = [
+  'A: "Excuse me, where is the nearest bus stop?" B: "It\'s just around the corner, next to the bakery." Where is the bus stop?',
+  'A: "Would you like tea or coffee?" B: "Coffee, please, no sugar." — The speaker asked for tea with sugar. True or false?',
+  'A: "What time does the meeting start?" B: "It was moved from 9 to 10 because of the traffic." What time does the meeting start now?',
+  'A: "Can you pass me the ___?" B: "Sure, here you go." (The word for a small book used for writing notes.)',
+  'A: "The flight to Chicago has been delayed by two hours." B: "That\'s a shame, I have a connecting flight at noon." A: "Don\'t worry, the new departure time still gives you enough time to connect." What can we conclude?',
+  'A: "Did you finish the quarterly report?" B: "Almost — I just need the sales figures from Minh before I can submit it." What is B still waiting for?',
+  'A: "I thought the new policy would cut costs, but expenses actually went up." B: "That\'s not entirely fair to say — costs went up in shipping, but they dropped significantly in storage, so overall we did save money." What is B\'s main point?',
+  'A: "We could launch the product next month, but the marketing materials won\'t be ready." B: "Right, and launching without proper marketing has burned us before — remember last year?" A: "Fair point. Let\'s push it to the following month then." What did the speakers decide?',
+];
+
 const main = async (): Promise<void> => {
   console.log('\nSeeding Placement Test question bank...\n');
+
+  const { count: legacyRemoved } = await prisma.placementQuestion.deleteMany({
+    where: { section: 'LISTENING', content: { in: LEGACY_LISTENING_CONTENT } },
+  });
+  if (legacyRemoved > 0) {
+    console.log(`  Removed ${legacyRemoved} legacy pre-split Listening row(s).\n`);
+  }
 
   ALL_QUESTIONS.forEach((question, index) => {
     const reason = validateQuestionContent({
@@ -375,6 +412,7 @@ const main = async (): Promise<void> => {
           options: question.options ?? undefined,
           correctAnswer: question.correctAnswer as object,
           explanation: question.explanation,
+          transcript: question.transcript,
           isPublished: true,
         },
       });
@@ -389,6 +427,7 @@ const main = async (): Promise<void> => {
           options: question.options ?? undefined,
           correctAnswer: question.correctAnswer as object,
           explanation: question.explanation,
+          transcript: question.transcript,
           isPublished: true,
         },
       });

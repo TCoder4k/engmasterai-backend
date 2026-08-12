@@ -22,7 +22,42 @@ export interface PlacementQuestionPublicDto {
   content: string;
   options: QuestionOption[] | null;
   audioUrl: string | null;
+  // Listening-section items only. Spoken dialogue for client-side TTS
+  // playback — never rendered as text (see PlacementQuestion.transcript's
+  // schema comment). Null once a real audioUrl recording exists.
+  transcript: string | null;
   imageUrl: string | null;
+}
+
+// GET /placement/attempt/:attemptId/review — "Xem chi tiết bài làm" on the
+// Result screen. Deliberately POST-completion only (see
+// PlacementService.getAttemptReview's guard): Invariant 9 blocks
+// correctAnswer/explanation while an attempt is still in progress so a
+// student can't re-fetch their way to the answer key mid-test, but once
+// finalizeNow has scored the attempt, disclosing it is the whole point of
+// this endpoint — the same moment lesson quizzes' own
+// SubmitQuizResponse.results already discloses correctAnswer/explanation.
+export interface PlacementReviewItemDto {
+  questionId: string;
+  section: CourseType;
+  type: QuestionType;
+  content: string;
+  options: QuestionOption[] | null;
+  audioUrl: string | null;
+  transcript: string | null;
+  imageUrl: string | null;
+  // Null when the student never answered this question at all (distinct
+  // from a wrong answer) — isCorrect is always false in that case, same
+  // "absence scores as incorrect" rule finalizeNow's scoring already uses.
+  submitted: unknown | null;
+  isCorrect: boolean;
+  correctAnswer: unknown;
+  explanation: string | null;
+}
+
+export interface PlacementReviewDto {
+  attemptId: string;
+  items: PlacementReviewItemDto[];
 }
 
 export interface PlacementAnswerStateDto {
@@ -62,6 +97,28 @@ export interface RoadmapItemViewDto {
   courseTitle: string;
   courseThumbnail: string | null;
   reason: string;
+  // Sum of estimatedStudyMinutes across the course's published lessons (see
+  // shared/estimated-minutes.ts) — real, measured content-authoring data.
+  // NOT a promise about how long the student will take; the frontend derives
+  // an explicitly-labeled "~X tuần" ESTIMATE from this, never presents it as
+  // exact. 0 for a course with no lessons carrying a duration.
+  totalEstimatedMinutes: number;
+}
+
+// GET /placement/status — wizard-internal only (never the app-wide gate,
+// which reads GET /users/me's synchronous `onboarded` field instead — see
+// OnboardingGateBoundary). Answers "which step should the wizard resume
+// at": has a goal been chosen, is there an attempt in flight and how much
+// time is left on it, has a roadmap already been generated. Deliberately
+// thin — an in-progress attempt's full question content still comes from
+// GET /placement/attempt, never duplicated here.
+export interface PlacementStatusDto {
+  onboarded: boolean;
+  learningGoal: LearningGoal | null;
+  hasInProgressAttempt: boolean;
+  // Only non-null when hasInProgressAttempt is true.
+  attemptExpiresAt: string | null;
+  hasRoadmap: boolean;
 }
 
 export interface RoadmapViewDto {
@@ -70,9 +127,19 @@ export interface RoadmapViewDto {
   // Null on the beginner-skip path — no test was ever taken.
   placementAttemptId: string | null;
   generatedAt: string;
-  // Phase 6 (AI roadmap narration) populates this; null until then and for
-  // any roadmap nobody has asked to narrate — see Roadmap.aiSummary's
-  // schema comment.
+  // Populated by POST /placement/roadmap/analysis; null for any roadmap
+  // nobody has asked to narrate yet — see Roadmap.aiSummary's schema comment.
   aiSummary: string | null;
   items: RoadmapItemViewDto[];
+}
+
+// POST /placement/roadmap/analysis — Phase 6. Checked-before-called caching,
+// same shape as ShadowingFeedbackResultDto: `cached` tells the frontend
+// whether this was a fresh (paid) generation or a stored answer, purely for
+// display copy — nothing behaves differently either way.
+export interface RoadmapAnalysisResultDto {
+  summary: string;
+  generatedAt: string;
+  model: string;
+  cached: boolean;
 }

@@ -1646,8 +1646,13 @@ model PlacementQuestion {
   options       Json?
   correctAnswer Json
   explanation   String?
-  // Listening-section items only.
+  // Listening-section items only. `content` holds ONLY the final question
+  // (or true/false statement, or fill-blank prompt) shown on screen;
+  // `transcript` holds the spoken dialogue and is never rendered as text —
+  // it is read aloud client-side (Web Speech API today; a real recorded
+  // audioUrl, once available, takes precedence over transcript playback).
   audioUrl      String?
+  transcript    String?
   imageUrl      String?
   isPublished   Boolean  @default(false)
   createdAt     DateTime @default(now())

@@ -98,4 +98,12 @@ export interface DashboardAnalyticsDto {
   effectiveTimeZone: string;
   today: TodayAnalyticsDto;
   activity: ActivityAnalyticsDto;
+  /**
+   * Average accuracyPercent across the student's most recent graded
+   * LessonTaskAttempt rows (see RECENT_ACCURACY_ATTEMPT_LIMIT) — a rolling
+   * figure, not a "today" one, which is why it sits beside `today` rather
+   * than inside it. `null` for a student with no graded attempts ever; never
+   * a fabricated 0%.
+   */
+  recentAccuracyPercent: number | null;
 }

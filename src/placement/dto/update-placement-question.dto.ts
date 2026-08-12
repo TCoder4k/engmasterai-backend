@@ -49,5 +49,9 @@ export class UpdatePlacementQuestionDto {
 
   @IsOptional()
   @IsString()
+  transcript?: string;
+
+  @IsOptional()
+  @IsString()
   imageUrl?: string;
 }

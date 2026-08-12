@@ -24,13 +24,19 @@ import {
 // $queryRaw + date_trunc — not a wider scan here.
 const ACTIVITY_WINDOW_DAYS = 7;
 
+// How many of the student's most recent graded attempts feed the "recent
+// accuracy" figure. Bounded and reverse-chronological so the query cost stays
+// constant (see the class header's query-cost accounting) and so a strong
+// study session isn't diluted by attempts from months ago.
+const RECENT_ACCURACY_ATTEMPT_LIMIT = 20;
+
 // Sprint 09 — the dashboard's time-window analytics.
 //
 // READ-ONLY, with exactly one deliberate exception: it bootstraps
 // User.timezone when that column is still null (see resolveTimeZone). Nothing
 // else here writes.
 //
-// QUERY COST: ten reads, and — the property that matters — that number is
+// QUERY COST: eleven reads, and — the property that matters — that number is
 // CONSTANT. It does not grow with how much the student has studied, how many
 // courses exist, or how many lessons they contain. Every query is a bounded
 // range scan on an index whose leading column is userId.
@@ -45,9 +51,10 @@ const ACTIVITY_WINDOW_DAYS = 7;
 //   7     lessonTaskAttempt    submittedAt    window     (calendar)
 //   8     wordReviewLog        reviewedAt     window     (calendar)
 //   9     studyTimeEvent       occurredAt     today      (study seconds)
+//   10    lessonTaskAttempt    submittedAt    last 20    (recent accuracy)
 //
 // Plus ONE conditional write: the User.timezone bootstrap, which fires at most
-// once in an account's lifetime. 1-9 run in a single Promise.all; query 0 must
+// once in an account's lifetime. 1-10 run in a single Promise.all; query 0 must
 // precede them because it decides where the day boundaries are.
 //
 // THE PUBLICATION ASYMMETRY IS DELIBERATE. Queries 1-3 filter on
@@ -105,6 +112,7 @@ export class DashboardAnalyticsService {
       wordsReviewed,
       activeDays,
       activeStudySeconds,
+      recentAttempts,
     ] = await Promise.all([
       // 1 — video/theory finished today. Index [userId, completedAt].
       this.prisma.lessonStepProgress.count({
@@ -176,6 +184,17 @@ export class DashboardAnalyticsService {
       // records that the student was working, not what they were working on.
       // StudyTimeEvent.activityId is an untrusted analytics dimension.
       sumStudySecondsSince(this.prisma, userId, startOfToday),
+      // 10 — the last RECENT_ACCURACY_ATTEMPT_LIMIT attempts, most recent
+      // first. Index [userId, submittedAt] (same one query 7 uses) makes this
+      // a bounded reverse scan, not a full-history aggregate — cost does not
+      // grow with how long the account has existed. Averaged in JS below
+      // rather than SQL AVG(), matching every other aggregate in this file.
+      this.prisma.lessonTaskAttempt.findMany({
+        where: { userId, task: publishedTask },
+        select: { accuracyPercent: true },
+        orderBy: { submittedAt: 'desc' },
+        take: RECENT_ACCURACY_ATTEMPT_LIMIT,
+      }),
     ]);
 
     const quiz = todayAttempts.filter(
@@ -201,7 +220,19 @@ export class DashboardAnalyticsService {
       streakCapped: days.every((date) => activeDays.has(date)),
     };
 
-    return { effectiveTimeZone, today, activity };
+    // null for a student with no graded attempts EVER — never a fabricated
+    // 0%, the same "loading/error are states, not zeros" rule the rest of
+    // this file follows. Rounded once, here, so every caller sees the same
+    // integer rather than re-rounding a float differently.
+    const recentAccuracyPercent =
+      recentAttempts.length > 0
+        ? Math.round(
+            recentAttempts.reduce((sum, a) => sum + a.accuracyPercent, 0) /
+              recentAttempts.length,
+          )
+        : null;
+
+    return { effectiveTimeZone, today, activity, recentAccuracyPercent };
   }
 
   // THE REQUEST'S TIMEZONE WINS, and this deliberately differs from
