@@ -16,6 +16,8 @@ const PUBLIC_SELECT = {
   orderIndex: true,
   createdAt: true,
   updatedAt: true,
+  level: true,
+  suitableGoals: true,
 };
 
 const MANAGE_SELECT = {
@@ -114,6 +116,8 @@ export class VocabLibraryService {
         description: dto.description,
         thumbnail: dto.thumbnail,
         orderIndex,
+        level: dto.level,
+        suitableGoals: dto.suitableGoals ?? [],
       },
       select: PUBLIC_SELECT,
     });
@@ -122,7 +126,7 @@ export class VocabLibraryService {
   async update(id: string, dto: UpdateVocabLibraryDto) {
     await this.findOneOrThrow(id);
 
-    // Same reasoning as create(): only these three fields are ever writable
+    // Same reasoning as create(): only these fields are ever writable
     // through this endpoint. isPublished/orderIndex are intentionally
     // excluded — isPublished can only change via publish()/unpublish(), and
     // orderIndex has no reorder endpoint yet.
@@ -132,6 +136,8 @@ export class VocabLibraryService {
         ...(dto.name !== undefined && { name: dto.name }),
         ...(dto.description !== undefined && { description: dto.description }),
         ...(dto.thumbnail !== undefined && { thumbnail: dto.thumbnail }),
+        ...(dto.level !== undefined && { level: dto.level }),
+        ...(dto.suitableGoals !== undefined && { suitableGoals: dto.suitableGoals }),
       },
       select: PUBLIC_SELECT,
     });

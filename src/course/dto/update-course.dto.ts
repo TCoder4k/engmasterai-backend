@@ -1,5 +1,5 @@
-import { IsEnum, IsOptional, IsString } from 'class-validator';
-import { CefrLevel, CourseType } from '@prisma/client';
+import { IsArray, IsEnum, IsOptional, IsString } from 'class-validator';
+import { CefrLevel, CourseType, LearningGoal } from '@prisma/client';
 
 export class UpdateCourseDto {
   @IsString()
@@ -21,4 +21,10 @@ export class UpdateCourseDto {
   @IsEnum(CefrLevel)
   @IsOptional()
   level?: CefrLevel;
+
+  // See CreateCourseDto's own comment — same field, same semantics.
+  @IsArray()
+  @IsEnum(LearningGoal, { each: true })
+  @IsOptional()
+  suitableGoals?: LearningGoal[];
 }

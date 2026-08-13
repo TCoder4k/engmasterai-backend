@@ -681,6 +681,8 @@ const MANAGE_DETAIL_SELECT = {
   category: {
     select: {
       ...MANAGE_CATEGORY_SELECT,
+      level: true,
+      suitableGoals: true,
       _count: { select: { contents: true } },
     },
   },
@@ -729,6 +731,8 @@ const toManageContent = (
     nameVi: content.category.nameVi,
     orderIndex: content.category.orderIndex,
     isPublished: content.category.isPublished,
+    level: content.category.level,
+    suitableGoals: content.category.suitableGoals,
     contentCount: content.category._count.contents,
   },
   segmentCount: content._count.segments,

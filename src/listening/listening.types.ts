@@ -1,5 +1,6 @@
 import {
   CefrLevel,
+  LearningGoal,
   ListeningMediaProvider,
   ListeningMediaType,
   ListeningMode,
@@ -30,6 +31,9 @@ export interface ListeningCategoryDto {
 export interface ManageListeningCategoryDto extends ListeningCategoryDto {
   isPublished: boolean;
   contentCount: number;
+  /** Personalized Roadmap — mirrors Course.level/suitableGoals. */
+  level: CefrLevel | null;
+  suitableGoals: LearningGoal[];
 }
 
 /** A catalog card. No segments — the list ships counts, not transcripts. */

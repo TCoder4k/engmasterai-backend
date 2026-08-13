@@ -128,4 +128,25 @@ export class PlacementController {
   async requestRoadmapAnalysis(@Req() req) {
     return this.placementService.requestRoadmapAnalysis(req.user.userId);
   }
+
+  // Phase 4 (AI-assisted planning) — hybrid course SELECTION, not narration:
+  // deterministic candidates -> AI planner -> strict validation -> persist,
+  // falling back to the already-correct deterministic roadmap on any
+  // failure (see PlacementService.requestRoadmapPlan). No body, same
+  // reasoning as /analysis above.
+  //
+  // REUSES `placementAnalysis`'s rate-limit kind rather than a new one: both
+  // are optional, low-frequency, paid AI calls, and the bucket-splitting
+  // rule this file already follows (see /analysis's own comment) only
+  // protects the CORE test flow from an optional AI call — it has never
+  // been used to separate one optional AI call from another. A full
+  // onboarding session is ~1 /plan call plus, later, ~1 /analysis call from
+  // the dashboard — comfortably inside 10/600s even for a student who
+  // retakes the test several times in one sitting.
+  @UseGuards(JwtAuthGuard, QuizRateLimitGuard)
+  @QuizRateLimit({ kind: 'placementAnalysis', max: 10, windowSeconds: 600 })
+  @Post('roadmap/plan')
+  async requestRoadmapPlan(@Req() req) {
+    return this.placementService.requestRoadmapPlan(req.user.userId);
+  }
 }

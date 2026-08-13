@@ -3,6 +3,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { CefrLevel, LearningGoal } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateListeningCategoryDto, UpdateListeningCategoryDto } from './dto';
 import { ManageListeningCategoryDto } from './listening.types';
@@ -51,6 +52,8 @@ export class ListeningCategoryService {
         name: dto.name.trim(),
         nameVi: dto.nameVi.trim(),
         orderIndex,
+        level: dto.level,
+        suitableGoals: dto.suitableGoals ?? [],
       },
       select: MANAGE_SELECT,
     });
@@ -70,6 +73,8 @@ export class ListeningCategoryService {
         ...(dto.name !== undefined && { name: dto.name.trim() }),
         ...(dto.nameVi !== undefined && { nameVi: dto.nameVi.trim() }),
         ...(dto.orderIndex !== undefined && { orderIndex: dto.orderIndex }),
+        ...(dto.level !== undefined && { level: dto.level }),
+        ...(dto.suitableGoals !== undefined && { suitableGoals: dto.suitableGoals }),
       },
       select: MANAGE_SELECT,
     });
@@ -169,6 +174,8 @@ const MANAGE_SELECT = {
   nameVi: true,
   orderIndex: true,
   isPublished: true,
+  level: true,
+  suitableGoals: true,
   _count: { select: { contents: true } },
 } as const;
 
@@ -178,6 +185,8 @@ const toManageCategory = (row: {
   nameVi: string;
   orderIndex: number;
   isPublished: boolean;
+  level: CefrLevel | null;
+  suitableGoals: LearningGoal[];
   _count: { contents: number };
 }): ManageListeningCategoryDto => ({
   id: row.id,
@@ -185,5 +194,7 @@ const toManageCategory = (row: {
   nameVi: row.nameVi,
   orderIndex: row.orderIndex,
   isPublished: row.isPublished,
+  level: row.level,
+  suitableGoals: row.suitableGoals,
   contentCount: row._count.contents,
 });

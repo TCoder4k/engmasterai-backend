@@ -20,6 +20,9 @@ const PUBLIC_SELECT = {
   // Personalized Onboarding & Placement Test — nullable until an admin sets
   // it. Public because it's ordinary course metadata, not sensitive.
   level: true,
+  // Empty by default ("eligible for every goal"). Public for the same
+  // reason `level` is.
+  suitableGoals: true,
   // Sprint 05: student-facing surfaces (the Grammar module landing page)
   // need a real lesson count per course. Filtered to published lessons —
   // a student must never be told a course has 12 lessons when 4 of them
@@ -168,6 +171,7 @@ export class CourseService {
         description: dto.description,
         thumbnail: dto.thumbnail,
         level: dto.level,
+        suitableGoals: dto.suitableGoals ?? [],
       },
       select: PUBLIC_SELECT,
     });
@@ -176,7 +180,7 @@ export class CourseService {
   async update(id: string, dto: UpdateCourseDto) {
     await this.findOneOrThrow(id);
 
-    // Same reasoning as create(): only these five fields are ever writable
+    // Same reasoning as create(): only these fields are ever writable
     // through this endpoint. isPublished is intentionally excluded — it can
     // only change via publish()/unpublish().
     return this.prismaService.course.update({
@@ -187,6 +191,9 @@ export class CourseService {
         ...(dto.description !== undefined && { description: dto.description }),
         ...(dto.thumbnail !== undefined && { thumbnail: dto.thumbnail }),
         ...(dto.level !== undefined && { level: dto.level }),
+        ...(dto.suitableGoals !== undefined && {
+          suitableGoals: dto.suitableGoals,
+        }),
       },
       select: PUBLIC_SELECT,
     });

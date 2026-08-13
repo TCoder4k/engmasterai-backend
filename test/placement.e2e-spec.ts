@@ -12,6 +12,12 @@ import {
   RoadmapAnalysisProvider,
   RoadmapAnalysisRequest,
 } from '../src/placement/roadmap/roadmap-analysis.provider';
+import {
+  ROADMAP_PLANNER_PROVIDER,
+  RoadmapPlanningError,
+  RoadmapPlannerProvider,
+  RoadmapPlanningRequest,
+} from '../src/placement/roadmap/roadmap-planner.provider';
 
 /**
  * Phase 6 — a narration engine under the test's control, the same seam
@@ -48,6 +54,80 @@ class FakeRoadmapAnalysis implements RoadmapAnalysisProvider {
   }
 }
 
+/**
+ * Phase 4/5 — the AI PLANNING engine under the test's control, same seam
+ * shape as FakeRoadmapAnalysis above. Chooses one candidate PER PILLAR
+ * present in the request (mirroring the real prompt's "exactly one resource
+ * per pillar" instruction) — this keeps the fake naturally satisfying
+ * validate-roadmap-plan.ts's pillar-coverage rule regardless of how many
+ * real, untagged library/category rows happen to exist in the shared test
+ * database, without every test needing to seed all 3 pillars itself.
+ * `selectResourceId`, when set, tells the fake which specific candidate to
+ * choose (by id) so a test can assert the real HTTP round trip actually
+ * persisted a specific AI-selected resource. `forceInvalidPlan` bypasses
+ * that entirely to deliberately return a disallowed selection.
+ */
+class FakeRoadmapPlanner implements RoadmapPlannerProvider {
+  readonly model = 'fake-planner-model';
+  static selectResourceId: string | null = null;
+  static forceInvalidPlan:
+    | { resourceType: 'COURSE' | 'VOCAB_LIBRARY' | 'LISTENING_CATEGORY'; resourceId: string }
+    | null = null;
+  static overallReason = 'Lộ trình được sắp xếp phù hợp với mục tiêu của bạn.';
+  static failWith: RoadmapPlanningError | null = null;
+  static seenRequests: RoadmapPlanningRequest[] = [];
+  static callCount = 0;
+
+  static reset(): void {
+    FakeRoadmapPlanner.selectResourceId = null;
+    FakeRoadmapPlanner.forceInvalidPlan = null;
+    FakeRoadmapPlanner.overallReason =
+      'Lộ trình được sắp xếp phù hợp với mục tiêu của bạn.';
+    FakeRoadmapPlanner.failWith = null;
+    FakeRoadmapPlanner.seenRequests = [];
+    FakeRoadmapPlanner.callCount = 0;
+  }
+
+  plan(request: RoadmapPlanningRequest) {
+    FakeRoadmapPlanner.callCount += 1;
+    FakeRoadmapPlanner.seenRequests.push(request);
+    if (FakeRoadmapPlanner.failWith) {
+      return Promise.reject(FakeRoadmapPlanner.failWith);
+    }
+    if (FakeRoadmapPlanner.forceInvalidPlan) {
+      return Promise.resolve({
+        phases: [{ ...FakeRoadmapPlanner.forceInvalidPlan, reason: 'Hallucinated for this test.' }],
+        overallReason: FakeRoadmapPlanner.overallReason,
+      });
+    }
+
+    const byPillar = new Map<string, typeof request.candidates>();
+    for (const c of request.candidates) {
+      const list = byPillar.get(c.pillar) ?? [];
+      list.push(c);
+      byPillar.set(c.pillar, list);
+    }
+    const phases = [...byPillar.values()].map((candidatesInPillar) => {
+      // Falls back to the LOWEST sortKey, not array order — Prisma's
+      // findMany has no explicit orderBy here, so array order is
+      // unspecified. Fixture seeders in this file (seedPublishedCourse etc)
+      // deliberately mint an extreme sortKey to win this same tiebreak,
+      // matching the real deterministic algorithm's own tie-break rule
+      // (roadmap-algorithm.ts's pickResource) so fixtures behave predictably
+      // in both paths.
+      const chosen =
+        candidatesInPillar.find((c) => c.id === FakeRoadmapPlanner.selectResourceId) ??
+        [...candidatesInPillar].sort((a, b) => a.sortKey - b.sortKey)[0];
+      return {
+        resourceType: chosen.resourceType,
+        resourceId: chosen.id,
+        reason: 'AI-selected for this test.',
+      };
+    });
+    return Promise.resolve({ phases, overallReason: FakeRoadmapPlanner.overallReason });
+  }
+}
+
 // Personalized Onboarding & Placement Test, Phase 3 — the student-facing
 // flow (goal, start-beginner, start/attempt/answer/submit, finalizeIfDue,
 // timer enforcement). Same registration boilerplate as
@@ -68,6 +148,8 @@ describe('Placement test flow (e2e)', () => {
   const createdUserEmails: string[] = [];
   const createdQuestionIds: string[] = [];
   const createdCourseIds: string[] = [];
+  const createdVocabLibraryIds: string[] = [];
+  const createdListeningCategoryIds: string[] = [];
 
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -75,6 +157,8 @@ describe('Placement test flow (e2e)', () => {
     })
       .overrideProvider(ROADMAP_ANALYSIS_PROVIDER)
       .useClass(FakeRoadmapAnalysis)
+      .overrideProvider(ROADMAP_PLANNER_PROVIDER)
+      .useClass(FakeRoadmapPlanner)
       .compile();
 
     app = moduleFixture.createNestApplication();
@@ -87,6 +171,7 @@ describe('Placement test flow (e2e)', () => {
 
   beforeEach(() => {
     FakeRoadmapAnalysis.reset();
+    FakeRoadmapPlanner.reset();
   });
 
   afterAll(async () => {
@@ -100,6 +185,16 @@ describe('Placement test flow (e2e)', () => {
         where: { id: { in: createdCourseIds } },
       });
     }
+    if (createdVocabLibraryIds.length) {
+      await prisma.vocabLibrary.deleteMany({
+        where: { id: { in: createdVocabLibraryIds } },
+      });
+    }
+    if (createdListeningCategoryIds.length) {
+      await prisma.listeningCategory.deleteMany({
+        where: { id: { in: createdListeningCategoryIds } },
+      });
+    }
     if (createdUserEmails.length) {
       await prisma.user.deleteMany({
         where: { email: { in: createdUserEmails } },
@@ -108,11 +203,26 @@ describe('Placement test flow (e2e)', () => {
     await app.close();
   });
 
-  // An artificially ancient createdAt so this fixture always wins
-  // generateRoadmap's "earliest-authored" tiebreak (used on the beginner-
-  // skip path) regardless of what other suites publish concurrently in the
-  // shared test database — without this, a course from another suite could
-  // legitimately be picked instead and these tests would be flaky.
+  // Decremented on every seed call below, across ALL THREE resource types —
+  // never reset, never reused. Guarantees each fixture's sortKey is
+  // STRICTLY more extreme than every fixture seeded before it (in this run
+  // AND in this file, since multiple tests below now compete in the same
+  // GENERAL_ENGLISH goal pool with the same level:'A1'). Ties between two
+  // fixtures with an IDENTICAL sortKey are unresolvable by pickResource
+  // (roadmap-algorithm.ts) — the array order Prisma returns for equal keys
+  // is unspecified — so a shared, ever-decreasing counter is what actually
+  // keeps these tests deterministic, not just "ancient" on its own.
+  let fixtureSortSeq = 0;
+
+  // level: 'A1' explicitly, not left unset — pickResource only falls back
+  // to the sortKey-only tiebreak when NO candidate in the pillar has a
+  // level at all; the moment ANY other real or leftover resource in the
+  // shared test database has a level set, an unleveled fixture is never
+  // even considered, regardless of how extreme its sortKey is. Tagging A1
+  // (matching the beginner-skip path's assumed level exactly) wins the
+  // level-distance-0 comparison outright; the counter above then wins the
+  // sortKey tiebreak among same-level competitors, including this file's
+  // own other fixtures.
   async function seedPublishedCourse(
     type: 'GRAMMAR' | 'VOCABULARY' | 'LISTENING',
     title: string,
@@ -124,11 +234,41 @@ describe('Placement test flow (e2e)', () => {
         description: 'Roadmap e2e fixture course',
         thumbnail: 'https://example.test/thumb.png',
         isPublished: true,
-        createdAt: new Date('2000-01-01T00:00:00Z'),
+        level: 'A1',
+        createdAt: new Date(946684800000 - fixtureSortSeq++), // 2000-01-01T00:00:00Z minus the counter
       },
     });
     createdCourseIds.push(course.id);
     return course;
+  }
+
+  async function seedPublishedVocabLibrary(title: string) {
+    const library = await prisma.vocabLibrary.create({
+      data: {
+        name: testFixtureName(title),
+        description: 'Roadmap e2e fixture library',
+        thumbnail: 'https://example.test/thumb.png',
+        isPublished: true,
+        level: 'A1',
+        orderIndex: -1000000 - fixtureSortSeq++,
+      },
+    });
+    createdVocabLibraryIds.push(library.id);
+    return library;
+  }
+
+  async function seedPublishedListeningCategory(title: string) {
+    const category = await prisma.listeningCategory.create({
+      data: {
+        name: testFixtureName(title),
+        nameVi: testFixtureName(title),
+        isPublished: true,
+        level: 'A1',
+        orderIndex: -1000000 - fixtureSortSeq++,
+      },
+    });
+    createdListeningCategoryIds.push(category.id);
+    return category;
   }
 
   async function seedMinimumBank(): Promise<void> {
@@ -136,9 +276,9 @@ describe('Placement test flow (e2e)', () => {
     const perDifficulty: Array<
       [difficulty: 'EASY' | 'MEDIUM' | 'HARD', count: number]
     > = [
-      ['EASY', 2],
-      ['MEDIUM', 1],
-      ['HARD', 1],
+      ['EASY', 3],
+      ['MEDIUM', 3],
+      ['HARD', 2],
     ];
     for (const section of sections) {
       for (const [difficulty, count] of perDifficulty) {
@@ -245,7 +385,7 @@ describe('Placement test flow (e2e)', () => {
         .post('/placement/start')
         .set('Authorization', `Bearer ${token}`)
         .expect(201);
-      expect(startRes.body.questions).toHaveLength(12);
+      expect(startRes.body.questions).toHaveLength(24);
       const attemptId: string = startRes.body.attemptId;
       const questionIds: string[] = startRes.body.questions.map(
         (q: { id: string }) => q.id,
@@ -262,8 +402,9 @@ describe('Placement test flow (e2e)', () => {
       adminQuestions.forEach((q) => bySection[q.section].push(q));
 
       // Answer exactly the FIRST question of each section correctly; leave
-      // every other question unanswered. Expected: 1/4 correct per section
-      // = 25% each, overall 25%, estimatedLevel A2 (20-39 band).
+      // every other question unanswered. Expected: 1/8 correct per section
+      // = round(12.5) = 13% each, overall 13%, estimatedLevel A1 (0-19 band,
+      // LEVEL_THRESHOLDS unchanged by the multi-pillar revision).
       for (const section of Object.keys(bySection)) {
         const question = bySection[section][0];
         await request(app.getHttpServer())
@@ -281,11 +422,11 @@ describe('Placement test flow (e2e)', () => {
         .set('Authorization', `Bearer ${token}`)
         .expect(201);
 
-      expect(submitRes.body.grammarScore).toBe(25);
-      expect(submitRes.body.vocabularyScore).toBe(25);
-      expect(submitRes.body.listeningScore).toBe(25);
-      expect(submitRes.body.overallScore).toBe(25);
-      expect(submitRes.body.estimatedLevel).toBe('A2');
+      expect(submitRes.body.grammarScore).toBe(13);
+      expect(submitRes.body.vocabularyScore).toBe(13);
+      expect(submitRes.body.listeningScore).toBe(13);
+      expect(submitRes.body.overallScore).toBe(13);
+      expect(submitRes.body.estimatedLevel).toBe('A1');
 
       const me = await request(app.getHttpServer())
         .get('/users/me')
@@ -403,7 +544,7 @@ describe('Placement test flow (e2e)', () => {
       expect(me.body.onboarded).toBe(true);
     });
 
-    it('a retake after expiry gets a genuinely fresh attempt with a fresh ~5-minute clock', async () => {
+    it('a retake after expiry gets a genuinely fresh attempt with a fresh ~10-minute clock', async () => {
       const token = await registerStudent('retake');
       await setGoal(token, 'FOUNDATION');
       const first = await request(app.getHttpServer())
@@ -424,7 +565,7 @@ describe('Placement test flow (e2e)', () => {
       expect(second.body.attemptId).not.toBe(first.body.attemptId);
       const remainingMs =
         new Date(second.body.expiresAt).getTime() - Date.now();
-      expect(remainingMs).toBeGreaterThan(4 * 60 * 1000);
+      expect(remainingMs).toBeGreaterThan(9 * 60 * 1000);
     });
   });
 
@@ -484,21 +625,26 @@ describe('Placement test flow (e2e)', () => {
 
       const item = (
         res.body.items as Array<{
-          courseType: string;
-          courseId: string;
-          courseTitle: string;
-          courseThumbnail: string | null;
+          pillar: string;
+          resourceType: string;
+          resourceId: string;
+          resourceTitle: string;
+          resourceThumbnail: string | null;
         }>
-      ).find((i) => i.courseType === 'GRAMMAR');
+      ).find((i) => i.pillar === 'GRAMMAR');
       expect(item).toBeDefined();
-      expect(item!.courseId).toBe(course.id);
-      expect(item!.courseTitle).toBe(course.title);
-      expect(item!.courseThumbnail).toBe(course.thumbnail);
+      expect(item!.resourceType).toBe('COURSE');
+      expect(item!.resourceId).toBe(course.id);
+      expect(item!.resourceTitle).toBe(course.title);
+      expect(item!.resourceThumbnail).toBe(course.thumbnail);
     });
 
     it('drops an item whose course is later unpublished — never serves it stale', async () => {
+      // GRAMMAR: the only Course type still live for roadmap purposes under
+      // the fixed pillar<->resourceType mapping (VOCABULARY/LISTENING
+      // Course rows are dormant — see roadmap-algorithm.ts's header).
       const course = await seedPublishedCourse(
-        'LISTENING',
+        'GRAMMAR',
         'Roadmap unpublish fixture',
       );
       const token = await registerStudent('roadmap-unpublish');
@@ -513,8 +659,8 @@ describe('Placement test flow (e2e)', () => {
         .set('Authorization', `Bearer ${token}`)
         .expect(200);
       expect(
-        (before.body.items as Array<{ courseId: string }>).some(
-          (i) => i.courseId === course.id,
+        (before.body.items as Array<{ resourceId: string }>).some(
+          (i) => i.resourceId === course.id,
         ),
       ).toBe(true);
 
@@ -528,8 +674,8 @@ describe('Placement test flow (e2e)', () => {
         .set('Authorization', `Bearer ${token}`)
         .expect(200);
       expect(
-        (after.body.items as Array<{ courseId: string }>).some(
-          (i) => i.courseId === course.id,
+        (after.body.items as Array<{ resourceId: string }>).some(
+          (i) => i.resourceId === course.id,
         ),
       ).toBe(false);
 
@@ -670,9 +816,12 @@ describe('Placement test flow (e2e)', () => {
       expect(first.body.summary).toBe(FakeRoadmapAnalysis.summary);
       expect(first.body.model).toBe('fake-roadmap-model');
       expect(FakeRoadmapAnalysis.callCount).toBe(1);
-      // The beginner-skip path never took a test — nothing to score.
+      // The beginner-skip path never took a test — nothing to score. It DOES
+      // carry a real, non-null estimatedLevel now ('A1', assumed rather than
+      // measured — see Roadmap.levelSource) so the roadmap algorithm can use
+      // level-aware course selection instead of blindly picking by createdAt.
       expect(FakeRoadmapAnalysis.seenRequests[0].sectionScores).toBeNull();
-      expect(FakeRoadmapAnalysis.seenRequests[0].estimatedLevel).toBeNull();
+      expect(FakeRoadmapAnalysis.seenRequests[0].estimatedLevel).toBe('A1');
       expect(FakeRoadmapAnalysis.seenRequests[0].goal).toBe('GENERAL_ENGLISH');
       expect(FakeRoadmapAnalysis.seenRequests[0].phases.length).toBeGreaterThan(
         0,
@@ -775,6 +924,146 @@ describe('Placement test flow (e2e)', () => {
         .set('Authorization', `Bearer ${token}`)
         .expect(201);
       expect(retry.body.cached).toBe(false);
+    });
+  });
+
+  describe('POST /placement/roadmap/plan', () => {
+    it('404s before onboarding — no roadmap has been generated yet', async () => {
+      const token = await registerStudent('plan-404');
+      await request(app.getHttpServer())
+        .post('/placement/roadmap/plan')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(404);
+    });
+
+    it('a valid AI selection is persisted (items AND aiSummary) and reflected in GET /placement/roadmap', async () => {
+      const course = await seedPublishedCourse('GRAMMAR', 'Plan e2e fixture');
+      const token = await registerStudent('plan-success');
+      await setGoal(token, 'GENERAL_ENGLISH');
+      await request(app.getHttpServer())
+        .post('/placement/start-beginner')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(201);
+
+      FakeRoadmapPlanner.selectResourceId = course.id;
+      const res = await request(app.getHttpServer())
+        .post('/placement/roadmap/plan')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(201);
+
+      expect(res.body.aiPlanningUsed).toBe(true);
+      expect(
+        (res.body.items as Array<{ resourceType: string; resourceId: string }>).some(
+          (i) => i.resourceType === 'COURSE' && i.resourceId === course.id,
+        ),
+      ).toBe(true);
+      expect(res.body.aiSummary).toBe(FakeRoadmapPlanner.overallReason);
+      expect(FakeRoadmapPlanner.callCount).toBe(1);
+      // Only real, already-filtered candidates ever reach the provider.
+      expect(
+        FakeRoadmapPlanner.seenRequests[0].candidates.some(
+          (c) => c.id === course.id,
+        ),
+      ).toBe(true);
+
+      const roadmap = await request(app.getHttpServer())
+        .get('/placement/roadmap')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+      expect(roadmap.body.aiPlanningUsed).toBe(true);
+      expect(roadmap.body.aiSummary).toBe(FakeRoadmapPlanner.overallReason);
+
+      // Idempotency: calling /plan again for the SAME generation must not
+      // re-call the (paid) provider.
+      const again = await request(app.getHttpServer())
+        .post('/placement/roadmap/plan')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(201);
+      expect(FakeRoadmapPlanner.callCount).toBe(1);
+      expect(again.body.aiSummary).toBe(FakeRoadmapPlanner.overallReason);
+    });
+
+    it('falls back to the deterministic roadmap — still 201, never an error — when the AI returns a disallowed resourceId', async () => {
+      const token = await registerStudent('plan-invalid');
+      await setGoal(token, 'GENERAL_ENGLISH');
+      await request(app.getHttpServer())
+        .post('/placement/start-beginner')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(201);
+
+      const before = await request(app.getHttpServer())
+        .get('/placement/roadmap')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      FakeRoadmapPlanner.forceInvalidPlan = {
+        resourceType: 'COURSE',
+        resourceId: 'not-a-real-course-id',
+      };
+      const res = await request(app.getHttpServer())
+        .post('/placement/roadmap/plan')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(201);
+
+      expect(res.body.aiPlanningUsed).toBe(false);
+      expect(res.body.items).toEqual(before.body.items);
+      expect(res.body.aiSummary).toBeNull();
+    });
+
+    it('falls back to the deterministic roadmap — still 201, never an error — when the provider is unavailable', async () => {
+      const token = await registerStudent('plan-unavailable');
+      await setGoal(token, 'GENERAL_ENGLISH');
+      await request(app.getHttpServer())
+        .post('/placement/start-beginner')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(201);
+
+      FakeRoadmapPlanner.failWith = new RoadmapPlanningError(
+        'UNAVAILABLE',
+        'simulated outage',
+      );
+      const res = await request(app.getHttpServer())
+        .post('/placement/roadmap/plan')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(201);
+
+      expect(res.body.aiPlanningUsed).toBe(false);
+    });
+
+    it('a heterogeneous 3-pillar candidate seed (Course + VocabLibrary + ListeningCategory) produces one AI-selected phase per pillar', async () => {
+      const course = await seedPublishedCourse('GRAMMAR', 'Plan multi-pillar course');
+      const library = await seedPublishedVocabLibrary('Plan multi-pillar library');
+      const category = await seedPublishedListeningCategory('Plan multi-pillar category');
+      const token = await registerStudent('plan-multipillar');
+      await setGoal(token, 'GENERAL_ENGLISH');
+      await request(app.getHttpServer())
+        .post('/placement/start-beginner')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(201);
+
+      const res = await request(app.getHttpServer())
+        .post('/placement/roadmap/plan')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(201);
+
+      expect(res.body.aiPlanningUsed).toBe(true);
+      const items = res.body.items as Array<{
+        pillar: string;
+        resourceType: string;
+        resourceId: string;
+      }>;
+      expect(items.find((i) => i.pillar === 'GRAMMAR')).toMatchObject({
+        resourceType: 'COURSE',
+        resourceId: course.id,
+      });
+      expect(items.find((i) => i.pillar === 'VOCABULARY')).toMatchObject({
+        resourceType: 'VOCAB_LIBRARY',
+        resourceId: library.id,
+      });
+      expect(items.find((i) => i.pillar === 'LISTENING')).toMatchObject({
+        resourceType: 'LISTENING_CATEGORY',
+        resourceId: category.id,
+      });
     });
   });
 

@@ -17,21 +17,21 @@ const bucket = (
 
 const fullBank = (): PublishedQuestionRef[] => [
   ...bucket('GRAMMAR', 'EASY', 5),
-  ...bucket('GRAMMAR', 'MEDIUM', 3),
-  ...bucket('GRAMMAR', 'HARD', 2),
+  ...bucket('GRAMMAR', 'MEDIUM', 5),
+  ...bucket('GRAMMAR', 'HARD', 4),
   ...bucket('VOCABULARY', 'EASY', 5),
-  ...bucket('VOCABULARY', 'MEDIUM', 3),
-  ...bucket('VOCABULARY', 'HARD', 2),
+  ...bucket('VOCABULARY', 'MEDIUM', 5),
+  ...bucket('VOCABULARY', 'HARD', 4),
   ...bucket('LISTENING', 'EASY', 5),
-  ...bucket('LISTENING', 'MEDIUM', 3),
-  ...bucket('LISTENING', 'HARD', 2),
+  ...bucket('LISTENING', 'MEDIUM', 5),
+  ...bucket('LISTENING', 'HARD', 4),
 ];
 
 describe('sampleQuestionIds', () => {
-  it('returns exactly 12 ids from a well-stocked bank', () => {
+  it('returns exactly 24 ids from a well-stocked bank', () => {
     const ids = sampleQuestionIds(fullBank());
-    expect(ids).toHaveLength(12);
-    expect(new Set(ids).size).toBe(12); // no duplicates
+    expect(ids).toHaveLength(24);
+    expect(new Set(ids).size).toBe(24); // no duplicates
   });
 
   it('returns ids in the fixed product order: Grammar -> Vocabulary -> Listening, Easy -> Hard within each block', () => {
@@ -42,28 +42,30 @@ describe('sampleQuestionIds', () => {
     const difficulties = ids.map((id) => byId.get(id)!.difficulty);
 
     expect(sections).toEqual([
-      'GRAMMAR', 'GRAMMAR', 'GRAMMAR', 'GRAMMAR',
-      'VOCABULARY', 'VOCABULARY', 'VOCABULARY', 'VOCABULARY',
-      'LISTENING', 'LISTENING', 'LISTENING', 'LISTENING',
+      'GRAMMAR', 'GRAMMAR', 'GRAMMAR', 'GRAMMAR', 'GRAMMAR', 'GRAMMAR', 'GRAMMAR', 'GRAMMAR',
+      'VOCABULARY', 'VOCABULARY', 'VOCABULARY', 'VOCABULARY', 'VOCABULARY', 'VOCABULARY', 'VOCABULARY', 'VOCABULARY',
+      'LISTENING', 'LISTENING', 'LISTENING', 'LISTENING', 'LISTENING', 'LISTENING', 'LISTENING', 'LISTENING',
     ]);
-    // 2 EASY / 1 MEDIUM / 1 HARD within each section's block.
-    expect(difficulties.slice(0, 4)).toEqual(['EASY', 'EASY', 'MEDIUM', 'HARD']);
+    // 3 EASY / 3 MEDIUM / 2 HARD within each section's block.
+    expect(difficulties.slice(0, 8)).toEqual([
+      'EASY', 'EASY', 'EASY', 'MEDIUM', 'MEDIUM', 'MEDIUM', 'HARD', 'HARD',
+    ]);
   });
 
   it('works with a bank at EXACTLY the minimum required count (no slack)', () => {
     const minimal = [
-      ...bucket('GRAMMAR', 'EASY', 2),
-      ...bucket('GRAMMAR', 'MEDIUM', 1),
-      ...bucket('GRAMMAR', 'HARD', 1),
-      ...bucket('VOCABULARY', 'EASY', 2),
-      ...bucket('VOCABULARY', 'MEDIUM', 1),
-      ...bucket('VOCABULARY', 'HARD', 1),
-      ...bucket('LISTENING', 'EASY', 2),
-      ...bucket('LISTENING', 'MEDIUM', 1),
-      ...bucket('LISTENING', 'HARD', 1),
+      ...bucket('GRAMMAR', 'EASY', 3),
+      ...bucket('GRAMMAR', 'MEDIUM', 3),
+      ...bucket('GRAMMAR', 'HARD', 2),
+      ...bucket('VOCABULARY', 'EASY', 3),
+      ...bucket('VOCABULARY', 'MEDIUM', 3),
+      ...bucket('VOCABULARY', 'HARD', 2),
+      ...bucket('LISTENING', 'EASY', 3),
+      ...bucket('LISTENING', 'MEDIUM', 3),
+      ...bucket('LISTENING', 'HARD', 2),
     ];
     const ids = sampleQuestionIds(minimal);
-    expect(ids).toHaveLength(12);
+    expect(ids).toHaveLength(24);
     expect(new Set(ids)).toEqual(new Set(minimal.map((q) => q.id)));
   });
 
@@ -81,7 +83,7 @@ describe('sampleQuestionIds', () => {
       expect(err.section).toBe('LISTENING');
       expect(err.difficulty).toBe('HARD');
       expect(err.available).toBe(0);
-      expect(err.required).toBe(1);
+      expect(err.required).toBe(2);
     }
   });
 });

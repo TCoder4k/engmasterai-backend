@@ -1,6 +1,6 @@
 import { CefrLevel, CourseType, QuestionType } from '@prisma/client';
 import { gradeQuestion } from '../lesson/quiz/grade-question';
-import { PLACEMENT_SECTIONS, QUESTIONS_PER_SECTION } from './placement.constants';
+import { PLACEMENT_SECTIONS } from './placement.constants';
 
 // Pure scoring — no I/O, mirroring grade-question.ts's own discipline. The
 // service layer is the only caller; it hands in whatever PlacementQuestion/
@@ -45,10 +45,19 @@ export const estimateLevel = (overallScore: number): CefrLevel => {
 
 // Iterates the FROZEN questionIds list (the attempt's own order), never the
 // answers list — a questionId with no matching PlacementAnswer row (never
-// answered) or no matching PlacementQuestion row (deleted after the attempt
-// started) both fall through to "not counted correct", which is exactly the
+// answered) falls through to "not counted correct", which is exactly the
 // "absence = incorrect" contract the product spec asks for. No special
 // casing needed beyond that fallthrough.
+//
+// The per-section DIVISOR is derived from this attempt's OWN frozen
+// questionIds composition (countBySection below), never from the currently-
+// imported QUESTIONS_PER_SECTION constant. That constant can change between
+// deploys (see placement.constants.ts's own header) — an attempt sampled
+// under an OLDER shape (e.g. 4 questions/section) that finalizes AFTER a
+// deploy bumps the constant (e.g. to 8) must still be scored against the 4
+// it actually had, not the 8 the new constant would imply. Using a snapshot
+// of this attempt's real composition makes the score correct regardless of
+// when it finalizes relative to any future constant change.
 export const scorePlacementAttempt = (
   questionIds: string[],
   questions: ScoredQuestionSnapshot[],
@@ -64,10 +73,16 @@ export const scorePlacementAttempt = (
     VOCABULARY: 0,
     LISTENING: 0,
   };
+  const countBySection: Record<CourseType, number> = {
+    GRAMMAR: 0,
+    VOCABULARY: 0,
+    LISTENING: 0,
+  };
 
   for (const questionId of questionIds) {
     const question = questionById.get(questionId);
     if (!question) continue;
+    countBySection[question.section] += 1;
     if (!submittedByQuestionId.has(questionId)) continue;
     const submitted = submittedByQuestionId.get(questionId);
     const isCorrect = gradeQuestion(
@@ -78,7 +93,9 @@ export const scorePlacementAttempt = (
   }
 
   const sectionScore = (section: CourseType) =>
-    Math.round((correctBySection[section] / QUESTIONS_PER_SECTION) * 100);
+    countBySection[section] > 0
+      ? Math.round((correctBySection[section] / countBySection[section]) * 100)
+      : 0;
 
   const grammarScore = sectionScore('GRAMMAR');
   const vocabularyScore = sectionScore('VOCABULARY');

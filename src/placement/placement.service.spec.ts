@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { PlacementService } from './placement.service';
 import { RoadmapAnalysisError } from './roadmap/roadmap-analysis.provider';
+import { RoadmapPlanningError } from './roadmap/roadmap-planner.provider';
 
 // Against a mocked Prisma, same technique as
 // placement-question.service.spec.ts / dashboard-analytics.service.spec.ts:
@@ -27,18 +28,9 @@ const buildHarness = (
     userId: 'user-1',
     goal: 'FOUNDATION',
     questionIds: [
-      'g1',
-      'g2',
-      'g3',
-      'g4',
-      'v1',
-      'v2',
-      'v3',
-      'v4',
-      'l1',
-      'l2',
-      'l3',
-      'l4',
+      'g1', 'g2', 'g3', 'g4', 'g5', 'g6', 'g7', 'g8',
+      'v1', 'v2', 'v3', 'v4', 'v5', 'v6', 'v7', 'v8',
+      'l1', 'l2', 'l3', 'l4', 'l5', 'l6', 'l7', 'l8',
     ],
     startedAt: new Date(NOW.getTime() - 60_000),
     expiresAt: new Date(NOW.getTime() + 4 * 60_000), // 4 min remaining by default
@@ -59,23 +51,35 @@ const buildHarness = (
     ...userOverrides,
   };
 
-  // One row per bucket the fixed 12-question shape needs (2 EASY / 1 MEDIUM
-  // / 1 HARD per section) — matches DIFFICULTY_REQUIREMENTS exactly, with no
+  // One row per bucket the fixed 24-question shape needs (3 EASY / 3 MEDIUM
+  // / 2 HARD per section) — matches DIFFICULTY_REQUIREMENTS exactly, with no
   // slack, so sampleQuestionIds succeeds against this bank. Same ids as
   // attempt.questionIds above by construction.
   const questionDefs = [
     { id: 'g1', section: 'GRAMMAR', difficulty: 'EASY' },
     { id: 'g2', section: 'GRAMMAR', difficulty: 'EASY' },
-    { id: 'g3', section: 'GRAMMAR', difficulty: 'MEDIUM' },
-    { id: 'g4', section: 'GRAMMAR', difficulty: 'HARD' },
+    { id: 'g3', section: 'GRAMMAR', difficulty: 'EASY' },
+    { id: 'g4', section: 'GRAMMAR', difficulty: 'MEDIUM' },
+    { id: 'g5', section: 'GRAMMAR', difficulty: 'MEDIUM' },
+    { id: 'g6', section: 'GRAMMAR', difficulty: 'MEDIUM' },
+    { id: 'g7', section: 'GRAMMAR', difficulty: 'HARD' },
+    { id: 'g8', section: 'GRAMMAR', difficulty: 'HARD' },
     { id: 'v1', section: 'VOCABULARY', difficulty: 'EASY' },
     { id: 'v2', section: 'VOCABULARY', difficulty: 'EASY' },
-    { id: 'v3', section: 'VOCABULARY', difficulty: 'MEDIUM' },
-    { id: 'v4', section: 'VOCABULARY', difficulty: 'HARD' },
+    { id: 'v3', section: 'VOCABULARY', difficulty: 'EASY' },
+    { id: 'v4', section: 'VOCABULARY', difficulty: 'MEDIUM' },
+    { id: 'v5', section: 'VOCABULARY', difficulty: 'MEDIUM' },
+    { id: 'v6', section: 'VOCABULARY', difficulty: 'MEDIUM' },
+    { id: 'v7', section: 'VOCABULARY', difficulty: 'HARD' },
+    { id: 'v8', section: 'VOCABULARY', difficulty: 'HARD' },
     { id: 'l1', section: 'LISTENING', difficulty: 'EASY' },
     { id: 'l2', section: 'LISTENING', difficulty: 'EASY' },
-    { id: 'l3', section: 'LISTENING', difficulty: 'MEDIUM' },
-    { id: 'l4', section: 'LISTENING', difficulty: 'HARD' },
+    { id: 'l3', section: 'LISTENING', difficulty: 'EASY' },
+    { id: 'l4', section: 'LISTENING', difficulty: 'MEDIUM' },
+    { id: 'l5', section: 'LISTENING', difficulty: 'MEDIUM' },
+    { id: 'l6', section: 'LISTENING', difficulty: 'MEDIUM' },
+    { id: 'l7', section: 'LISTENING', difficulty: 'HARD' },
+    { id: 'l8', section: 'LISTENING', difficulty: 'HARD' },
   ];
   const questionRows = questionDefs.map((d) => ({
     ...d,
@@ -138,10 +142,19 @@ const buildHarness = (
   const roadmapUpdate = jest.fn((args: { data: Record<string, unknown> }) =>
     Promise.resolve(args.data as never),
   );
+  // Phase 4 — requestRoadmapPlan's conditional write. Defaults to "the
+  // condition matched" (count: 1); tests exercising the concurrency guard
+  // override this to 0 to simulate a retake racing an in-flight AI call.
+  const roadmapUpdateMany = jest.fn(() => Promise.resolve({ count: 1 } as never));
   const courseFindMany = jest.fn(() => Promise.resolve([] as never));
+  // Multi-pillar: loadAvailableResources/joinLiveResources query all 3
+  // tables in parallel. Empty by default, same as courseFindMany, so a test
+  // that only cares about the GRAMMAR pillar doesn't need to mock these.
+  const vocabLibraryFindMany = jest.fn(() => Promise.resolve([] as never));
+  const listeningCategoryFindMany = jest.fn(() => Promise.resolve([] as never));
   // Backs getEstimatedMinutesByCourseId (shared/estimated-minutes.ts), called
-  // by joinLiveCourses. Empty by default -> totalEstimatedMinutes falls back
-  // to 0 for every course, same as CourseService's own `?? 0` convention.
+  // by joinLiveResources. Empty by default -> totalEstimatedMinutes falls
+  // back to 0 for every course, same as CourseService's own `?? 0` convention.
   const lessonGroupBy = jest.fn(() => Promise.resolve([] as never));
 
   // Phase 6 — a fake RoadmapAnalysisProvider, the same DI-token seam
@@ -153,6 +166,22 @@ const buildHarness = (
   const roadmapAnalysis = {
     model: 'fake-roadmap-model',
     generate: roadmapAnalysisGenerate,
+  };
+
+  // Phase 4 — same seam as roadmapAnalysis above, for the AI PLANNING
+  // provider. Defaults to an empty plan (no phases), which
+  // validateRoadmapPlan rejects -> requestRoadmapPlan falls back to the
+  // deterministic roadmap. Individual tests override this to exercise the
+  // success/rejection/failure paths.
+  const roadmapPlannerPlan = jest.fn(() =>
+    Promise.resolve({
+      phases: [] as { resourceType: string; resourceId: string; reason: string }[],
+      overallReason: '',
+    }),
+  );
+  const roadmapPlanner = {
+    model: 'fake-planner-model',
+    plan: roadmapPlannerPlan,
   };
 
   const prisma = {
@@ -172,8 +201,11 @@ const buildHarness = (
       upsert: roadmapUpsert,
       findUnique: roadmapFindUnique,
       update: roadmapUpdate,
+      updateMany: roadmapUpdateMany,
     },
     course: { findMany: courseFindMany },
+    vocabLibrary: { findMany: vocabLibraryFindMany },
+    listeningCategory: { findMany: listeningCategoryFindMany },
     lesson: { groupBy: lessonGroupBy },
     $transaction: jest.fn((ops: Promise<unknown>[]) => Promise.all(ops)),
   };
@@ -181,6 +213,7 @@ const buildHarness = (
   const service = new PlacementService(
     prisma as never,
     roadmapAnalysis as never,
+    roadmapPlanner as never,
   );
   return {
     service,
@@ -199,9 +232,13 @@ const buildHarness = (
     roadmapUpsert,
     roadmapFindUnique,
     roadmapUpdate,
+    roadmapUpdateMany,
     courseFindMany,
+    vocabLibraryFindMany,
+    listeningCategoryFindMany,
     lessonGroupBy,
     roadmapAnalysisGenerate,
+    roadmapPlannerPlan,
   };
 };
 
@@ -367,9 +404,10 @@ describe('PlacementService.submit', () => {
 
   // Phase 7 — a retake regenerates the Roadmap row (the `update` branch of
   // the upsert, since the user already has one from before). Any AI summary
-  // cached against the OLD items/estimatedLevel must not survive: it would
-  // sit on the dashboard describing a plan that is no longer the plan.
-  it('a retake clears any stale cached aiSummary on the regenerated roadmap', async () => {
+  // OR AI-planned selection cached against the OLD items/estimatedLevel must
+  // not survive: it would sit on the dashboard describing a plan that is no
+  // longer the plan.
+  it('a retake clears any stale cached aiSummary and aiPlanning fields on the regenerated roadmap', async () => {
     const { service, roadmapUpsert } = buildHarness();
     await service.submit('user-1', 'attempt-1');
     expect(roadmapUpsert).toHaveBeenCalledWith(
@@ -378,7 +416,19 @@ describe('PlacementService.submit', () => {
           aiSummary: null,
           aiSummaryAt: null,
           aiSummaryModel: null,
+          aiPlanningModel: null,
+          aiPlanningUsedAt: null,
         }),
+      }),
+    );
+  });
+
+  it("persists levelSource: 'TEST_GRADED' on the graded path", async () => {
+    const { service, roadmapUpsert } = buildHarness();
+    await service.submit('user-1', 'attempt-1');
+    expect(roadmapUpsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        create: expect.objectContaining({ levelSource: 'TEST_GRADED' }),
       }),
     );
   });
@@ -418,7 +468,9 @@ describe('PlacementService.getAttemptReview', () => {
     // Ordered by the attempt's own questionIds — the order the student
     // actually saw them in — never DB/insertion order.
     expect(review.items.map((i) => i.questionId)).toEqual([
-      'g1', 'g2', 'g3', 'g4', 'v1', 'v2', 'v3', 'v4', 'l1', 'l2', 'l3', 'l4',
+      'g1', 'g2', 'g3', 'g4', 'g5', 'g6', 'g7', 'g8',
+      'v1', 'v2', 'v3', 'v4', 'v5', 'v6', 'v7', 'v8',
+      'l1', 'l2', 'l3', 'l4', 'l5', 'l6', 'l7', 'l8',
     ]);
 
     const g1 = review.items.find((i) => i.questionId === 'g1')!;
@@ -450,8 +502,9 @@ describe('PlacementService.getAttemptReview', () => {
 
 describe('PlacementService.startBeginner', () => {
   // Phase 7 — the same staleness fix as submit's, on the OTHER code path
-  // that can regenerate an existing Roadmap (the beginner-skip retake).
-  it('regenerating via a retake clears any stale cached aiSummary', async () => {
+  // that can regenerate an existing Roadmap (the beginner-skip retake). Also
+  // covers the new AI-planning cache fields, added alongside aiSummary*.
+  it('regenerating via a retake clears any stale cached aiSummary and aiPlanning fields', async () => {
     const { service, roadmapUpsert } = buildHarness();
     await service.startBeginner('user-1');
     expect(roadmapUpsert).toHaveBeenCalledWith(
@@ -460,9 +513,93 @@ describe('PlacementService.startBeginner', () => {
           aiSummary: null,
           aiSummaryAt: null,
           aiSummaryModel: null,
+          aiPlanningModel: null,
+          aiPlanningUsedAt: null,
         }),
       }),
     );
+  });
+
+  // "Start from beginner" is an ASSUMED baseline, not a measured one — but
+  // it must still be a real, non-null CefrLevel (not the old null) so the
+  // roadmap algorithm can use level-aware selection instead of blindly
+  // defaulting to the oldest course. levelSource is what tells downstream
+  // consumers (buildReason, the consolidation phase, requestRoadmapAnalysis)
+  // that this isn't backed by real section scores.
+  it("persists estimatedLevel: 'A1' and levelSource: 'BEGINNER_ASSUMED' — never a blind null default", async () => {
+    const { service, roadmapUpsert } = buildHarness();
+    await service.startBeginner('user-1');
+    expect(roadmapUpsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        create: expect.objectContaining({
+          estimatedLevel: 'A1',
+          levelSource: 'BEGINNER_ASSUMED',
+        }),
+      }),
+    );
+  });
+
+  it("loads candidates through loadAvailableResources, across all 3 pillar tables, with the caller's own goal", async () => {
+    const { service, courseFindMany, vocabLibraryFindMany, listeningCategoryFindMany } =
+      buildHarness({}, { learningGoal: 'FOUNDATION' });
+    await service.startBeginner('user-1');
+    const goalFilter = {
+      OR: [
+        { suitableGoals: { isEmpty: true } },
+        { suitableGoals: { has: 'FOUNDATION' } },
+      ],
+    };
+    expect(courseFindMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ isPublished: true, type: 'GRAMMAR', ...goalFilter }),
+      }),
+    );
+    expect(vocabLibraryFindMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ isPublished: true, ...goalFilter }) }),
+    );
+    expect(listeningCategoryFindMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ isPublished: true, ...goalFilter }) }),
+    );
+  });
+
+  // THE regression guard for the reported bug: goal=FOUNDATION + "start from
+  // beginner" must land on the level-appropriate course, not whichever one
+  // happens to be oldest. Mirrors the live catalog shape at the time the bug
+  // was found — an older, higher-level (TOEIC-track) course and a newer,
+  // A1-leveled foundation course, both type GRAMMAR, both eligible for
+  // FOUNDATION (untagged or tagged either way doesn't matter here — the
+  // point is level-aware selection, not goal filtering, which is a separate
+  // concern already covered by the test above).
+  it('goal=FOUNDATION + start-from-beginner picks the level-appropriate foundation course, not the older higher-level one', async () => {
+    const { service, courseFindMany, roadmapUpsert } = buildHarness(
+      {},
+      { learningGoal: 'FOUNDATION' },
+    );
+    courseFindMany.mockResolvedValueOnce([
+      {
+        id: 'toeic-grammar',
+        level: 'B1',
+        createdAt: new Date('2026-07-17'),
+        title: 'Trọng Tâm Ngữ Pháp TOEIC Part 5 & 6',
+        description: '',
+        suitableGoals: ['TOEIC_450', 'TOEIC_650', 'TOEIC_800'],
+      },
+      {
+        id: 'foundation-grammar',
+        level: 'A1',
+        createdAt: new Date('2026-07-26'),
+        title: 'Ngữ pháp cơ bản',
+        description: '',
+        suitableGoals: ['FOUNDATION', 'GENERAL_ENGLISH', 'REGULAR_PRACTICE'],
+      },
+    ] as never);
+
+    await service.startBeginner('user-1');
+
+    const persisted = roadmapUpsert.mock.calls[0][0].create as {
+      items: Array<{ resourceId: string }>;
+    };
+    expect(persisted.items[0].resourceId).toBe('foundation-grammar');
   });
 });
 
@@ -517,8 +654,9 @@ describe('PlacementService.getRoadmap', () => {
     );
   });
 
-  it('joins items against LIVE Course rows — never the stored snapshot', async () => {
-    const { service, roadmapFindUnique, courseFindMany } = buildHarness();
+  it('joins items against LIVE Course/VocabLibrary/ListeningCategory rows — never the stored snapshot', async () => {
+    const { service, roadmapFindUnique, courseFindMany, vocabLibraryFindMany, listeningCategoryFindMany } =
+      buildHarness();
     roadmapFindUnique.mockResolvedValueOnce({
       goal: 'TOEIC_450',
       estimatedLevel: 'B1',
@@ -528,29 +666,34 @@ describe('PlacementService.getRoadmap', () => {
       items: [
         {
           phase: 1,
-          courseType: 'VOCABULARY',
-          courseId: 'c1',
-          reason: 'Weakest section (25%) — recommended first.',
+          pillar: 'VOCABULARY',
+          resourceType: 'VOCAB_LIBRARY',
+          resourceId: 'v1',
+          reason: 'Phần yếu nhất (25%) — nên học trước.',
         },
       ],
     } as never);
-    courseFindMany.mockResolvedValueOnce([
-      { id: 'c1', title: 'Live Course Title', thumbnail: 'thumb.png' },
+    vocabLibraryFindMany.mockResolvedValueOnce([
+      { id: 'v1', name: 'Live Library Title', thumbnail: 'thumb.png' },
     ] as never);
 
     const result = await service.getRoadmap('user-1');
     expect(result.items).toHaveLength(1);
-    expect(result.items[0].courseTitle).toBe('Live Course Title');
-    expect(result.items[0].courseThumbnail).toBe('thumb.png');
-    // Only published courses are ever queried for the join.
+    expect(result.items[0].resourceTitle).toBe('Live Library Title');
+    expect(result.items[0].resourceThumbnail).toBe('thumb.png');
+    // Only published resources are ever queried for the join.
     expect(courseFindMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: expect.objectContaining({ isPublished: true }),
-      }),
+      expect.objectContaining({ where: expect.objectContaining({ isPublished: true }) }),
+    );
+    expect(vocabLibraryFindMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ isPublished: true }) }),
+    );
+    expect(listeningCategoryFindMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ isPublished: true }) }),
     );
   });
 
-  it('drops an item whose course has since been unpublished or deleted — never serves it stale', async () => {
+  it('drops an item whose resource has since been unpublished or deleted — never serves it stale', async () => {
     const { service, roadmapFindUnique, courseFindMany } = buildHarness();
     roadmapFindUnique.mockResolvedValueOnce({
       goal: 'TOEIC_450',
@@ -561,14 +704,16 @@ describe('PlacementService.getRoadmap', () => {
       items: [
         {
           phase: 1,
-          courseType: 'VOCABULARY',
-          courseId: 'still-published',
+          pillar: 'GRAMMAR',
+          resourceType: 'COURSE',
+          resourceId: 'still-published',
           reason: 'x',
         },
         {
           phase: 2,
-          courseType: 'GRAMMAR',
-          courseId: 'now-unpublished',
+          pillar: 'GRAMMAR',
+          resourceType: 'COURSE',
+          resourceId: 'now-unpublished',
           reason: 'y',
         },
       ],
@@ -581,11 +726,11 @@ describe('PlacementService.getRoadmap', () => {
 
     const result = await service.getRoadmap('user-1');
     expect(result.items).toHaveLength(1);
-    expect(result.items[0].courseId).toBe('still-published');
+    expect(result.items[0].resourceId).toBe('still-published');
   });
 
-  it('includes totalEstimatedMinutes per course, from the shared estimated-minutes helper', async () => {
-    const { service, roadmapFindUnique, courseFindMany, lessonGroupBy } =
+  it('includes totalEstimatedMinutes per course, from the shared estimated-minutes helper — always 0 for VocabLibrary/ListeningCategory items', async () => {
+    const { service, roadmapFindUnique, courseFindMany, vocabLibraryFindMany, lessonGroupBy } =
       buildHarness();
     roadmapFindUnique.mockResolvedValueOnce({
       goal: 'TOEIC_450',
@@ -594,26 +739,27 @@ describe('PlacementService.getRoadmap', () => {
       generatedAt: NOW,
       aiSummary: null,
       items: [
-        { phase: 1, courseType: 'VOCABULARY', courseId: 'c1', reason: 'x' },
-        { phase: 2, courseType: 'GRAMMAR', courseId: 'c2', reason: 'y' },
+        { phase: 1, pillar: 'GRAMMAR', resourceType: 'COURSE', resourceId: 'c1', reason: 'x' },
+        { phase: 2, pillar: 'VOCABULARY', resourceType: 'VOCAB_LIBRARY', resourceId: 'v1', reason: 'y' },
       ],
     } as never);
     courseFindMany.mockResolvedValueOnce([
       { id: 'c1', title: 'Course One', thumbnail: null },
-      { id: 'c2', title: 'Course Two', thumbnail: null },
+    ] as never);
+    vocabLibraryFindMany.mockResolvedValueOnce([
+      { id: 'v1', name: 'Library One', thumbnail: null },
     ] as never);
     lessonGroupBy.mockResolvedValueOnce([
       { courseId: 'c1', _sum: { estimatedStudyMinutes: 240 } },
-      // c2 has no matching group -> falls back to 0, not undefined/null.
     ] as never);
 
     const result = await service.getRoadmap('user-1');
 
-    expect(result.items.find((i) => i.courseId === 'c1')?.totalEstimatedMinutes).toBe(240);
-    expect(result.items.find((i) => i.courseId === 'c2')?.totalEstimatedMinutes).toBe(0);
+    expect(result.items.find((i) => i.resourceId === 'c1')?.totalEstimatedMinutes).toBe(240);
+    expect(result.items.find((i) => i.resourceId === 'v1')?.totalEstimatedMinutes).toBe(0);
   });
 
-  it('surfaces aiSummary verbatim (null until Phase 6 populates it)', async () => {
+  it('surfaces aiSummary verbatim (null until AI planning populates it)', async () => {
     const { service, roadmapFindUnique, courseFindMany } = buildHarness();
     roadmapFindUnique.mockResolvedValueOnce({
       goal: 'FOUNDATION',
@@ -627,6 +773,38 @@ describe('PlacementService.getRoadmap', () => {
     const result = await service.getRoadmap('user-1');
     expect(result.aiSummary).toBeNull();
     expect(result.placementAttemptId).toBeNull();
+  });
+
+  // Legacy compat — a pre-multi-pillar Roadmap row persisted items in the
+  // OLD Course-only shape ({phase, courseType, courseId, reason}). It must
+  // keep reading correctly forever via normalizeRoadmapItem, never require a
+  // backfill migration.
+  it('reads an old-shape (courseType/courseId) persisted row correctly via the legacy-compat reader', async () => {
+    const { service, roadmapFindUnique, courseFindMany } = buildHarness();
+    roadmapFindUnique.mockResolvedValueOnce({
+      goal: 'TOEIC_450',
+      estimatedLevel: 'B1',
+      placementAttemptId: 'attempt-1',
+      generatedAt: NOW,
+      aiSummary: null,
+      items: [
+        { phase: 1, courseType: 'GRAMMAR', courseId: 'c1', reason: 'Old-shape reason.' },
+      ],
+    } as never);
+    courseFindMany.mockResolvedValueOnce([
+      { id: 'c1', title: 'Legacy Course', thumbnail: null },
+    ] as never);
+
+    const result = await service.getRoadmap('user-1');
+
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0]).toMatchObject({
+      pillar: 'GRAMMAR',
+      resourceType: 'COURSE',
+      resourceId: 'c1',
+      resourceTitle: 'Legacy Course',
+      reason: 'Old-shape reason.',
+    });
   });
 });
 
@@ -821,6 +999,344 @@ describe('PlacementService.requestRoadmapAnalysis', () => {
       service.requestRoadmapAnalysis('user-1'),
     ).rejects.toBeInstanceOf(ServiceUnavailableException);
     expect(roadmapUpdate).not.toHaveBeenCalled();
+  });
+});
+
+describe('PlacementService.requestRoadmapPlan', () => {
+  const GENERATED_AT = new Date('2026-08-11T09:00:00.000Z');
+
+  // requestRoadmapPlan reads the roadmap once itself, then calls getRoadmap
+  // internally at the end — every test needs BOTH resolved values queued,
+  // same chaining pattern getStatus's own two-read test already uses.
+  // aiPlanningUsedAt: null by default — the idempotency gate must stay OPEN
+  // for the general success/failure-path tests below; tests exercising the
+  // gate itself override it explicitly.
+  const queueRoadmapReads = (
+    roadmapFindUnique: ReturnType<typeof buildHarness>['roadmapFindUnique'],
+    planFields: Record<string, unknown>,
+    finalFields: Record<string, unknown>,
+  ) => {
+    roadmapFindUnique.mockResolvedValueOnce({
+      goal: 'FOUNDATION',
+      estimatedLevel: 'A1',
+      levelSource: 'BEGINNER_ASSUMED',
+      placementAttemptId: null,
+      generatedAt: GENERATED_AT,
+      aiPlanningUsedAt: null,
+      ...planFields,
+    } as never);
+    roadmapFindUnique.mockResolvedValueOnce({
+      goal: 'FOUNDATION',
+      estimatedLevel: 'A1',
+      levelSource: 'BEGINNER_ASSUMED',
+      placementAttemptId: null,
+      generatedAt: GENERATED_AT,
+      aiSummary: null,
+      aiPlanningModel: null,
+      items: [],
+      ...finalFields,
+    } as never);
+  };
+
+  // The RAW Course row shape loadAvailableResources selects from Prisma
+  // (no `type` field — that's now filtered at the query level and hardcoded
+  // in the mapping, not read from the row).
+  const CANDIDATE_ROW = {
+    id: 'foundation-grammar',
+    level: 'A1',
+    createdAt: new Date('2024-01-01'),
+    title: 'Ngữ pháp cơ bản',
+    description: 'Basic grammar.',
+    suitableGoals: [],
+  };
+
+  it('404s when the caller has no roadmap yet', async () => {
+    const { service } = buildHarness(); // roadmapFindUnique defaults to null
+    await expect(service.requestRoadmapPlan('user-1')).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
+  });
+
+  it('a legacy row with no levelSource is returned as-is, without calling the planner', async () => {
+    const { service, roadmapFindUnique, roadmapPlannerPlan, courseFindMany } =
+      buildHarness();
+    roadmapFindUnique.mockResolvedValueOnce({
+      goal: 'FOUNDATION',
+      estimatedLevel: null,
+      levelSource: null,
+      placementAttemptId: null,
+      generatedAt: GENERATED_AT,
+    } as never);
+    roadmapFindUnique.mockResolvedValueOnce({
+      goal: 'FOUNDATION',
+      estimatedLevel: null,
+      levelSource: null,
+      placementAttemptId: null,
+      generatedAt: GENERATED_AT,
+      aiSummary: null,
+      aiPlanningModel: null,
+      items: [],
+    } as never);
+    courseFindMany.mockResolvedValueOnce([] as never);
+
+    const result = await service.requestRoadmapPlan('user-1');
+
+    expect(roadmapPlannerPlan).not.toHaveBeenCalled();
+    expect(result.aiPlanningUsed).toBe(false);
+  });
+
+  it('on a valid AI selection, persists items AND aiSummary together, and reports aiPlanningUsed: true', async () => {
+    const {
+      service,
+      roadmapFindUnique,
+      roadmapPlannerPlan,
+      roadmapUpdateMany,
+      courseFindMany,
+    } = buildHarness();
+    queueRoadmapReads(
+      roadmapFindUnique,
+      {},
+      {
+        aiPlanningModel: 'fake-planner-model',
+        aiSummary: 'Ưu tiên ngữ pháp trước vì phù hợp trình độ hiện tại.',
+        items: [
+          { phase: 1, pillar: 'GRAMMAR', resourceType: 'COURSE', resourceId: 'foundation-grammar', reason: 'Fits.' },
+        ],
+      },
+    );
+    // Called twice: once to build the AI prompt candidates, once to
+    // re-validate against the latest catalog after Gemini responds.
+    courseFindMany.mockResolvedValue([CANDIDATE_ROW] as never);
+    roadmapPlannerPlan.mockResolvedValueOnce({
+      phases: [{ resourceType: 'COURSE', resourceId: 'foundation-grammar', reason: 'Fits your level.' }],
+      overallReason: 'Ưu tiên ngữ pháp trước vì phù hợp trình độ hiện tại.',
+    });
+
+    const result = await service.requestRoadmapPlan('user-1');
+
+    expect(roadmapUpdateMany).toHaveBeenCalledWith({
+      where: { userId: 'user-1', generatedAt: GENERATED_AT, aiPlanningUsedAt: null },
+      data: expect.objectContaining({
+        items: [
+          { phase: 1, pillar: 'GRAMMAR', resourceType: 'COURSE', resourceId: 'foundation-grammar', reason: 'Fits your level.' },
+        ],
+        aiSummary: 'Ưu tiên ngữ pháp trước vì phù hợp trình độ hiện tại.',
+        aiPlanningModel: 'fake-planner-model',
+      }),
+    });
+    expect(result.aiPlanningUsed).toBe(true);
+  });
+
+  it('falls back to the deterministic roadmap, without throwing, when the AI returns a disallowed resourceId', async () => {
+    const {
+      service,
+      roadmapFindUnique,
+      roadmapPlannerPlan,
+      roadmapUpdateMany,
+      courseFindMany,
+    } = buildHarness();
+    queueRoadmapReads(roadmapFindUnique, {}, {});
+    courseFindMany.mockResolvedValue([CANDIDATE_ROW] as never);
+    roadmapPlannerPlan.mockResolvedValueOnce({
+      phases: [{ resourceType: 'COURSE', resourceId: 'not-a-real-candidate', reason: 'x' }],
+      overallReason: 'x',
+    });
+
+    const result = await service.requestRoadmapPlan('user-1');
+
+    expect(roadmapUpdateMany).not.toHaveBeenCalled();
+    expect(result.aiPlanningUsed).toBe(false);
+  });
+
+  it('discards the whole plan when the AI mislabels a real VOCAB_LIBRARY id as COURSE (composite-key allow-list)', async () => {
+    const {
+      service,
+      roadmapFindUnique,
+      roadmapPlannerPlan,
+      roadmapUpdateMany,
+      courseFindMany,
+      vocabLibraryFindMany,
+    } = buildHarness();
+    queueRoadmapReads(roadmapFindUnique, {}, {});
+    courseFindMany.mockResolvedValue([] as never);
+    vocabLibraryFindMany.mockResolvedValue([
+      { id: 'vocab-lib-1', level: 'A1', orderIndex: 0, name: '1000 Từ Tiếng Anh Thông Dụng', description: '', suitableGoals: [] },
+    ] as never);
+    roadmapPlannerPlan.mockResolvedValueOnce({
+      phases: [{ resourceType: 'COURSE', resourceId: 'vocab-lib-1', reason: 'x' }],
+      overallReason: 'y',
+    });
+
+    const result = await service.requestRoadmapPlan('user-1');
+
+    expect(roadmapUpdateMany).not.toHaveBeenCalled();
+    expect(result.aiPlanningUsed).toBe(false);
+  });
+
+  it('falls back to the deterministic roadmap, without throwing, when the provider is unavailable', async () => {
+    const {
+      service,
+      roadmapFindUnique,
+      roadmapPlannerPlan,
+      roadmapUpdateMany,
+      courseFindMany,
+    } = buildHarness();
+    queueRoadmapReads(roadmapFindUnique, {}, {});
+    courseFindMany.mockResolvedValue([CANDIDATE_ROW] as never);
+    roadmapPlannerPlan.mockRejectedValueOnce(
+      new RoadmapPlanningError('UNAVAILABLE', 'AI roadmap planning is unavailable'),
+    );
+
+    await expect(service.requestRoadmapPlan('user-1')).resolves.toMatchObject({
+      aiPlanningUsed: false,
+    });
+    expect(roadmapUpdateMany).not.toHaveBeenCalled();
+  });
+
+  // THE concurrency invariant (review finding C1): a retake committing while
+  // Gemini is in flight must never have its fresh, correct roadmap
+  // overwritten by a plan computed against the profile that existed before
+  // the retake. Modeled here by roadmapUpdateMany reporting count: 0 — the
+  // real Prisma call reports exactly that when the WHERE clause's
+  // generatedAt no longer matches the row (see the where clause assertion).
+  it('discards a valid AI plan when the roadmap changed underneath it (retake raced the Gemini call)', async () => {
+    const {
+      service,
+      roadmapFindUnique,
+      roadmapPlannerPlan,
+      roadmapUpdateMany,
+      courseFindMany,
+    } = buildHarness();
+    queueRoadmapReads(roadmapFindUnique, {}, {
+      // The "already correct, fresher" roadmap the retake itself wrote —
+      // this is what getRoadmap's own later read returns, proving the
+      // AI-selected items from below never got persisted over it.
+      items: [{ phase: 1, pillar: 'GRAMMAR', resourceType: 'COURSE', resourceId: 'retake-winner', reason: 'From the retake.' }],
+    });
+    // Includes 'retake-winner' too, so the final getRoadmap's join actually
+    // keeps that item rather than silently dropping it as "unpublished" —
+    // which would make the assertion below vacuously true on an empty array.
+    courseFindMany.mockResolvedValue([
+      CANDIDATE_ROW,
+      {
+        id: 'retake-winner',
+        title: 'Retake Course',
+        thumbnail: null,
+        level: null,
+        createdAt: new Date('2024-01-01'),
+        description: '',
+        suitableGoals: [],
+      },
+    ] as never);
+    roadmapPlannerPlan.mockResolvedValueOnce({
+      phases: [{ resourceType: 'COURSE', resourceId: 'foundation-grammar', reason: 'Stale — computed before the retake.' }],
+      overallReason: 'Stale rationale.',
+    });
+    // Simulates Postgres reporting 0 rows matched: a retake already bumped
+    // generatedAt past the snapshot this call captured.
+    roadmapUpdateMany.mockResolvedValueOnce({ count: 0 } as never);
+
+    const result = await service.requestRoadmapPlan('user-1');
+
+    expect(roadmapUpdateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { userId: 'user-1', generatedAt: GENERATED_AT, aiPlanningUsedAt: null },
+      }),
+    );
+    // The retake's own, fresher item survives untouched...
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0].resourceId).toBe('retake-winner');
+    // ...and the stale AI plan's resourceId must NOT appear anywhere.
+    expect(result.items.every((i) => i.resourceId !== 'foundation-grammar')).toBe(true);
+    expect(result.aiPlanningUsed).toBe(false);
+  });
+
+  // Idempotency (backend-authoritative caching): a successful AI plan
+  // already exists for this exact deterministic generation — a second call
+  // (page refresh, back/forward, a React StrictMode double-invoke) must
+  // short-circuit without re-calling the (paid) provider at all.
+  it('short-circuits without calling the planner when a successful plan already exists for this generation', async () => {
+    const { service, roadmapFindUnique, roadmapPlannerPlan } = buildHarness();
+    roadmapFindUnique.mockResolvedValueOnce({
+      goal: 'FOUNDATION',
+      estimatedLevel: 'A1',
+      levelSource: 'BEGINNER_ASSUMED',
+      placementAttemptId: null,
+      generatedAt: GENERATED_AT,
+      aiPlanningUsedAt: NOW, // already planned successfully
+    } as never);
+    roadmapFindUnique.mockResolvedValueOnce({
+      goal: 'FOUNDATION',
+      estimatedLevel: 'A1',
+      levelSource: 'BEGINNER_ASSUMED',
+      placementAttemptId: null,
+      generatedAt: GENERATED_AT,
+      aiSummary: 'Already planned.',
+      aiPlanningModel: 'fake-planner-model',
+      items: [],
+    } as never);
+
+    const result = await service.requestRoadmapPlan('user-1');
+
+    expect(roadmapPlannerPlan).not.toHaveBeenCalled();
+    expect(result.aiSummary).toBe('Already planned.');
+    expect(result.aiPlanningUsed).toBe(true);
+  });
+
+  // A FAILED attempt (provider error, invalid plan) must leave the gate open
+  // — already exercised implicitly by the "disallowed resourceId" and
+  // "provider unavailable" tests above (both call the planner because
+  // aiPlanningUsedAt stays null by default in queueRoadmapReads). This test
+  // makes that explicit: two consecutive failed calls both reach the
+  // planner, neither short-circuits.
+  it('a failed attempt leaves the gate open — a subsequent call retries the planner', async () => {
+    const { service, roadmapFindUnique, roadmapPlannerPlan, courseFindMany } =
+      buildHarness();
+    queueRoadmapReads(roadmapFindUnique, {}, {});
+    queueRoadmapReads(roadmapFindUnique, {}, {});
+    courseFindMany.mockResolvedValue([CANDIDATE_ROW] as never);
+    roadmapPlannerPlan.mockRejectedValue(
+      new RoadmapPlanningError('UNAVAILABLE', 'AI roadmap planning is unavailable'),
+    );
+
+    await service.requestRoadmapPlan('user-1');
+    await service.requestRoadmapPlan('user-1');
+
+    expect(roadmapPlannerPlan).toHaveBeenCalledTimes(2);
+  });
+
+  // DB-level guard, not just the read-time short-circuit: if two calls for
+  // the SAME generation both race past the read-time check (neither has
+  // written when the other reads — a genuine concurrent double-invoke), the
+  // conditional write's `aiPlanningUsedAt: null` clause ensures only the
+  // first writer's result can persist. Modeled here via roadmapUpdateMany
+  // reporting count:1 then count:0.
+  it('a race between two calls for the same generation is guarded by the WHERE clause, not just the read-time check', async () => {
+    const { service, roadmapFindUnique, roadmapPlannerPlan, roadmapUpdateMany, courseFindMany } =
+      buildHarness();
+    queueRoadmapReads(roadmapFindUnique, {}, { aiPlanningModel: 'fake-planner-model' });
+    queueRoadmapReads(roadmapFindUnique, {}, { aiPlanningModel: 'fake-planner-model' });
+    courseFindMany.mockResolvedValue([CANDIDATE_ROW] as never);
+    roadmapPlannerPlan.mockResolvedValue({
+      phases: [{ resourceType: 'COURSE', resourceId: 'foundation-grammar', reason: 'x' }],
+      overallReason: 'y',
+    });
+    roadmapUpdateMany
+      .mockResolvedValueOnce({ count: 1 } as never) // first writer wins
+      .mockResolvedValueOnce({ count: 0 } as never); // second writer's condition no longer holds
+
+    await service.requestRoadmapPlan('user-1');
+    await service.requestRoadmapPlan('user-1');
+
+    expect(roadmapPlannerPlan).toHaveBeenCalledTimes(2); // both raced past the read-time check
+    expect(roadmapUpdateMany).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ where: expect.objectContaining({ aiPlanningUsedAt: null }) }),
+    );
+    expect(roadmapUpdateMany).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ where: expect.objectContaining({ aiPlanningUsedAt: null }) }),
+    );
   });
 });
 

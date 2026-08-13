@@ -2,10 +2,12 @@ import {
   CefrLevel,
   CourseType,
   LearningGoal,
+  LevelSource,
   QuestionDifficulty,
   QuestionType,
 } from '@prisma/client';
 import { QuestionOption } from '../lesson/quiz/grade-question';
+import { RoadmapPillar, RoadmapResourceType } from './roadmap-algorithm';
 
 // Sprint (Placement Test Phase 3) response shapes — mirrors quiz.types.ts's
 // own separation of student-safe vs. never-served fields.
@@ -85,23 +87,27 @@ export interface PlacementResultDto {
   completedAt: string;
 }
 
-// GET /placement/roadmap — Phase 4. courseTitle/courseThumbnail are joined
-// fresh from a LIVE Course row on every read (never denormalized into
+// GET /placement/roadmap — multi-pillar roadmap. resourceTitle/
+// resourceThumbnail are joined fresh from a LIVE Course/VocabLibrary/
+// ListeningCategory row on every read (never denormalized into
 // Roadmap.items — see roadmap-algorithm.ts's header note), so an item whose
-// course has since been unpublished or deleted is dropped entirely rather
+// resource has since been unpublished or deleted is dropped entirely rather
 // than shown with stale data.
 export interface RoadmapItemViewDto {
   phase: number;
-  courseType: CourseType;
-  courseId: string;
-  courseTitle: string;
-  courseThumbnail: string | null;
+  pillar: RoadmapPillar;
+  resourceType: RoadmapResourceType;
+  resourceId: string;
+  resourceTitle: string;
+  resourceThumbnail: string | null;
   reason: string;
   // Sum of estimatedStudyMinutes across the course's published lessons (see
   // shared/estimated-minutes.ts) — real, measured content-authoring data.
   // NOT a promise about how long the student will take; the frontend derives
   // an explicitly-labeled "~X tuần" ESTIMATE from this, never presents it as
-  // exact. 0 for a course with no lessons carrying a duration.
+  // exact. Always 0 for VOCAB_LIBRARY/LISTENING_CATEGORY items — no
+  // equivalent aggregate exists for those resource types yet, and this is
+  // never fabricated to look like one.
   totalEstimatedMinutes: number;
 }
 
@@ -124,12 +130,21 @@ export interface PlacementStatusDto {
 export interface RoadmapViewDto {
   goal: LearningGoal;
   estimatedLevel: CefrLevel | null;
+  // Null only for rows written before this field existed — see
+  // Roadmap.levelSource's schema comment.
+  levelSource: LevelSource | null;
   // Null on the beginner-skip path — no test was ever taken.
   placementAttemptId: string | null;
   generatedAt: string;
   // Populated by POST /placement/roadmap/analysis; null for any roadmap
   // nobody has asked to narrate yet — see Roadmap.aiSummary's schema comment.
   aiSummary: string | null;
+  // Derived from Roadmap.aiPlanningModel !== null, not a separately stored
+  // field — see PlacementService.getRoadmap. True only when POST
+  // /placement/roadmap/plan actually persisted an AI-selected `items`; false
+  // for the deterministic fallback, whether AI planning was never asked for,
+  // failed, or returned an invalid/disallowed selection.
+  aiPlanningUsed: boolean;
   items: RoadmapItemViewDto[];
 }
 

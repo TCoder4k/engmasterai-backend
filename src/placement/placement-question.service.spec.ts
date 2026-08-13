@@ -168,15 +168,15 @@ describe('PlacementQuestionService', () => {
     it('reports ready:true only once every bucket meets its required count', async () => {
       const { service, groupBy } = buildHarness();
       const full = [
-        { section: 'GRAMMAR', difficulty: 'EASY', _count: { _all: 2 } },
-        { section: 'GRAMMAR', difficulty: 'MEDIUM', _count: { _all: 1 } },
-        { section: 'GRAMMAR', difficulty: 'HARD', _count: { _all: 1 } },
-        { section: 'VOCABULARY', difficulty: 'EASY', _count: { _all: 2 } },
-        { section: 'VOCABULARY', difficulty: 'MEDIUM', _count: { _all: 1 } },
-        { section: 'VOCABULARY', difficulty: 'HARD', _count: { _all: 1 } },
-        { section: 'LISTENING', difficulty: 'EASY', _count: { _all: 2 } },
-        { section: 'LISTENING', difficulty: 'MEDIUM', _count: { _all: 1 } },
-        { section: 'LISTENING', difficulty: 'HARD', _count: { _all: 1 } },
+        { section: 'GRAMMAR', difficulty: 'EASY', _count: { _all: 3 } },
+        { section: 'GRAMMAR', difficulty: 'MEDIUM', _count: { _all: 3 } },
+        { section: 'GRAMMAR', difficulty: 'HARD', _count: { _all: 2 } },
+        { section: 'VOCABULARY', difficulty: 'EASY', _count: { _all: 3 } },
+        { section: 'VOCABULARY', difficulty: 'MEDIUM', _count: { _all: 3 } },
+        { section: 'VOCABULARY', difficulty: 'HARD', _count: { _all: 2 } },
+        { section: 'LISTENING', difficulty: 'EASY', _count: { _all: 3 } },
+        { section: 'LISTENING', difficulty: 'MEDIUM', _count: { _all: 3 } },
+        { section: 'LISTENING', difficulty: 'HARD', _count: { _all: 2 } },
       ];
       groupBy.mockResolvedValueOnce(full as never);
       const result = await service.getCoverage();
@@ -186,7 +186,7 @@ describe('PlacementQuestionService', () => {
     it('reports ready:false when exactly one bucket is one short', async () => {
       const { service, groupBy } = buildHarness();
       groupBy.mockResolvedValueOnce([
-        { section: 'GRAMMAR', difficulty: 'EASY', _count: { _all: 1 } }, // needs 2
+        { section: 'GRAMMAR', difficulty: 'EASY', _count: { _all: 2 } }, // needs 3
       ] as never);
       const result = await service.getCoverage();
       expect(result.ready).toBe(false);
@@ -194,8 +194,8 @@ describe('PlacementQuestionService', () => {
         (b) => b.section === 'GRAMMAR' && b.difficulty === 'EASY',
       );
       expect(grammarEasy?.sufficient).toBe(false);
-      expect(grammarEasy?.available).toBe(1);
-      expect(grammarEasy?.required).toBe(2);
+      expect(grammarEasy?.available).toBe(2);
+      expect(grammarEasy?.required).toBe(3);
     });
 
     it('only counts PUBLISHED questions', async () => {
