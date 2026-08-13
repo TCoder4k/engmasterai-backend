@@ -428,6 +428,17 @@ describe('Placement test flow (e2e)', () => {
       expect(submitRes.body.overallScore).toBe(13);
       expect(submitRes.body.estimatedLevel).toBe('A1');
 
+      // Authoritative counts backing the rounded 13% — a client must render
+      // these directly ("1 / 8 câu đúng"), never re-derive a count from the
+      // rounded percentage (round(13 / 100 * 8) is a lossy round-trip in
+      // general, even though it happens to recover 1 here).
+      expect(submitRes.body.grammarCorrect).toBe(1);
+      expect(submitRes.body.grammarTotal).toBe(8);
+      expect(submitRes.body.vocabularyCorrect).toBe(1);
+      expect(submitRes.body.vocabularyTotal).toBe(8);
+      expect(submitRes.body.listeningCorrect).toBe(1);
+      expect(submitRes.body.listeningTotal).toBe(8);
+
       const me = await request(app.getHttpServer())
         .get('/users/me')
         .set('Authorization', `Bearer ${token}`)

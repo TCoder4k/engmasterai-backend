@@ -24,6 +24,19 @@ export interface PlacementScoringResult {
   listeningScore: number;
   overallScore: number;
   estimatedLevel: CefrLevel;
+  // Authoritative per-section counts backing the rounded percentages above —
+  // a client must never re-derive "X of Y correct" from a rounded score
+  // (e.g. round(63 / 100 * 8) happens to recover 5, but that's a coincidence
+  // of the current 8-question divisor, not a guarantee). totalCount is this
+  // attempt's own frozen composition (countBySection), the same one the
+  // score's divisor already comes from — never the imported
+  // QUESTIONS_PER_SECTION constant.
+  grammarCorrect: number;
+  grammarTotal: number;
+  vocabularyCorrect: number;
+  vocabularyTotal: number;
+  listeningCorrect: number;
+  listeningTotal: number;
 }
 
 // 0-19 A1, 20-39 A2, 40-59 B1, 60-79 B2, 80-100 C1. C2 is intentionally
@@ -111,5 +124,11 @@ export const scorePlacementAttempt = (
     listeningScore,
     overallScore,
     estimatedLevel: estimateLevel(overallScore),
+    grammarCorrect: correctBySection.GRAMMAR,
+    grammarTotal: countBySection.GRAMMAR,
+    vocabularyCorrect: correctBySection.VOCABULARY,
+    vocabularyTotal: countBySection.VOCABULARY,
+    listeningCorrect: correctBySection.LISTENING,
+    listeningTotal: countBySection.LISTENING,
   };
 };

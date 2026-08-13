@@ -386,6 +386,32 @@ describe('PlacementService.submit', () => {
     expect(placementAttemptUpdate).toHaveBeenCalledTimes(1);
   });
 
+  // Regression guard for the ResultStep bug: the DTO must carry authoritative
+  // per-section counts, not just the rounded percentage — a client re-deriving
+  // "X of Y correct" from a rounded score breaks the moment a section has more
+  // than 4 questions (see placement-scoring.ts's own comment). 5/8 answered
+  // correctly in GRAMMAR must come back as grammarScore: 63 (not a 25%-multiple)
+  // AND grammarCorrect: 5, grammarTotal: 8 — both derived from the SAME
+  // 8-question fixture the harness already seeds (g1-g8).
+  it('returns authoritative per-section correct/total counts alongside the rounded score (5/8 -> 63%)', async () => {
+    const { service, placementAnswerFindMany } = buildHarness();
+    const fiveCorrectGrammarAnswers = ['g1', 'g2', 'g3', 'g4', 'g5'].map((questionId) => ({
+      questionId,
+      submitted: { value: true },
+    }));
+    // finalizeNow and toResultDto each re-fetch answers independently (see
+    // toResultDto's own comment) — both calls must see the same data.
+    placementAnswerFindMany.mockResolvedValue(fiveCorrectGrammarAnswers as never);
+
+    const result = await service.submit('user-1', 'attempt-1');
+
+    expect(result.grammarScore).toBe(63); // 5/8 = 62.5%, rounds to 63
+    expect(result.grammarCorrect).toBe(5);
+    expect(result.grammarTotal).toBe(8);
+    expect(result.vocabularyCorrect).toBe(0);
+    expect(result.vocabularyTotal).toBe(8);
+  });
+
   it('replays the stored result for an already-completed attempt — never finalizes twice', async () => {
     const { service, placementAttemptUpdate, roadmapUpsert } = buildHarness({
       completedAt: new Date('2026-08-11T09:59:00.000Z'),

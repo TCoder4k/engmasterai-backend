@@ -61,6 +61,12 @@ describe('scorePlacementAttempt', () => {
       listeningScore: 100,
       overallScore: 100,
       estimatedLevel: 'C1',
+      grammarCorrect: 4,
+      grammarTotal: 4,
+      vocabularyCorrect: 4,
+      vocabularyTotal: 4,
+      listeningCorrect: 4,
+      listeningTotal: 4,
     });
   });
 
@@ -120,5 +126,47 @@ describe('scorePlacementAttempt', () => {
     );
     expect(result.grammarScore).toBe(0);
     expect(Number.isNaN(result.grammarScore)).toBe(false);
+  });
+});
+
+// Regression guard for the ResultStep bug: the frontend used to infer
+// "X of Y correct" from the rounded percentage under a stale 4-question/
+// section, 25%-increment assumption (correct = round(score / 25)). That
+// broke the moment sections grew to 8 questions — e.g. 63% (5/8) inferred
+// back to round(63/25)=3, not 5. The fix is authoritative counts straight
+// from scoring, never re-derived from a rounded percentage on either side.
+describe('scorePlacementAttempt — per-section correct/total counts (8 questions/section)', () => {
+  const eightGrammarQuestionIds = ['g1', 'g2', 'g3', 'g4', 'g5', 'g6', 'g7', 'g8'];
+  const eightGrammarQuestions = eightGrammarQuestionIds.map((id) =>
+    question(id, 'GRAMMAR', true),
+  );
+
+  const scoreNCorrectOfEight = (correctCount: number) => {
+    const answers = eightGrammarQuestionIds.slice(0, correctCount).map((questionId) => ({
+      questionId,
+      submitted: { value: true },
+    }));
+    return scorePlacementAttempt(eightGrammarQuestionIds, eightGrammarQuestions, answers);
+  };
+
+  it('5/8 correct scores 63% (not 25%-increment-derived) and reports the real 5/8 count', () => {
+    const result = scoreNCorrectOfEight(5);
+    expect(result.grammarScore).toBe(63); // 5/8 = 62.5%, rounds to 63
+    expect(result.grammarCorrect).toBe(5);
+    expect(result.grammarTotal).toBe(8);
+  });
+
+  it('7/8 correct scores 88% and reports the real 7/8 count', () => {
+    const result = scoreNCorrectOfEight(7);
+    expect(result.grammarScore).toBe(88); // 7/8 = 87.5%, rounds to 88
+    expect(result.grammarCorrect).toBe(7);
+    expect(result.grammarTotal).toBe(8);
+  });
+
+  it('8/8 correct scores 100% and reports the real 8/8 count', () => {
+    const result = scoreNCorrectOfEight(8);
+    expect(result.grammarScore).toBe(100);
+    expect(result.grammarCorrect).toBe(8);
+    expect(result.grammarTotal).toBe(8);
   });
 });

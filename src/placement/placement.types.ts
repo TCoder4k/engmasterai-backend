@@ -83,6 +83,16 @@ export interface PlacementResultDto {
   listeningScore: number;
   overallScore: number;
   estimatedLevel: CefrLevel;
+  // Authoritative per-section counts — the client renders these directly
+  // ("5 / 8 câu đúng") rather than inferring a count from the rounded
+  // percentage above, which is lossy once a section has more than 4
+  // questions (see placement-scoring.ts's own comment on why).
+  grammarCorrect: number;
+  grammarTotal: number;
+  vocabularyCorrect: number;
+  vocabularyTotal: number;
+  listeningCorrect: number;
+  listeningTotal: number;
   durationSeconds: number | null;
   completedAt: string;
 }
