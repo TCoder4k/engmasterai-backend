@@ -9,6 +9,7 @@ import {
 import {
   CefrLevel,
   LearningGoal,
+  LevelSource,
   PlacementAttempt,
   Prisma,
 } from '@prisma/client';
@@ -24,9 +25,11 @@ import {
 import { scorePlacementAttempt } from './placement-scoring';
 import {
   generateRoadmap,
-  RoadmapCourseCandidate,
+  RoadmapResourceCandidate,
   RoadmapItem,
 } from './roadmap-algorithm';
+import { normalizeRoadmapItem } from './roadmap-item-compat';
+import { validateRoadmapPlan } from './validate-roadmap-plan';
 import {
   ROADMAP_ANALYSIS_PROVIDER,
   RoadmapAnalysisError,
@@ -36,6 +39,14 @@ import type {
   RoadmapAnalysisProvider,
   RoadmapAnalysisSectionScores,
 } from './roadmap/roadmap-analysis.provider';
+import {
+  ROADMAP_PLANNER_PROVIDER,
+  RoadmapPlanningError,
+} from './roadmap/roadmap-planner.provider';
+import type {
+  RoadmapPlannerProvider,
+  RoadmapPlanningResult,
+} from './roadmap/roadmap-planner.provider';
 import {
   PlacementAttemptStateDto,
   PlacementQuestionPublicDto,
@@ -69,6 +80,8 @@ export class PlacementService {
     private readonly prisma: PrismaService,
     @Inject(ROADMAP_ANALYSIS_PROVIDER)
     private readonly roadmapAnalysis: RoadmapAnalysisProvider,
+    @Inject(ROADMAP_PLANNER_PROVIDER)
+    private readonly roadmapPlanner: RoadmapPlannerProvider,
   ) {}
 
   // Always allowed, never blocked — see the plan's M2 resolution. Does not
@@ -143,16 +156,29 @@ export class PlacementService {
       );
     }
 
-    const availableCourses = await this.loadAvailableCourses();
+    const availableResources = await this.loadAvailableResources(
+      user.learningGoal,
+    );
+    // The student chose to skip the test — not a declared A1, an ASSUMED
+    // one. 'A1' is a real, non-null CefrLevel so pickResource() can use its
+    // level-aware branch instead of blindly picking the earliest-ordered
+    // resource in each pillar; levelSource is what tells buildReason()/the
+    // consolidation phase this isn't backed by real section scores.
     const items = generateRoadmap(
-      { goal: user.learningGoal, estimatedLevel: null, sectionScores: {} },
-      availableCourses,
+      {
+        goal: user.learningGoal,
+        estimatedLevel: 'A1',
+        levelSource: 'BEGINNER_ASSUMED',
+        sectionScores: null,
+      },
+      availableResources,
     );
 
     await this.persistRoadmapAndMaybeOnboard(userId, {
       goal: user.learningGoal,
       placementAttemptId: null,
-      estimatedLevel: null,
+      estimatedLevel: 'A1',
+      levelSource: 'BEGINNER_ASSUMED',
       items,
       alreadyOnboarded: user.onboardedAt !== null,
     });
@@ -383,35 +409,41 @@ export class PlacementService {
     return { attemptId: attempt.id, items };
   }
 
-  // Joins Roadmap.items against LIVE Course rows on every read — never a
-  // stored snapshot (see roadmap-algorithm.ts's header note and Roadmap's
-  // own schema comment on `items`). An item whose course has since been
-  // unpublished or deleted is dropped, mirroring filterAccessibleCourses'
-  // discipline (lesson-visibility.ts): stale content is omitted, not
-  // surfaced with a broken title.
+  // Joins Roadmap.items against LIVE Course/VocabLibrary/ListeningCategory
+  // rows on every read — never a stored snapshot (see roadmap-algorithm.ts's
+  // header note and Roadmap's own schema comment on `items`). An item whose
+  // resource has since been unpublished or deleted is dropped, mirroring
+  // filterAccessibleCourses' discipline (lesson-visibility.ts): stale
+  // content is omitted, not surfaced with a broken title. `items` is run
+  // through normalizeRoadmapItem first so a pre-multi-pillar row (Course-
+  // only shape) keeps reading correctly forever — see roadmap-item-compat.ts.
   async getRoadmap(userId: string): Promise<RoadmapViewDto> {
     const roadmap = await this.prisma.roadmap.findUnique({ where: { userId } });
     if (!roadmap) {
       throw new NotFoundException('No roadmap has been generated yet.');
     }
 
-    const items = roadmap.items as unknown as RoadmapItem[];
-    const joined = await this.joinLiveCourses(items);
+    const items = (roadmap.items as unknown[]).map(normalizeRoadmapItem);
+    const joined = await this.joinLiveResources(items);
 
     return {
       goal: roadmap.goal,
       estimatedLevel: roadmap.estimatedLevel,
+      levelSource: roadmap.levelSource,
       placementAttemptId: roadmap.placementAttemptId,
       generatedAt: roadmap.generatedAt.toISOString(),
       aiSummary: roadmap.aiSummary,
-      items: joined.map(({ item, course }) => ({
+      // Derived, not stored — see RoadmapViewDto's own comment.
+      aiPlanningUsed: roadmap.aiPlanningModel !== null,
+      items: joined.map(({ item, resource }) => ({
         phase: item.phase,
-        courseType: item.courseType,
-        courseId: item.courseId,
-        courseTitle: course.title,
-        courseThumbnail: course.thumbnail,
+        pillar: item.pillar,
+        resourceType: item.resourceType,
+        resourceId: item.resourceId,
+        resourceTitle: resource.title,
+        resourceThumbnail: resource.thumbnail,
         reason: item.reason,
-        totalEstimatedMinutes: course.totalEstimatedMinutes,
+        totalEstimatedMinutes: resource.totalEstimatedMinutes,
       })),
     };
   }
@@ -457,7 +489,7 @@ export class PlacementService {
     }
 
     const [phases, sectionScores] = await Promise.all([
-      this.describePhases(roadmap.items as unknown as RoadmapItem[]),
+      this.describePhases((roadmap.items as unknown[]).map(normalizeRoadmapItem)),
       this.loadSectionScores(roadmap.placementAttemptId),
     ]);
 
@@ -476,6 +508,137 @@ export class PlacementService {
     });
 
     return { summary, generatedAt: now.toISOString(), model, cached: false };
+  }
+
+  /**
+   * POST /placement/roadmap/plan — hybrid AI-assisted, multi-pillar resource
+   * SELECTION. Deterministic candidate filtering (loadAvailableResources,
+   * the SAME function generateRoadmap itself uses — see its own header) ->
+   * AI planner picks/orders from that closed set across all three pillars
+   * -> strict server-side validation (allow-list + pillar-coverage) ->
+   * conditional persist of `items` AND `aiSummary` together (one Gemini
+   * call, one write — see roadmap-planner.provider.ts's header on why this
+   * plan does not chain into the separate, now-deprecated
+   * `/placement/roadmap/analysis`). On ANY failure along that chain
+   * (provider unavailable, invalid output, or the roadmap having changed
+   * underneath this call — see the concurrency comment below) this method
+   * falls back to whatever roadmap is currently persisted rather than
+   * throwing: a request to `/plan` always resolves with SOME valid roadmap,
+   * `aiPlanningUsed` telling the caller which kind it got.
+   */
+  async requestRoadmapPlan(userId: string): Promise<RoadmapViewDto> {
+    const roadmap = await this.prisma.roadmap.findUnique({
+      where: { userId },
+      select: {
+        goal: true,
+        estimatedLevel: true,
+        levelSource: true,
+        placementAttemptId: true,
+        generatedAt: true,
+        aiPlanningUsedAt: true,
+      },
+    });
+    if (!roadmap) {
+      throw new NotFoundException('No roadmap has been generated yet.');
+    }
+
+    // Legacy row from before levelSource existed — there is nothing to build
+    // an AI planning request from (estimatedLevel/levelSource together are
+    // what every post-migration row always has). Rather than guess, just
+    // return the roadmap as-is; it already went through the deterministic
+    // algorithm at its own generation time.
+    if (!roadmap.estimatedLevel || !roadmap.levelSource) {
+      return this.getRoadmap(userId);
+    }
+
+    // Idempotency, backend-authoritative: a successful AI plan already
+    // exists for THIS deterministic generation. The frontend fires this
+    // call on mount with no de-duplication of its own (a refresh, a
+    // back/forward navigation onto the Result screen, or a React
+    // StrictMode double-invoke would each re-trigger it) — so the backend,
+    // not the caller's lifecycle, must be the single source of truth for
+    // "has this generation already been AI-planned". aiPlanningUsedAt is
+    // cleared to null only by a retake's fresh generateRoadmap() (see
+    // finalizeNow/persistRoadmapAndMaybeOnboard), so this doubles cleanly as
+    // both the "was AI used" display flag (already shipped) and this
+    // per-generation idempotency gate. A FAILED attempt (provider error,
+    // invalid plan) leaves this at null, so the next call is free to retry.
+    if (roadmap.aiPlanningUsedAt !== null) {
+      return this.getRoadmap(userId);
+    }
+
+    // Captured BEFORE the (potentially ~20s) Gemini call — this is the
+    // optimistic-concurrency snapshot the final write below is conditioned
+    // on. generatedAt is bumped ONLY by writes that change items/
+    // estimatedLevel (finalizeNow, persistRoadmapAndMaybeOnboard) — never by
+    // this method's own update or requestRoadmapAnalysis's — so a mismatch
+    // here means specifically "a retake happened while this call was in
+    // flight", never a false positive from an unrelated concurrent write.
+    const snapshot = roadmap.generatedAt;
+
+    const [candidates, sectionScores] = await Promise.all([
+      this.loadAvailableResources(roadmap.goal),
+      this.loadSectionScores(roadmap.placementAttemptId),
+    ]);
+
+    let planResult: RoadmapPlanningResult | null;
+    try {
+      planResult = await this.roadmapPlanner.plan({
+        goal: roadmap.goal,
+        estimatedLevel: roadmap.estimatedLevel,
+        levelSource: roadmap.levelSource,
+        sectionScores,
+        candidates,
+      });
+    } catch (error) {
+      if (!(error instanceof RoadmapPlanningError)) throw error;
+      // Unavailable/timeout/not-configured — no exception surfaces to the
+      // caller; the deterministic roadmap already persisted is the fallback.
+      planResult = null;
+    }
+
+    if (planResult) {
+      // Re-validate against the LATEST candidate set, not the one the
+      // prompt was built from moments ago — a resource could have been
+      // unpublished or retagged while Gemini was in flight.
+      const freshCandidates = await this.loadAvailableResources(roadmap.goal);
+      const validated = validateRoadmapPlan(planResult, freshCandidates);
+
+      if (validated) {
+        // CONDITIONAL WRITE — the concurrency invariant, extended to also
+        // guard the idempotency invariant above. `generatedAt: snapshot`
+        // catches a retake racing this call (the newer, already-correct
+        // roadmap must never be overwritten by a plan computed against a
+        // profile that no longer exists). `aiPlanningUsedAt: null` catches a
+        // race between two /plan calls for the SAME generation (e.g. a
+        // StrictMode double-invoke): if both pass the read-time idempotency
+        // check above and both call Gemini, only the first writer's `count`
+        // comes back 1 — the second finds aiPlanningUsedAt no longer null
+        // and its own (redundant but harmless) result is silently discarded.
+        await this.prisma.roadmap.updateMany({
+          where: { userId, generatedAt: snapshot, aiPlanningUsedAt: null },
+          data: {
+            items: validated.items as unknown as Prisma.InputJsonValue,
+            // Written together with `items` so the dormant, deprecated
+            // requestRoadmapAnalysis() cache-check (which only looks at
+            // aiSummary/aiSummaryAt) correctly treats this as already
+            // populated if it's ever called on this roadmap, and so its
+            // attribution is accurate rather than silently falling back to
+            // the analysis provider's own model name.
+            aiSummary: validated.overallReason,
+            aiSummaryAt: new Date(),
+            aiSummaryModel: this.roadmapPlanner.model,
+            aiPlanningModel: this.roadmapPlanner.model,
+            aiPlanningUsedAt: new Date(),
+          },
+        });
+      }
+    }
+
+    // Always re-read fresh: this is what makes every branch above (success,
+    // validation failure, provider failure, discarded-stale-write) converge
+    // on the same "return whatever is currently, correctly persisted" path.
+    return this.getRoadmap(userId);
   }
 
   // --- internal ---------------------------------------------------------
@@ -524,18 +687,19 @@ export class PlacementService {
       throw new BadRequestException('This attempt has no associated goal.');
     }
 
-    const availableCourses = await this.loadAvailableCourses();
+    const availableResources = await this.loadAvailableResources(goal);
     const items = generateRoadmap(
       {
         goal,
         estimatedLevel: scoring.estimatedLevel,
+        levelSource: 'TEST_GRADED',
         sectionScores: {
           GRAMMAR: scoring.grammarScore,
           VOCABULARY: scoring.vocabularyScore,
           LISTENING: scoring.listeningScore,
         },
       },
-      availableCourses,
+      availableResources,
     );
 
     const now = new Date();
@@ -564,12 +728,14 @@ export class PlacementService {
           goal,
           placementAttemptId: attempt.id,
           estimatedLevel: scoring.estimatedLevel,
+          levelSource: 'TEST_GRADED',
           items: items as unknown as Prisma.InputJsonValue,
         },
         update: {
           goal,
           placementAttemptId: attempt.id,
           estimatedLevel: scoring.estimatedLevel,
+          levelSource: 'TEST_GRADED',
           items: items as unknown as Prisma.InputJsonValue,
           generatedAt: now,
           // Phase 7 (retake) — a regenerated roadmap invalidates any cached
@@ -581,6 +747,14 @@ export class PlacementService {
           aiSummary: null,
           aiSummaryAt: null,
           aiSummaryModel: null,
+          // Same staleness fix, extended to AI PLANNING (POST
+          // /placement/roadmap/plan): a plan chosen for the previous
+          // profile must not be described as current once that profile no
+          // longer exists. Bumping generatedAt (above) is also what lets an
+          // in-flight /plan call detect this retake happened underneath it
+          // — see requestRoadmapPlan's optimistic-concurrency write.
+          aiPlanningModel: null,
+          aiPlanningUsedAt: null,
         },
       }),
       ...(user.onboardedAt === null
@@ -602,6 +776,7 @@ export class PlacementService {
       goal: NonNullable<PlacementAttempt['goal']>;
       placementAttemptId: string | null;
       estimatedLevel: PlacementAttempt['estimatedLevel'];
+      levelSource: LevelSource;
       items: RoadmapItem[];
       alreadyOnboarded: boolean;
     },
@@ -615,18 +790,22 @@ export class PlacementService {
           goal: args.goal,
           placementAttemptId: args.placementAttemptId,
           estimatedLevel: args.estimatedLevel,
+          levelSource: args.levelSource,
           items: args.items as unknown as Prisma.InputJsonValue,
         },
         update: {
           goal: args.goal,
           placementAttemptId: args.placementAttemptId,
           estimatedLevel: args.estimatedLevel,
+          levelSource: args.levelSource,
           items: args.items as unknown as Prisma.InputJsonValue,
           generatedAt: now,
           // Same staleness fix as finalizeNow's own upsert — see its comment.
           aiSummary: null,
           aiSummaryAt: null,
           aiSummaryModel: null,
+          aiPlanningModel: null,
+          aiPlanningUsedAt: null,
         },
       }),
       ...(args.alreadyOnboarded
@@ -640,52 +819,185 @@ export class PlacementService {
     ]);
   }
 
-  private async loadAvailableCourses(): Promise<RoadmapCourseCandidate[]> {
-    return this.prisma.course.findMany({
-      where: { isPublished: true },
-      select: { id: true, type: true, level: true, createdAt: true },
-    });
+  // THE single canonical candidate loader — both the deterministic
+  // algorithm (generateRoadmap, called from startBeginner/finalizeNow
+  // below) and the AI planner's prompt builder (requestRoadmapPlan) call
+  // this SAME method with the SAME goal and get the SAME filtered,
+  // identically-shaped result. There is deliberately no second, separately
+  // filtered candidate loader — two independently-maintained "which
+  // resources are eligible" filters would silently drift apart the moment
+  // one is updated and the other isn't, which would undermine the AI
+  // validation step's own allow-list guarantee (see requestRoadmapPlan).
+  //
+  // Queries all three pillar tables in parallel, each filtered identically:
+  // suitableGoals: [] means "eligible for every goal" (Course.suitableGoals'
+  // own default/documented semantics, mirrored on VocabLibrary/
+  // ListeningCategory), hence the OR rather than a plain `has` filter — an
+  // untagged resource must not silently vanish from every roadmap the
+  // moment this field started existing. Course is additionally filtered to
+  // type: GRAMMAR — the fixed pillar<->resourceType mapping (see
+  // roadmap-algorithm.ts's header) means a Course row typed VOCABULARY or
+  // LISTENING is dormant for roadmap purposes; Vocabulary/Listening pillars
+  // are backed by VocabLibrary/ListeningCategory instead.
+  private async loadAvailableResources(
+    goal: LearningGoal,
+  ): Promise<RoadmapResourceCandidate[]> {
+    const goalFilter = {
+      OR: [{ suitableGoals: { isEmpty: true } }, { suitableGoals: { has: goal } }],
+    };
+
+    const [courses, libraries, categories] = await Promise.all([
+      this.prisma.course.findMany({
+        where: { isPublished: true, type: 'GRAMMAR', ...goalFilter },
+        select: {
+          id: true,
+          level: true,
+          createdAt: true,
+          title: true,
+          description: true,
+          suitableGoals: true,
+        },
+      }),
+      this.prisma.vocabLibrary.findMany({
+        where: { isPublished: true, ...goalFilter },
+        select: {
+          id: true,
+          level: true,
+          orderIndex: true,
+          name: true,
+          description: true,
+          suitableGoals: true,
+        },
+      }),
+      this.prisma.listeningCategory.findMany({
+        where: { isPublished: true, ...goalFilter },
+        select: {
+          id: true,
+          level: true,
+          orderIndex: true,
+          name: true,
+          nameVi: true,
+          suitableGoals: true,
+        },
+      }),
+    ]);
+
+    return [
+      ...courses.map((c) => ({
+        resourceType: 'COURSE' as const,
+        id: c.id,
+        pillar: 'GRAMMAR' as const,
+        level: c.level,
+        sortKey: c.createdAt.getTime(),
+        title: c.title,
+        description: c.description,
+        suitableGoals: c.suitableGoals,
+      })),
+      ...libraries.map((l) => ({
+        resourceType: 'VOCAB_LIBRARY' as const,
+        id: l.id,
+        pillar: 'VOCABULARY' as const,
+        level: l.level,
+        sortKey: l.orderIndex,
+        title: l.name,
+        description: l.description,
+        suitableGoals: l.suitableGoals,
+      })),
+      ...categories.map((cat) => ({
+        resourceType: 'LISTENING_CATEGORY' as const,
+        id: cat.id,
+        pillar: 'LISTENING' as const,
+        level: cat.level,
+        sortKey: cat.orderIndex,
+        // nameVi is the display title (the student UI is Vietnamese-first,
+        // same reasoning ListeningCategoryDto's own consumers already
+        // follow); `name` (English) rides along as the description.
+        title: cat.nameVi,
+        description: cat.name,
+        suitableGoals: cat.suitableGoals,
+      })),
+    ];
   }
 
   // Shared by getRoadmap and describePhases: both need Roadmap.items joined
-  // against LIVE Course rows (never a stored snapshot — see Roadmap.items'
-  // schema comment), they just render the join differently. An item whose
-  // course has since been unpublished or deleted is dropped here, once, for
-  // both callers — mirroring filterAccessibleCourses' discipline
-  // (lesson-visibility.ts): stale content is omitted, not surfaced stale.
-  private async joinLiveCourses(items: RoadmapItem[]): Promise<
+  // against LIVE Course/VocabLibrary/ListeningCategory rows (never a stored
+  // snapshot — see Roadmap.items' schema comment), they just render the
+  // join differently. An item whose resource has since been unpublished or
+  // deleted is dropped here, once, for both callers — mirroring
+  // filterAccessibleCourses' discipline (lesson-visibility.ts): stale
+  // content is omitted, not surfaced stale.
+  private async joinLiveResources(items: RoadmapItem[]): Promise<
     Array<{
       item: RoadmapItem;
-      course: {
-        id: string;
+      resource: {
         title: string;
         thumbnail: string | null;
         totalEstimatedMinutes: number;
       };
     }>
   > {
-    const courses = await this.prisma.course.findMany({
-      where: { id: { in: items.map((i) => i.courseId) }, isPublished: true },
-      select: { id: true, title: true, thumbnail: true },
-    });
-    // Same shared helper CourseService's own course-card tile uses — see
-    // shared/estimated-minutes.ts's header for why this isn't reimplemented
-    // here. describePhases (the AI-analysis caller) simply ignores the extra
-    // field; only getRoadmap's DTO carries it forward.
-    const minutesByCourse = await getEstimatedMinutesByCourseId(
-      this.prisma,
-      courses.map((c) => c.id),
-    );
-    const courseById = new Map(
-      courses.map((c) => [
-        c.id,
-        { ...c, totalEstimatedMinutes: minutesByCourse.get(c.id) ?? 0 },
-      ]),
-    );
+    const courseIds = items
+      .filter((i) => i.resourceType === 'COURSE')
+      .map((i) => i.resourceId);
+    const libraryIds = items
+      .filter((i) => i.resourceType === 'VOCAB_LIBRARY')
+      .map((i) => i.resourceId);
+    const categoryIds = items
+      .filter((i) => i.resourceType === 'LISTENING_CATEGORY')
+      .map((i) => i.resourceId);
+
+    const [courses, libraries, categories, minutesByCourse] = await Promise.all([
+      this.prisma.course.findMany({
+        where: { id: { in: courseIds }, isPublished: true },
+        select: { id: true, title: true, thumbnail: true },
+      }),
+      this.prisma.vocabLibrary.findMany({
+        where: { id: { in: libraryIds }, isPublished: true },
+        select: { id: true, name: true, thumbnail: true },
+      }),
+      this.prisma.listeningCategory.findMany({
+        where: { id: { in: categoryIds }, isPublished: true },
+        select: { id: true, nameVi: true },
+      }),
+      // Same shared helper CourseService's own course-card tile uses — see
+      // shared/estimated-minutes.ts's header for why this isn't
+      // reimplemented here. VocabLibrary/ListeningCategory have no
+      // equivalent aggregate; those items get 0 (never fabricated).
+      getEstimatedMinutesByCourseId(this.prisma, courseIds),
+    ]);
+
+    const resourceByKey = new Map<
+      string,
+      { title: string; thumbnail: string | null; totalEstimatedMinutes: number }
+    >();
+    for (const c of courses) {
+      resourceByKey.set(`COURSE:${c.id}`, {
+        title: c.title,
+        thumbnail: c.thumbnail,
+        totalEstimatedMinutes: minutesByCourse.get(c.id) ?? 0,
+      });
+    }
+    for (const l of libraries) {
+      resourceByKey.set(`VOCAB_LIBRARY:${l.id}`, {
+        title: l.name,
+        thumbnail: l.thumbnail,
+        totalEstimatedMinutes: 0,
+      });
+    }
+    for (const cat of categories) {
+      // ListeningCategory has no thumbnail column at all — always null,
+      // handled by the existing MapPin-fallback rendering on the frontend.
+      resourceByKey.set(`LISTENING_CATEGORY:${cat.id}`, {
+        title: cat.nameVi,
+        thumbnail: null,
+        totalEstimatedMinutes: 0,
+      });
+    }
+
     return items
       .map((item) => {
-        const course = courseById.get(item.courseId);
-        return course ? { item, course } : null;
+        const resource = resourceByKey.get(`${item.resourceType}:${item.resourceId}`);
+        return resource ? { item, resource } : null;
       })
       .filter((x): x is NonNullable<typeof x> => x != null);
   }
@@ -693,11 +1005,11 @@ export class PlacementService {
   private async describePhases(
     items: RoadmapItem[],
   ): Promise<RoadmapAnalysisPhase[]> {
-    const joined = await this.joinLiveCourses(items);
-    return joined.map(({ item, course }) => ({
+    const joined = await this.joinLiveResources(items);
+    return joined.map(({ item, resource }) => ({
       phase: item.phase,
-      courseType: item.courseType,
-      courseTitle: course.title,
+      courseType: item.pillar,
+      courseTitle: resource.title,
       reason: item.reason,
     }));
   }

@@ -1,169 +1,299 @@
-import { generateRoadmap, RoadmapCourseCandidate } from './roadmap-algorithm';
+import {
+  generateRoadmap,
+  GenerateRoadmapInput,
+  RoadmapPillar,
+  RoadmapResourceCandidate,
+  RoadmapResourceType,
+} from './roadmap-algorithm';
 
+// Goal filtering itself happens upstream, at the query level, in
+// PlacementService.loadAvailableResources — this function only ever sees
+// candidates the caller's goal already allows. `suitableGoals`/`title`/
+// `description` are carried on every fixture (matching the real shape) but
+// are irrelevant to this file's own assertions.
+const resource = (
+  resourceType: RoadmapResourceType,
+  pillar: RoadmapPillar,
+  id: string,
+  level: 'A1' | 'A2' | 'B1' | 'B2' | 'C1' | 'C2' | null,
+  sortKey: number,
+): RoadmapResourceCandidate => ({
+  resourceType,
+  id,
+  pillar,
+  level,
+  sortKey,
+  title: id,
+  description: '',
+  suitableGoals: [],
+});
+
+// Course's sortKey is createdAt.getTime() in the real loader — dates keep
+// the "older/newer" narrative readable in fixtures below.
 const course = (
   id: string,
-  type: 'GRAMMAR' | 'VOCABULARY' | 'LISTENING',
   level: 'A1' | 'A2' | 'B1' | 'B2' | 'C1' | 'C2' | null,
   createdAt: Date,
-): RoadmapCourseCandidate => ({ id, type, level, createdAt });
+) => resource('COURSE', 'GRAMMAR', id, level, createdAt.getTime());
+
+// VocabLibrary/ListeningCategory's sortKey is orderIndex in the real loader
+// — a plain small integer.
+const vocabLibrary = (
+  id: string,
+  level: 'A1' | 'A2' | 'B1' | 'B2' | 'C1' | 'C2' | null,
+  orderIndex = 0,
+) => resource('VOCAB_LIBRARY', 'VOCABULARY', id, level, orderIndex);
+
+const listeningCategory = (
+  id: string,
+  level: 'A1' | 'A2' | 'B1' | 'B2' | 'C1' | 'C2' | null,
+  orderIndex = 0,
+) => resource('LISTENING_CATEGORY', 'LISTENING', id, level, orderIndex);
+
+const beginnerInput = (
+  overrides: Partial<GenerateRoadmapInput> = {},
+): GenerateRoadmapInput => ({
+  goal: 'FOUNDATION',
+  estimatedLevel: 'A1',
+  levelSource: 'BEGINNER_ASSUMED',
+  sectionScores: null,
+  ...overrides,
+});
+
+const gradedInput = (
+  overrides: Partial<GenerateRoadmapInput> = {},
+): GenerateRoadmapInput => ({
+  goal: 'TOEIC_450',
+  estimatedLevel: 'B1',
+  levelSource: 'TEST_GRADED',
+  sectionScores: {},
+  ...overrides,
+});
 
 describe('generateRoadmap', () => {
-  it('beginner-skip path (estimatedLevel null): presents sections in the fixed order, earliest course per section', () => {
-    const courses = [
-      course('g-old', 'GRAMMAR', 'A1', new Date('2024-01-01')),
-      course('g-new', 'GRAMMAR', 'A1', new Date('2024-06-01')),
-      course('v1', 'VOCABULARY', null, new Date('2024-01-01')),
-      course('l1', 'LISTENING', 'B1', new Date('2024-01-01')),
+  it('beginner-assumed path: presents pillars in the fixed order', () => {
+    const candidates = [
+      course('g-old', 'A1', new Date('2024-01-01')),
+      course('g-new', 'A1', new Date('2024-06-01')),
+      vocabLibrary('v1', null),
+      listeningCategory('l1', 'B1'),
     ];
-    const items = generateRoadmap(
-      { goal: 'FOUNDATION', estimatedLevel: null, sectionScores: {} },
-      courses,
-    );
-    expect(items.map((i) => i.courseType)).toEqual(['GRAMMAR', 'VOCABULARY', 'LISTENING']);
+    const items = generateRoadmap(beginnerInput(), candidates);
+    expect(items.map((i) => i.pillar)).toEqual(['GRAMMAR', 'VOCABULARY', 'LISTENING']);
     expect(items.map((i) => i.phase)).toEqual([1, 2, 3]);
-    expect(items[0].courseId).toBe('g-old'); // earliest-authored wins when level is unknown
   });
 
-  it('orders sections weakest-first when estimatedLevel is known', () => {
-    const courses = [
-      course('g1', 'GRAMMAR', 'B1', new Date('2024-01-01')),
-      course('v1', 'VOCABULARY', 'B1', new Date('2024-01-01')),
-      course('l1', 'LISTENING', 'B1', new Date('2024-01-01')),
+  // The exact reported bug: goal=FOUNDATION + "start from beginner" must not
+  // blindly pick the earliest-ordered course in the pillar — it must prefer
+  // the course whose level is closest to the assumed 'A1' baseline. Mirrors
+  // the live catalog shape at the time the bug was found: an OLDER,
+  // TOEIC-leveled course and a NEWER, A1-leveled foundation course in the
+  // same GRAMMAR pillar.
+  it('beginner-assumed path: prefers the level-appropriate course over blind createdAt ordering', () => {
+    const candidates = [
+      course('toeic-grammar', 'B1', new Date('2024-01-01')), // older
+      course('foundation-grammar', 'A1', new Date('2024-06-01')), // newer, correct level
+    ];
+    const items = generateRoadmap(beginnerInput(), candidates);
+    expect(items[0].resourceId).toBe('foundation-grammar');
+  });
+
+  it('orders pillars weakest-first when the path is test-graded', () => {
+    const candidates = [
+      course('g1', 'B1', new Date('2024-01-01')),
+      vocabLibrary('v1', 'B1'),
+      listeningCategory('l1', 'B1'),
     ];
     const items = generateRoadmap(
-      {
-        goal: 'TOEIC_450',
-        estimatedLevel: 'B1',
+      gradedInput({
         sectionScores: { GRAMMAR: 75, VOCABULARY: 25, LISTENING: 50 },
-      },
-      courses,
+      }),
+      candidates,
     );
     // VOCABULARY (25%) is weakest -> phase 1, then LISTENING (50%), then
     // GRAMMAR (75%) last.
-    expect(items.map((i) => i.courseType)).toEqual(['VOCABULARY', 'LISTENING', 'GRAMMAR']);
-    expect(items[0].reason).toContain('Weakest');
+    expect(items.map((i) => i.pillar)).toEqual(['VOCABULARY', 'LISTENING', 'GRAMMAR']);
+    expect(items[0].reason).toContain('Phần yếu nhất');
   });
 
-  it('picks the course whose level is closest to the estimated level', () => {
-    const courses = [
-      course('g-a1', 'GRAMMAR', 'A1', new Date('2024-01-01')),
-      course('g-b2', 'GRAMMAR', 'B2', new Date('2024-01-01')),
-      course('g-b1', 'GRAMMAR', 'B1', new Date('2024-01-01')),
+  it('beginner-assumed reason text never states a percentage (no real score exists)', () => {
+    const candidates = [course('g1', 'A1', new Date())];
+    const items = generateRoadmap(beginnerInput(), candidates);
+    expect(items[0].reason).not.toMatch(/%/);
+  });
+
+  it('reason text is Vietnamese and never leaks the old raw-English templates', () => {
+    const candidates = [
+      course('g1', 'B1', new Date('2024-01-01')),
+      vocabLibrary('v1', 'B1'),
+      listeningCategory('l1', 'B1'),
     ];
     const items = generateRoadmap(
-      { goal: 'TOEIC_450', estimatedLevel: 'B1', sectionScores: { GRAMMAR: 50 } },
-      courses,
+      gradedInput({
+        sectionScores: { GRAMMAR: 75, VOCABULARY: 25, LISTENING: 50 },
+      }),
+      candidates,
     );
-    expect(items.find((i) => i.courseType === 'GRAMMAR')?.courseId).toBe('g-b1');
+    for (const item of items) {
+      expect(item.reason).not.toContain('Weakest section');
+      expect(item.reason).not.toContain('Reinforcing');
+      expect(item.reason).not.toContain('Starting point');
+    }
   });
 
-  it('falls back to earliest-authored when no course in a section has a level set', () => {
-    const courses = [
-      course('g-new', 'GRAMMAR', null, new Date('2024-06-01')),
-      course('g-old', 'GRAMMAR', null, new Date('2024-01-01')),
+  it('picks the resource whose level is closest to the estimated level', () => {
+    const candidates = [
+      course('g-a1', 'A1', new Date('2024-01-01')),
+      course('g-b2', 'B2', new Date('2024-01-01')),
+      course('g-b1', 'B1', new Date('2024-01-01')),
     ];
     const items = generateRoadmap(
-      { goal: 'TOEIC_450', estimatedLevel: 'B1', sectionScores: { GRAMMAR: 50 } },
-      courses,
+      gradedInput({ sectionScores: { GRAMMAR: 50 } }),
+      candidates,
     );
-    expect(items[0].courseId).toBe('g-old');
+    expect(items.find((i) => i.pillar === 'GRAMMAR')?.resourceId).toBe('g-b1');
   });
 
-  it('omits a section entirely when no published course of that type exists — never crashes', () => {
-    const courses = [course('g1', 'GRAMMAR', 'A1', new Date())];
+  it('falls back to sortKey ordering when no resource in a pillar has a level set', () => {
+    const candidates = [
+      course('g-new', null, new Date('2024-06-01')),
+      course('g-old', null, new Date('2024-01-01')),
+    ];
     const items = generateRoadmap(
-      { goal: 'TOEIC_450', estimatedLevel: 'A1', sectionScores: {} },
-      courses,
+      gradedInput({ sectionScores: { GRAMMAR: 50 } }),
+      candidates,
     );
+    expect(items[0].resourceId).toBe('g-old');
+  });
+
+  it('omits a pillar entirely when no eligible resource for it exists — never crashes, never substitutes', () => {
+    const candidates = [course('g1', 'A1', new Date())];
+    const items = generateRoadmap(gradedInput({ estimatedLevel: 'A1' }), candidates);
     expect(items).toHaveLength(1);
-    expect(items[0].courseType).toBe('GRAMMAR');
+    expect(items[0].pillar).toBe('GRAMMAR');
   });
 
-  it('phase numbers are contiguous starting at 1 even when a section is omitted', () => {
-    const courses = [
-      course('g1', 'GRAMMAR', 'A1', new Date()),
-      course('l1', 'LISTENING', 'A1', new Date()),
+  it('phase numbers are contiguous starting at 1 even when a pillar is omitted', () => {
+    const candidates = [
+      course('g1', 'A1', new Date()),
+      listeningCategory('l1', 'A1'),
     ];
-    const items = generateRoadmap(
-      { goal: 'TOEIC_450', estimatedLevel: 'A1', sectionScores: {} },
-      courses,
-    );
+    const items = generateRoadmap(gradedInput({ estimatedLevel: 'A1' }), candidates);
     expect(items.map((i) => i.phase)).toEqual([1, 2]);
   });
 
+  // Acceptance fixture mirroring the real content backfill (see the plan's
+  // C.3): FOUNDATION now has a genuine, tagged candidate for all 3 pillars
+  // — Course "Ngữ pháp cơ bản" (A1), VocabLibrary "1000 Từ Tiếng Anh Thông
+  // Dụng" (A1), ListeningCategory "Daily Conversations" (A1). A
+  // FOUNDATION + beginner-skip roadmap must produce all 3 real phases, one
+  // per pillar, never collapsing to 1-2 phases the way the original bug did.
+  it('FOUNDATION + beginner-assumed produces all 3 pillars when each has a real, tagged candidate', () => {
+    const candidates = [
+      course('grammar-co-ban', 'A1', new Date('2026-07-26')),
+      vocabLibrary('1000-tu-thong-dung', 'A1', 4),
+      listeningCategory('daily-conversations', 'A1', 3),
+    ];
+    const items = generateRoadmap(beginnerInput(), candidates);
+    expect(items).toHaveLength(3);
+    expect(new Set(items.map((i) => i.pillar))).toEqual(
+      new Set(['GRAMMAR', 'VOCABULARY', 'LISTENING']),
+    );
+    expect(items.find((i) => i.pillar === 'GRAMMAR')?.resourceType).toBe('COURSE');
+    expect(items.find((i) => i.pillar === 'VOCABULARY')?.resourceType).toBe('VOCAB_LIBRARY');
+    expect(items.find((i) => i.pillar === 'LISTENING')?.resourceType).toBe('LISTENING_CATEGORY');
+  });
+
   describe('consolidation phase', () => {
-    it('adds a 4th phase revisiting the weakest section one level up, after the other three', () => {
-      const courses = [
-        course('g1', 'GRAMMAR', 'B1', new Date('2024-01-01')),
-        course('v1', 'VOCABULARY', 'B1', new Date('2024-01-01')),
-        course('v2-b2', 'VOCABULARY', 'B2', new Date('2024-01-01')),
-        course('l1', 'LISTENING', 'B1', new Date('2024-01-01')),
+    it('adds a 4th phase revisiting the weakest pillar one level up, after the other three', () => {
+      const candidates = [
+        course('g1', 'B1', new Date('2024-01-01')),
+        vocabLibrary('v1', 'B1'),
+        vocabLibrary('v2-b2', 'B2'),
+        listeningCategory('l1', 'B1'),
       ];
       const items = generateRoadmap(
-        {
-          goal: 'TOEIC_450',
-          estimatedLevel: 'B1',
+        gradedInput({
           sectionScores: { GRAMMAR: 75, VOCABULARY: 25, LISTENING: 50 },
-        },
-        courses,
+        }),
+        candidates,
       );
       // VOCABULARY is weakest (phase 1) -> consolidation revisits VOCABULARY
       // at B2, as the LAST phase.
       expect(items).toHaveLength(4);
       const last = items[items.length - 1];
       expect(last.phase).toBe(4);
-      expect(last.courseType).toBe('VOCABULARY');
-      expect(last.courseId).toBe('v2-b2');
-      expect(last.reason).toContain('Consolidation');
+      expect(last.pillar).toBe('VOCABULARY');
+      expect(last.resourceType).toBe('VOCAB_LIBRARY');
+      expect(last.resourceId).toBe('v2-b2');
+      expect(last.reason).toContain('Củng cố');
     });
 
-    it('never recommends the SAME course twice for the consolidation phase', () => {
-      const courses = [
-        course('g1', 'GRAMMAR', 'B1', new Date('2024-01-01')),
-        course('v1', 'VOCABULARY', 'B1', new Date('2024-01-01')), // only B1 available
-        course('l1', 'LISTENING', 'B1', new Date('2024-01-01')),
+    it('never recommends the SAME resource twice for the consolidation phase', () => {
+      const candidates = [
+        course('g1', 'B1', new Date('2024-01-01')),
+        vocabLibrary('v1', 'B1'), // only B1 available
+        listeningCategory('l1', 'B1'),
       ];
       const items = generateRoadmap(
-        {
-          goal: 'TOEIC_450',
-          estimatedLevel: 'B1',
+        gradedInput({
           sectionScores: { GRAMMAR: 75, VOCABULARY: 25, LISTENING: 50 },
-        },
-        courses,
+        }),
+        candidates,
       );
-      // No OTHER Vocabulary course at B2 exists -> consolidation is omitted
-      // rather than recommending v1 (phase 1's own course) again.
+      // No OTHER Vocabulary library at B2 exists -> consolidation is omitted
+      // rather than recommending v1 (phase 1's own resource) again.
       expect(items).toHaveLength(3);
     });
 
-    it('omits consolidation entirely on the beginner-skip path (no weakest section to reinforce)', () => {
-      const courses = [
-        course('g1', 'GRAMMAR', 'A1', new Date('2024-01-01')),
-        course('g2-a2', 'GRAMMAR', 'A2', new Date('2024-01-01')),
+    it('omits consolidation entirely on the beginner-assumed path (no measured weakest pillar)', () => {
+      const candidates = [
+        course('g1', 'A1', new Date('2024-01-01')),
+        course('g2-a2', 'A2', new Date('2024-01-01')),
       ];
-      const items = generateRoadmap(
-        { goal: 'FOUNDATION', estimatedLevel: null, sectionScores: {} },
-        courses,
-      );
+      const items = generateRoadmap(beginnerInput(), candidates);
       expect(items).toHaveLength(1);
     });
 
     it('omits consolidation when the estimated level is already C2 (nowhere higher to go)', () => {
-      const courses = [
-        course('g1', 'GRAMMAR', 'C2', new Date('2024-01-01')),
-        course('v1', 'VOCABULARY', 'C2', new Date('2024-01-01')), // weakest, but already at the ceiling
-        course('l1', 'LISTENING', 'C2', new Date('2024-01-01')),
+      const candidates = [
+        course('g1', 'C2', new Date('2024-01-01')),
+        vocabLibrary('v1', 'C2'), // weakest, but already at the ceiling
+        listeningCategory('l1', 'C2'),
       ];
       const items = generateRoadmap(
-        {
+        gradedInput({
           goal: 'TOEIC_800',
           estimatedLevel: 'C2',
           sectionScores: { GRAMMAR: 80, VOCABULARY: 10, LISTENING: 50 },
-        },
-        courses,
+        }),
+        candidates,
       );
-      expect(items).toHaveLength(3); // one per section, no 4th consolidation phase
-      expect(items.every((i) => !i.reason.includes('Consolidation'))).toBe(true);
+      expect(items).toHaveLength(3); // one per pillar, no 4th consolidation phase
+      // "Củng cố" alone also appears in ordinary phase>1 reinforcement text
+      // ("Củng cố từ vựng (25%)."); the consolidation-specific phrase is
+      // "nâng trình độ" ("level up"), which must be entirely absent here.
+      expect(items.every((i) => !i.reason.includes('nâng trình độ'))).toBe(true);
+    });
+
+    it('generalizes to a non-Course pillar as the weakest — consolidation revisits Listening', () => {
+      const candidates = [
+        course('g1', 'B1', new Date('2024-01-01')),
+        vocabLibrary('v1', 'B1'),
+        listeningCategory('l1', 'B1'),
+        listeningCategory('l2-b2', 'B2'),
+      ];
+      const items = generateRoadmap(
+        gradedInput({
+          sectionScores: { GRAMMAR: 75, VOCABULARY: 50, LISTENING: 25 },
+        }),
+        candidates,
+      );
+      expect(items).toHaveLength(4);
+      const last = items[items.length - 1];
+      expect(last.pillar).toBe('LISTENING');
+      expect(last.resourceType).toBe('LISTENING_CATEGORY');
+      expect(last.resourceId).toBe('l2-b2');
     });
   });
 });

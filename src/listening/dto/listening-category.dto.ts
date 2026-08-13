@@ -1,4 +1,6 @@
 import {
+  IsArray,
+  IsEnum,
   IsInt,
   IsOptional,
   IsString,
@@ -6,6 +8,7 @@ import {
   Min,
   MinLength,
 } from 'class-validator';
+import { CefrLevel, LearningGoal } from '@prisma/client';
 
 // Sprint 11 — admin category authoring.
 //
@@ -32,6 +35,18 @@ export class CreateListeningCategoryDto {
   @IsInt()
   @Min(0)
   orderIndex?: number;
+
+  // Personalized Roadmap — mirrors CreateCourseDto.level/suitableGoals
+  // exactly. Optional: a category authored before an admin sets these
+  // simply isn't a roadmap-matching candidate yet.
+  @IsEnum(CefrLevel)
+  @IsOptional()
+  level?: CefrLevel;
+
+  @IsArray()
+  @IsEnum(LearningGoal, { each: true })
+  @IsOptional()
+  suitableGoals?: LearningGoal[];
 }
 
 export class UpdateListeningCategoryDto {
@@ -51,4 +66,13 @@ export class UpdateListeningCategoryDto {
   @IsInt()
   @Min(0)
   orderIndex?: number;
+
+  @IsEnum(CefrLevel)
+  @IsOptional()
+  level?: CefrLevel;
+
+  @IsArray()
+  @IsEnum(LearningGoal, { each: true })
+  @IsOptional()
+  suitableGoals?: LearningGoal[];
 }

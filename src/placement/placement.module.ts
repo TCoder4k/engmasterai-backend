@@ -7,6 +7,8 @@ import { PlacementController } from './placement.controller';
 import { PlacementService } from './placement.service';
 import { GeminiRoadmapAnalysisProvider } from './roadmap/gemini-roadmap-analysis.provider';
 import { ROADMAP_ANALYSIS_PROVIDER } from './roadmap/roadmap-analysis.provider';
+import { GeminiRoadmapPlannerProvider } from './roadmap/gemini-roadmap-planner.provider';
+import { ROADMAP_PLANNER_PROVIDER } from './roadmap/roadmap-planner.provider';
 
 // Personalized Onboarding & Placement Test.
 //
@@ -34,6 +36,10 @@ import { ROADMAP_ANALYSIS_PROVIDER } from './roadmap/roadmap-analysis.provider';
     {
       provide: ROADMAP_ANALYSIS_PROVIDER,
       useClass: GeminiRoadmapAnalysisProvider,
+    },
+    {
+      provide: ROADMAP_PLANNER_PROVIDER,
+      useClass: GeminiRoadmapPlannerProvider,
     },
     QuizRateLimitGuard,
   ],

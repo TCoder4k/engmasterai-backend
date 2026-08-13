@@ -2,91 +2,146 @@ import { CefrLevel, CourseType, LearningGoal } from '@prisma/client';
 import { PLACEMENT_SECTIONS } from './placement.constants';
 
 // Pure function, no I/O — mirrors grade-question.ts/placement-scoring.ts's
-// own discipline. PlacementService is the only caller; it loads courses and
-// hands them in. GET /placement/roadmap (placement.service.ts's getRoadmap)
-// joins these items against LIVE Course rows for display data on every
-// read — this function itself never returns a title/thumbnail (see
-// RoadmapItem below), so a renamed or unpublished course is never served
-// stale from a snapshot.
+// own discipline. PlacementService is the only caller; it loads resources
+// and hands them in. GET /placement/roadmap (placement.service.ts's
+// getRoadmap) joins these items against LIVE Course/VocabLibrary/
+// ListeningCategory rows for display data on every read — this function
+// itself never returns a title/thumbnail (see RoadmapItem below), so a
+// renamed or unpublished resource is never served stale from a snapshot.
 
-export interface RoadmapCourseCandidate {
+// Multi-pillar roadmap: each of the three pillars (Grammar/Vocabulary/
+// Listening) is backed by a DIFFERENT resource table, with a fixed 1:1
+// mapping — GRAMMAR -> Course, VOCABULARY -> VocabLibrary,
+// LISTENING -> ListeningCategory. Library/category is the roadmap-item
+// granularity (not VocabDeck/ListeningContent), which is why this candidate
+// shape is deliberately display-level, not lesson-level.
+export type RoadmapPillar = CourseType;
+export type RoadmapResourceType =
+  | 'COURSE'
+  | 'VOCAB_LIBRARY'
+  | 'LISTENING_CATEGORY';
+
+// Extends the shape used elsewhere (display-only fields) rather than a
+// second, separately-maintained "candidate" type — the AI planner's prompt
+// builder (roadmap/roadmap-planner.provider.ts) consumes the exact same
+// objects this function does, from the exact same
+// PlacementService.loadAvailableResources(goal) call, already goal-filtered
+// at the query level. This function itself never reads suitableGoals/
+// title/description; it just carries them through untouched for that other
+// consumer.
+//
+// `sortKey` normalizes each source's own strongest "authorial order" signal
+// into one comparable number: Course has no orderIndex, so its createdAt
+// (earlier-authored = more foundational, the same implicit assumption
+// GrammarCourseCard's title-regex level parsing already makes) is used;
+// VocabLibrary/ListeningCategory both have a real, admin-controlled
+// orderIndex, which is a stronger signal than their createdAt would be.
+export interface RoadmapResourceCandidate {
+  resourceType: RoadmapResourceType;
   id: string;
-  type: CourseType;
+  pillar: RoadmapPillar;
   level: CefrLevel | null;
-  createdAt: Date;
+  sortKey: number;
+  title: string;
+  description: string;
+  suitableGoals: LearningGoal[];
 }
 
 export interface RoadmapItem {
   phase: number;
-  courseType: CourseType;
-  courseId: string;
+  pillar: RoadmapPillar;
+  resourceType: RoadmapResourceType;
+  resourceId: string;
   reason: string;
 }
 
 export interface GenerateRoadmapInput {
   goal: LearningGoal;
-  // Null on the beginner-skip path (no test was ever taken) — every section
-  // is then presented in the fixed PLACEMENT_SECTIONS order rather than
-  // sorted by a score that doesn't exist.
-  estimatedLevel: CefrLevel | null;
-  sectionScores: Partial<Record<CourseType, number>>;
+  // Always a real value now — 'A1' on the beginner-skip path (see
+  // PlacementService.startBeginner), the graded estimate on the test path.
+  // Whether it's backed by real section scores is `levelSource`'s job to
+  // say, not this field's nullability.
+  estimatedLevel: CefrLevel;
+  // BEGINNER_ASSUMED: the student chose to skip the test — there is no
+  // measured weak section, so every pillar is presented in the fixed
+  // PLACEMENT_SECTIONS order and `sectionScores` is null. TEST_GRADED: real
+  // scores exist and drive weakest-first ordering + the consolidation phase.
+  levelSource: 'BEGINNER_ASSUMED' | 'TEST_GRADED';
+  sectionScores: Partial<Record<CourseType, number>> | null;
 }
 
 const LEVEL_ORDER: CefrLevel[] = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'];
 
-// Prefers the course whose level is closest to the student's estimated
-// level (ties broken toward the earliest-authored course, the same implicit
-// "earlier-authored = more foundational" fallback GrammarCourseCard already
-// uses). Falls back to earliest-authored when no course in this section has
-// a level set yet — Course.level adoption is still in progress (see the
-// plan's Risks section), and an unleveled catalog must still produce SOME
-// roadmap rather than an empty one.
-const pickCourse = (
-  type: CourseType,
-  estimatedLevel: CefrLevel | null,
-  courses: RoadmapCourseCandidate[],
-): RoadmapCourseCandidate | null => {
-  const inSection = courses.filter((c) => c.type === type);
-  if (inSection.length === 0) return null;
+const PILLAR_LABELS: Record<RoadmapPillar, string> = {
+  GRAMMAR: 'ngữ pháp',
+  VOCABULARY: 'từ vựng',
+  LISTENING: 'kỹ năng nghe',
+};
 
-  const byCreatedAt = (a: RoadmapCourseCandidate, b: RoadmapCourseCandidate) =>
-    a.createdAt.getTime() - b.createdAt.getTime();
+// Prefers the resource whose level is closest to the student's estimated
+// level (ties broken toward the smallest sortKey — the earliest-authored
+// course, or the lowest admin-ordered library/category). Falls back to
+// sortKey ordering only when NO resource in this pillar has a level set yet
+// — level adoption is still in progress (some resources may never get
+// tagged), and an unleveled catalog must still produce SOME roadmap rather
+// than an empty one. Goal suitability is already filtered out of
+// `candidates` before this runs (see
+// PlacementService.loadAvailableResources) — this function only ever sees
+// candidates the student's goal actually allows.
+const pickResource = (
+  pillar: RoadmapPillar,
+  estimatedLevel: CefrLevel,
+  candidates: RoadmapResourceCandidate[],
+): RoadmapResourceCandidate | null => {
+  const inPillar = candidates.filter((c) => c.pillar === pillar);
+  if (inPillar.length === 0) return null;
 
-  if (estimatedLevel === null) {
-    return [...inSection].sort(byCreatedAt)[0];
-  }
+  const bySortKey = (a: RoadmapResourceCandidate, b: RoadmapResourceCandidate) =>
+    a.sortKey - b.sortKey;
 
-  const leveled = inSection.filter(
-    (c): c is RoadmapCourseCandidate & { level: CefrLevel } => c.level !== null,
+  const leveled = inPillar.filter(
+    (c): c is RoadmapResourceCandidate & { level: CefrLevel } => c.level !== null,
   );
   if (leveled.length === 0) {
-    return [...inSection].sort(byCreatedAt)[0];
+    return [...inPillar].sort(bySortKey)[0];
   }
 
   const targetIndex = LEVEL_ORDER.indexOf(estimatedLevel);
   return [...leveled].sort((a, b) => {
     const distanceA = Math.abs(LEVEL_ORDER.indexOf(a.level) - targetIndex);
     const distanceB = Math.abs(LEVEL_ORDER.indexOf(b.level) - targetIndex);
-    return distanceA !== distanceB ? distanceA - distanceB : byCreatedAt(a, b);
+    return distanceA !== distanceB ? distanceA - distanceB : bySortKey(a, b);
   })[0];
 };
 
-// Sections are always presented weakest-first (see the sort above), so only
-// phase 1's text says "weakest" — later phases describe their own score
-// without implying every phase is also the weakest one.
+// Sections are always presented weakest-first on the graded path (see the
+// sort in generateRoadmap), so only phase 1's text says "weakest" — later
+// phases describe their own score without implying every phase is also the
+// weakest one. On the beginner-assumed path there are no real scores to
+// name, so the reason stays a plain, honest "starting point" rather than
+// inventing a percentage.
+//
+// Vietnamese, not a hardcoded English template — this is the deterministic
+// FALLBACK path (used whenever AI planning is unavailable/invalid), and it
+// must never leak raw English into an otherwise Vietnamese-language UI.
+// Stays provider-agnostic (zero dependency on any Gemini file): pillar
+// labels are defined locally rather than imported from
+// gemini-roadmap-analysis.provider.ts's GOAL_LABELS, since this function
+// must keep working even when AI is entirely disabled.
 const buildReason = (
-  section: CourseType,
+  pillar: RoadmapPillar,
   phase: number,
-  estimatedLevel: CefrLevel | null,
-  sectionScores: Partial<Record<CourseType, number>>,
+  levelSource: 'BEGINNER_ASSUMED' | 'TEST_GRADED',
+  sectionScores: Partial<Record<CourseType, number>> | null,
 ): string => {
-  if (estimatedLevel === null) {
-    return `Starting point for ${section.toLowerCase()}.`;
+  const label = PILLAR_LABELS[pillar];
+  if (levelSource === 'BEGINNER_ASSUMED') {
+    return `Điểm khởi đầu cho phần ${label}.`;
   }
-  const score = sectionScores[section] ?? 0;
+  const score = sectionScores?.[pillar] ?? 0;
   return phase === 1
-    ? `Weakest section (${score}%) — recommended first.`
-    : `Reinforcing ${section.toLowerCase()} (${score}%).`;
+    ? `Phần yếu nhất (${score}%) — nên học trước.`
+    : `Củng cố ${label} (${score}%).`;
 };
 
 const nextLevelUp = (level: CefrLevel): CefrLevel | null => {
@@ -94,85 +149,88 @@ const nextLevelUp = (level: CefrLevel): CefrLevel | null => {
   return index >= 0 && index < LEVEL_ORDER.length - 1 ? LEVEL_ORDER[index + 1] : null;
 };
 
-// Consolidation phase: after the three sections have each had one phase
+// Consolidation phase: after the three pillars have each had one phase
 // (weakest first), add ONE final phase that revisits the ORIGINAL weakest
-// section one CEFR level up from whatever was picked for phase 1 —
+// pillar one CEFR level up from whatever was picked for phase 1 —
 // reinforcing the area the student struggled with most instead of leaving
-// it at a single touchpoint. Graded path only (estimatedLevel !== null):
-// the beginner-skip path has no "weakest section" to reinforce, and every
-// section there already got exactly one phase for the same reason.
+// it at a single touchpoint. Graded path only (levelSource === 'TEST_GRADED'):
+// the beginner-assumed path has no measured "weakest section" to reinforce
+// — every pillar there ties at zero real score — and every pillar
+// already got exactly one phase for the same reason.
 //
-// Returns null (no crash, no partial item) when: the weakest section never
+// Returns null (no crash, no partial item) when: the weakest pillar never
 // got a phase 1 item to begin with, the student is already at C2 (nowhere
-// higher to go), or the catalog has no OTHER course one level up in that
-// section — a short catalog is a content gap (see the plan's Risks
-// section), not a reason to fail generation.
+// higher to go), or the catalog has no OTHER resource one level up in that
+// pillar — a short catalog is a content gap, not a reason to fail
+// generation.
 const buildConsolidationItem = (
-  weakestSection: CourseType,
+  weakestPillar: RoadmapPillar,
   weakestItem: RoadmapItem | undefined,
   estimatedLevel: CefrLevel,
-  courses: RoadmapCourseCandidate[],
+  candidates: RoadmapResourceCandidate[],
   phase: number,
 ): RoadmapItem | null => {
   if (!weakestItem) return null;
   const targetLevel = nextLevelUp(estimatedLevel);
   if (!targetLevel) return null;
 
-  const candidates = courses.filter(
+  const eligible = candidates.filter(
     (c) =>
-      c.type === weakestSection &&
+      c.pillar === weakestPillar &&
       c.level === targetLevel &&
-      c.id !== weakestItem.courseId,
+      c.id !== weakestItem.resourceId,
   );
-  if (candidates.length === 0) return null;
+  if (eligible.length === 0) return null;
 
-  const course = [...candidates].sort(
-    (a, b) => a.createdAt.getTime() - b.createdAt.getTime(),
-  )[0];
+  const resource = [...eligible].sort((a, b) => a.sortKey - b.sortKey)[0];
+  const label = PILLAR_LABELS[weakestPillar];
   return {
     phase,
-    courseType: weakestSection,
-    courseId: course.id,
-    reason: `Consolidation: level up in ${weakestSection.toLowerCase()} (${estimatedLevel} -> ${targetLevel}).`,
+    pillar: weakestPillar,
+    resourceType: resource.resourceType,
+    resourceId: resource.id,
+    reason: `Củng cố: nâng trình độ ${label} (${estimatedLevel} → ${targetLevel}).`,
   };
 };
 
 export const generateRoadmap = (
   input: GenerateRoadmapInput,
-  availableCourses: RoadmapCourseCandidate[],
+  availableResources: RoadmapResourceCandidate[],
 ): RoadmapItem[] => {
-  const orderedSections =
-    input.estimatedLevel === null
+  const orderedPillars =
+    input.levelSource === 'BEGINNER_ASSUMED'
       ? [...PLACEMENT_SECTIONS]
       : [...PLACEMENT_SECTIONS].sort(
-          (a, b) => (input.sectionScores[a] ?? 0) - (input.sectionScores[b] ?? 0),
+          (a, b) =>
+            (input.sectionScores?.[a] ?? 0) - (input.sectionScores?.[b] ?? 0),
         );
 
   const items: RoadmapItem[] = [];
   let phase = 1;
-  for (const section of orderedSections) {
-    const course = pickCourse(section, input.estimatedLevel, availableCourses);
-    // No published course of this type exists yet — the item is omitted,
-    // not a crash. A short catalog is a content gap (see the plan's Risks
-    // section), not a reason to fail roadmap generation entirely.
-    if (!course) continue;
+  for (const pillar of orderedPillars) {
+    const resource = pickResource(pillar, input.estimatedLevel, availableResources);
+    // No published, goal-eligible resource for this pillar exists yet — the
+    // item is omitted, not a crash. A short catalog is a content gap, not a
+    // reason to fail roadmap generation entirely.
+    if (!resource) continue;
     items.push({
       phase,
-      courseType: section,
-      courseId: course.id,
-      reason: buildReason(section, phase, input.estimatedLevel, input.sectionScores),
+      pillar,
+      resourceType: resource.resourceType,
+      resourceId: resource.id,
+      reason: buildReason(pillar, phase, input.levelSource, input.sectionScores),
     });
     phase += 1;
   }
 
-  if (input.estimatedLevel !== null && orderedSections.length > 0) {
-    const weakestSection = orderedSections[0];
-    const weakestItem = items.find((i) => i.courseType === weakestSection);
+  if (input.levelSource === 'TEST_GRADED' && orderedPillars.length > 0) {
+    const weakestPillar = orderedPillars[0];
+    const weakestItem = items.find((i) => i.pillar === weakestPillar);
     const consolidation = buildConsolidationItem(
-      weakestSection,
+      weakestPillar,
       weakestItem,
       input.estimatedLevel,
-      availableCourses,
+      availableResources,
       phase,
     );
     if (consolidation) items.push(consolidation);

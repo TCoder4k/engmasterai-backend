@@ -93,4 +93,32 @@ describe('scorePlacementAttempt', () => {
     const result = scorePlacementAttempt(questionIds, questions, answers);
     expect(result.grammarScore).toBe(0);
   });
+
+  // Regression guard for the cross-deploy correctness hazard: the divisor
+  // must come from THIS attempt's own frozen questionIds composition, never
+  // from the currently-imported QUESTIONS_PER_SECTION constant (which can
+  // change between deploys — see placement.constants.ts). Deliberately uses
+  // a GRAMMAR count (2) that matches neither the old (4) nor the new (8)
+  // constant value, so this test would fail loudly if the implementation
+  // ever silently reintroduced a dependency on the imported constant.
+  it("derives the per-section divisor from the attempt's own question composition, not the imported constant", () => {
+    const twoGrammarQuestionIds = ['g1', 'g2'];
+    const twoGrammarQuestions = [
+      question('g1', 'GRAMMAR', true),
+      question('g2', 'GRAMMAR', true),
+    ];
+    const answers = [{ questionId: 'g1', submitted: { value: true } }];
+    const result = scorePlacementAttempt(twoGrammarQuestionIds, twoGrammarQuestions, answers);
+    expect(result.grammarScore).toBe(50); // 1/2, not 1/4 (old) or 1/8 (new)
+  });
+
+  it('scores 0, not NaN, when every question for a section was deleted after the attempt started', () => {
+    const result = scorePlacementAttempt(
+      ['g1'],
+      [], // g1's row is gone entirely
+      [{ questionId: 'g1', submitted: { value: true } }],
+    );
+    expect(result.grammarScore).toBe(0);
+    expect(Number.isNaN(result.grammarScore)).toBe(false);
+  });
 });

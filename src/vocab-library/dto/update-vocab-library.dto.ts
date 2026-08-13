@@ -1,4 +1,5 @@
-import { IsOptional, IsString } from 'class-validator';
+import { IsArray, IsEnum, IsOptional, IsString } from 'class-validator';
+import { CefrLevel, LearningGoal } from '@prisma/client';
 
 export class UpdateVocabLibraryDto {
   @IsString()
@@ -12,4 +13,13 @@ export class UpdateVocabLibraryDto {
   @IsString()
   @IsOptional()
   thumbnail?: string;
+
+  @IsEnum(CefrLevel)
+  @IsOptional()
+  level?: CefrLevel;
+
+  @IsArray()
+  @IsEnum(LearningGoal, { each: true })
+  @IsOptional()
+  suitableGoals?: LearningGoal[];
 }

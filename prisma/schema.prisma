@@ -145,6 +145,18 @@ enum LearningGoal {
   REGULAR_PRACTICE
 }
 
+// How Roadmap.estimatedLevel was arrived at. Not the same thing as whether
+// estimatedLevel is null: BEGINNER_ASSUMED still carries a real level ('A1')
+// so the roadmap algorithm can use level-aware course selection instead of
+// its blind "oldest course wins" fallback — but there are no real section
+// scores behind it, unlike TEST_GRADED. buildReason()/the consolidation
+// phase both need to tell these apart to avoid describing an assumed
+// baseline as if it were a measured "weakest section (X%)".
+enum LevelSource {
+  BEGINNER_ASSUMED
+  TEST_GRADED
+}
+
 enum PartOfSpeech {
   NOUN
   VERB
@@ -370,6 +382,14 @@ model Course {
   // same implicit "earlier-authored = more foundational" assumption
   // GrammarCourseCard's title-regex level parsing already makes.
   level CefrLevel?
+
+  // Personalized Onboarding & Placement Test — admin-settable, optional,
+  // closed set (same discipline as LearningGoal itself: a new goal needs a
+  // migration, not a free-text column). Empty means "eligible for every
+  // goal" — today's implicit behavior — so an untagged course (every course
+  // as of this field's introduction) stays a candidate for everyone rather
+  // than silently dropping out of every roadmap until an admin tags it.
+  suitableGoals LearningGoal[] @default([])
 
   createdAt DateTime @default(now())
 
@@ -746,6 +766,17 @@ model VocabLibrary {
   isPublished Boolean  @default(false)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+
+  // Personalized Roadmap (multi-pillar) — mirrors Course.level/suitableGoals
+  // exactly (see Course's own schema comments). Lets the roadmap algorithm
+  // match a placement result's weak Vocabulary section to an appropriately-
+  // leveled library, and restrict candidates to goals it's actually authored
+  // for. Empty suitableGoals = eligible for every goal, matching
+  // Course.suitableGoals's own default so an untagged library (as of this
+  // field's introduction) stays a candidate for everyone rather than
+  // silently dropping out of every roadmap until an admin tags it.
+  level         CefrLevel?
+  suitableGoals LearningGoal[] @default([])
 
   decks VocabDeck[]
 
@@ -1251,6 +1282,11 @@ model ListeningCategory {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  // Personalized Roadmap (multi-pillar) — same fields, same semantics, same
+  // precedent as Course.level/suitableGoals and VocabLibrary's own copy.
+  level         CefrLevel?
+  suitableGoals LearningGoal[] @default([])
+
   contents ListeningContent[]
 
   @@map("listening_categories")
@@ -1631,7 +1667,7 @@ model ListeningShadowingAttempt {
 // grade-question.ts's gradeQuestion()/validateQuestionContent() work
 // unmodified: they only ever need {type, options, correctAnswer}.
 model PlacementQuestion {
-  id            String              @id @default(uuid())
+  id            String             @id @default(uuid())
   // Which pillar this question screens. Reuses CourseType rather than a new
   // enum — Grammar/Vocabulary/Listening is a closed set matching the
   // product's three pillars, and the Placement Test never needs a fourth.
@@ -1654,9 +1690,9 @@ model PlacementQuestion {
   audioUrl      String?
   transcript    String?
   imageUrl      String?
-  isPublished   Boolean  @default(false)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  isPublished   Boolean            @default(false)
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
 
   @@index([section, difficulty, isPublished])
   @@map("placement_questions")
@@ -1689,7 +1725,7 @@ model PlacementAttempt {
   // order.
   questionIds Json
 
-  startedAt DateTime @default(now())
+  startedAt   DateTime  @default(now())
   // Hard 5-minute server-authoritative deadline, computed ONCE at creation
   // and never recomputed. Because POST /placement/start is idempotent purely
   // on "does an incomplete attempt already exist for this user" (no
@@ -1740,7 +1776,7 @@ model PlacementAnswer {
   // submission shapes from grade-question.ts (optionId / value / text /
   // orderedOptionIds).
   submitted  Json
-  answeredAt DateTime @default(now())
+  answeredAt DateTime         @default(now())
 
   @@unique([attemptId, questionId])
   @@map("placement_answers")
@@ -1762,6 +1798,10 @@ model Roadmap {
   // Null on the beginner-skip path (no test was ever taken).
   placementAttemptId String?
   estimatedLevel     CefrLevel?
+  // Null only for rows written before this field existed. See the
+  // LevelSource enum comment for why this can't be derived from
+  // estimatedLevel's nullability alone.
+  levelSource        LevelSource?
 
   // Ordered [{ phase, courseType, courseId, reason }] — deliberately NO
   // title/thumbnail here. Those are joined fresh from Course on every read
@@ -1779,6 +1819,23 @@ model Roadmap {
   aiSummaryAt    DateTime?
   aiSummaryModel String?
 
+  // POST /placement/roadmap/plan — set only when an AI planner actually
+  // selected/ordered `items` (as opposed to the deterministic fallback).
+  // Cleared on retake alongside aiSummary* — a stale AI plan describes a
+  // profile that no longer exists. Structurally separate from aiSummary*:
+  // narration can exist without planning ever having run, and vice versa.
+  aiPlanningModel  String?
+  aiPlanningUsedAt DateTime?
+
+  // Bumped only when `items`/`estimatedLevel` change (finalizeNow,
+  // persistRoadmapAndMaybeOnboard) — NOT by requestRoadmapAnalysis's or
+  // requestRoadmapPlan's own narrower .update() calls. This is deliberate:
+  // it is the snapshot POST /placement/roadmap/plan reads before calling
+  // Gemini and conditions its final write on, so that a retake racing an
+  // in-flight AI call can never have its fresh roadmap overwritten by a
+  // stale one. Do NOT use `updatedAt` for this — it changes on ANY field
+  // write (including an unrelated concurrent /analysis call) and would
+  // cause false-positive staleness detection.
   generatedAt DateTime @default(now())
   updatedAt   DateTime @updatedAt
 

@@ -35,7 +35,10 @@ const GEMINI_ENDPOINT =
  */
 export const MAX_SUMMARY_CHARS = 700;
 
-const GOAL_LABELS: Record<LearningGoal, string> = {
+// Exported for reuse by gemini-roadmap-planner.provider.ts — one label map
+// per enum, not two independently-maintained copies that could drift the
+// next time a LearningGoal/CefrLevel value is added.
+export const GOAL_LABELS: Record<LearningGoal, string> = {
   FOUNDATION: 'xây nền tảng tiếng Anh từ đầu',
   TOEIC_450: 'đạt 450 điểm TOEIC',
   TOEIC_650: 'đạt 650 điểm TOEIC',
@@ -44,7 +47,7 @@ const GOAL_LABELS: Record<LearningGoal, string> = {
   REGULAR_PRACTICE: 'luyện tập đều đặn để duy trì trình độ',
 };
 
-const LEVEL_LABELS: Record<CefrLevel, string> = {
+export const LEVEL_LABELS: Record<CefrLevel, string> = {
   A1: 'A1 (mới bắt đầu)',
   A2: 'A2 (sơ cấp)',
   B1: 'B1 (trung cấp)',
