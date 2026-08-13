@@ -1097,7 +1097,29 @@ export class PlacementService {
     };
   }
 
-  private toResultDto(attempt: PlacementAttempt): PlacementResultDto {
+  // Per-section correct/total counts are never persisted (same discipline
+  // getAttemptReview already follows for isCorrect — see its own header
+  // comment): re-derived here from the attempt's own frozen questionIds
+  // against current PlacementQuestion/PlacementAnswer rows, via the exact
+  // same scorePlacementAttempt used at finalize time. Covers both the
+  // fresh-finalize call and a replay of an already-completed attempt
+  // uniformly, with no special-casing between the two.
+  private async toResultDto(
+    attempt: PlacementAttempt,
+  ): Promise<PlacementResultDto> {
+    const questionIds = attempt.questionIds as unknown as string[];
+    const [questions, answers] = await Promise.all([
+      this.prisma.placementQuestion.findMany({
+        where: { id: { in: questionIds } },
+        select: { id: true, section: true, type: true, correctAnswer: true },
+      }),
+      this.prisma.placementAnswer.findMany({
+        where: { attemptId: attempt.id },
+        select: { questionId: true, submitted: true },
+      }),
+    ]);
+    const scoring = scorePlacementAttempt(questionIds, questions, answers);
+
     return {
       attemptId: attempt.id,
       grammarScore: attempt.grammarScore!,
@@ -1105,6 +1127,12 @@ export class PlacementService {
       listeningScore: attempt.listeningScore!,
       overallScore: attempt.overallScore!,
       estimatedLevel: attempt.estimatedLevel!,
+      grammarCorrect: scoring.grammarCorrect,
+      grammarTotal: scoring.grammarTotal,
+      vocabularyCorrect: scoring.vocabularyCorrect,
+      vocabularyTotal: scoring.vocabularyTotal,
+      listeningCorrect: scoring.listeningCorrect,
+      listeningTotal: scoring.listeningTotal,
       durationSeconds: attempt.durationSeconds,
       completedAt: attempt.completedAt!.toISOString(),
     };
