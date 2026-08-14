@@ -15,11 +15,12 @@ import { DICTIONARY_SOURCE_PROVIDER, DictionarySourceError } from './dictionary-
 import type { DictionarySourceProvider } from './dictionary-source.provider';
 import { VI_TRANSLATION_PROVIDER, ViTranslationError } from './vi-translation.provider';
 import type { ViTranslationProvider } from './vi-translation.provider';
-import { DictionaryLookupResult } from './dictionary.types';
+import { DictionaryLookupResult, DictionarySuggestion } from './dictionary.types';
 
 const MEANING_SELECT = { partOfSpeech: true, meaning: true, orderIndex: true };
 const EXAMPLE_SELECT = { sentence: true, orderIndex: true };
 const MAX_VOCAB_WORD_MEANINGS = 3;
+export const DEFAULT_SUGGESTION_LIMIT = 6;
 
 @Injectable()
 export class DictionaryService {
@@ -54,6 +55,36 @@ export class DictionaryService {
     if (cached) return { ...cached, source: 'DICTIONARY_CACHE' };
 
     return this.lookupExternal(rawQuery, normalizedWord);
+  }
+
+  /**
+   * Autocomplete — VocabWord only, no cache tier and no external/AI call.
+   * A typeahead firing on every debounced keystroke must never touch
+   * freedictionaryapi.com or Gemini; it can only ever surface words this
+   * app already curated. Exact lookup (with its 3 tiers) still runs
+   * separately once the student selects a suggestion or submits.
+   */
+  async suggest(rawPrefix: string, limit: number): Promise<DictionarySuggestion[]> {
+    const normalizedPrefix = rawPrefix.trim().toLowerCase();
+
+    const words = await this.prisma.vocabWord.findMany({
+      where: { text: { startsWith: normalizedPrefix, mode: 'insensitive' } },
+      select: {
+        text: true,
+        meanings: {
+          select: { meaning: true },
+          orderBy: { orderIndex: 'asc' },
+          take: 1,
+        },
+      },
+      orderBy: { text: 'asc' },
+      take: limit,
+    });
+
+    return words.map((word) => ({
+      word: word.text,
+      shortMeaningVi: word.meanings[0]?.meaning ?? null,
+    }));
   }
 
   private async lookupVocabWord(

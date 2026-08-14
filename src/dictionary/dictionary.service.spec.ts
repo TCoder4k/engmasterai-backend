@@ -9,13 +9,17 @@ import { ViTranslationError } from './vi-translation.provider';
 
 const buildService = (overrides: {
   vocabWordFindFirst?: jest.Mock;
+  vocabWordFindMany?: jest.Mock;
   cacheGet?: jest.Mock;
   cacheSet?: jest.Mock;
   sourceLookup?: jest.Mock;
   translate?: jest.Mock;
 }) => {
   const prisma = {
-    vocabWord: { findFirst: overrides.vocabWordFindFirst ?? jest.fn().mockResolvedValue(null) },
+    vocabWord: {
+      findFirst: overrides.vocabWordFindFirst ?? jest.fn().mockResolvedValue(null),
+      findMany: overrides.vocabWordFindMany ?? jest.fn().mockResolvedValue([]),
+    },
   };
   const cache = {
     get: overrides.cacheGet ?? jest.fn().mockResolvedValue(null),
@@ -151,5 +155,62 @@ describe('DictionaryService.lookup', () => {
     });
 
     await expect(service.lookup('hello')).rejects.toBeInstanceOf(ServiceUnavailableException);
+  });
+});
+
+// Autocomplete is VocabWord-only — every test here proves the cache,
+// external source and AI translator are never touched, on top of the
+// prefix/limit/shape of the result itself.
+describe('DictionaryService.suggest', () => {
+  it('returns prefix matches from VocabWord only, never touching cache/source/AI', async () => {
+    const { service, cache, source, viTranslation, prisma } = buildService({
+      vocabWordFindMany: jest.fn().mockResolvedValue([
+        { text: 'give', meanings: [{ meaning: 'đưa' }] },
+        { text: 'give up', meanings: [{ meaning: 'từ bỏ' }] },
+      ]),
+    });
+
+    const result = await service.suggest('giv', 6);
+
+    expect(result).toEqual([
+      { word: 'give', shortMeaningVi: 'đưa' },
+      { word: 'give up', shortMeaningVi: 'từ bỏ' },
+    ]);
+    expect(prisma.vocabWord.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { text: { startsWith: 'giv', mode: 'insensitive' } },
+        take: 6,
+      }),
+    );
+    expect(cache.get).not.toHaveBeenCalled();
+    expect(source.lookup).not.toHaveBeenCalled();
+    expect(viTranslation.translate).not.toHaveBeenCalled();
+  });
+
+  it('passes the given limit through to the query', async () => {
+    const findMany = jest.fn().mockResolvedValue([]);
+    const { service } = buildService({ vocabWordFindMany: findMany });
+
+    await service.suggest('a', 10);
+
+    expect(findMany).toHaveBeenCalledWith(expect.objectContaining({ take: 10 }));
+  });
+
+  it('a word with no curated meaning yet returns a null shortMeaningVi, not a fabricated one', async () => {
+    const { service } = buildService({
+      vocabWordFindMany: jest
+        .fn()
+        .mockResolvedValue([{ text: 'zephyr', meanings: [] }]),
+    });
+
+    const result = await service.suggest('zeph', 6);
+
+    expect(result).toEqual([{ word: 'zephyr', shortMeaningVi: null }]);
+  });
+
+  it('no matches is an empty list, not an error', async () => {
+    const { service } = buildService({ vocabWordFindMany: jest.fn().mockResolvedValue([]) });
+
+    await expect(service.suggest('zzzz', 6)).resolves.toEqual([]);
   });
 });
