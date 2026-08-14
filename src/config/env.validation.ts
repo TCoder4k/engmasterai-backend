@@ -369,6 +369,32 @@ export const envValidationSchema = Joi.object({
     .min(1000)
     .max(60000)
     .default(25000),
+
+  // Floating Dictionary, Phase A. Shares GEMINI_API_KEY; the translation
+  // model is deliberately its own variable (not reusing GEMINI_STT_MODEL/
+  // GEMINI_FEEDBACK_MODEL) for the same reason those two are separate from
+  // each other — different jobs should stay independently tunable.
+  GEMINI_DICTIONARY_TRANSLATION_MODEL: Joi.string().default(
+    'gemini-3.5-flash-lite',
+  ),
+  DICTIONARY_TRANSLATION_TIMEOUT_MS: Joi.number()
+    .integer()
+    .min(1000)
+    .max(30000)
+    .default(10000),
+  DICTIONARY_SOURCE_TIMEOUT_MS: Joi.number()
+    .integer()
+    .min(1000)
+    .max(30000)
+    .default(8000),
+  // TTL for a tier-3 (external) lookup cached in Redis. Long by design — a
+  // dictionary entry is close to immutable, unlike a rate-limit window or a
+  // session. 30 days default; bounded 1–90 days.
+  DICTIONARY_CACHE_TTL_SECONDS: Joi.number()
+    .integer()
+    .min(86400)
+    .max(7776000)
+    .default(2592000),
 })
   // Cloudinary/other unrelated vars are intentionally out of this sprint's
   // scope (see docs/sprints/sprint-01C-security-hardening.md) — `unknown`
