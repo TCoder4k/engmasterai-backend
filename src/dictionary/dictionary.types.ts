@@ -24,3 +24,12 @@ export interface DictionaryLookupResult {
   source: DictionarySourceKind;
   vocabWordId: string | null;
 }
+
+// GET /dictionary/suggestions — VocabWord-only, prefix autocomplete. Deliberately
+// thin (no ipa/audio/etc.): this is a typeahead list, not a lookup result: the
+// full DictionaryLookupResult only comes from GET /dictionary/lookup once the
+// student selects a suggestion or submits.
+export interface DictionarySuggestion {
+  word: string;
+  shortMeaningVi: string | null;
+}

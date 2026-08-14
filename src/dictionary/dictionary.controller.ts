@@ -2,8 +2,9 @@ import { Controller, Get, Query, UseGuards, ValidationPipe } from '@nestjs/commo
 import { JwtAuthGuard } from '../auth/guards';
 import { DictionaryRateLimitGuard } from './rate-limit/dictionary-rate-limit.guard';
 import { DictionaryRateLimit } from './rate-limit/dictionary-rate-limits.decorator';
-import { DictionaryService } from './dictionary.service';
+import { DEFAULT_SUGGESTION_LIMIT, DictionaryService } from './dictionary.service';
 import { LookupWordQueryDto } from './dto/lookup-word.dto';
+import { SuggestWordQueryDto } from './dto/suggest-word.dto';
 
 // `main.ts` does not enable `transform` globally — this local pipe is what
 // makes LookupWordQueryDto's @Transform (trim/collapse whitespace) actually
@@ -25,5 +26,17 @@ export class DictionaryController {
   @Get('lookup')
   async lookup(@Query(queryPipe) query: LookupWordQueryDto) {
     return this.dictionaryService.lookup(query.q);
+  }
+
+  /**
+   * Prefix autocomplete — VocabWord only (see DictionaryService.suggest).
+   * A separate, more generous namespace than 'lookup': this fires on
+   * debounced keystrokes against local data only, never an external/AI call.
+   */
+  @UseGuards(JwtAuthGuard, DictionaryRateLimitGuard)
+  @DictionaryRateLimit({ kind: 'suggest', max: 100, windowSeconds: 60 })
+  @Get('suggestions')
+  async suggestions(@Query(queryPipe) query: SuggestWordQueryDto) {
+    return this.dictionaryService.suggest(query.q, query.limit ?? DEFAULT_SUGGESTION_LIMIT);
   }
 }

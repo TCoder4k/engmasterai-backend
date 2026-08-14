@@ -4,7 +4,7 @@ import { SetMetadata } from '@nestjs/common';
 // VocabDeck each got their own rather than reusing QuizRateLimitGuard's
 // (see docs/CLAUDE.md's "THREE separate bucket namespaces" note). Dictionary
 // lookups are not the SRS/quiz engine and must never share a bucket with it.
-export type DictionaryRateLimitKind = 'lookup';
+export type DictionaryRateLimitKind = 'lookup' | 'suggest';
 
 export interface DictionaryRateLimitPolicy {
   kind: DictionaryRateLimitKind;
