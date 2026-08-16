@@ -395,6 +395,22 @@ export const envValidationSchema = Joi.object({
     .min(86400)
     .max(7776000)
     .default(2592000),
+
+  // Engy Chat, Phase B. Shares GEMINI_API_KEY; its own model variable for
+  // the same reason Dictionary's translation model is its own — a
+  // conversational-prose job should stay independently tunable from
+  // translation/feedback/roadmap jobs. gemini-3.5-flash-lite, not the older
+  // gemini-2.5-flash default other providers still carry — matches what
+  // this deployment's real .env already runs for GEMINI_FEEDBACK_MODEL/
+  // GEMINI_ROADMAP_PLANNER_MODEL/GEMINI_DICTIONARY_TRANSLATION_MODEL today.
+  GEMINI_ENGY_MODEL: Joi.string().default('gemini-3.5-flash-lite'),
+  CHAT_REPLY_TIMEOUT_MS: Joi.number().integer().min(1000).max(60000).default(20000),
+  // Sliding TTL for a user's bounded Redis chat history (chat:session:<userId>)
+  // — the plan's approved "~30 minutes" default. Also the TTL a committed
+  // idempotency claim's final reply is cached under (chat.service.ts), so a
+  // late legitimate replay within this window still gets its answer without
+  // a second Gemini call.
+  CHAT_SESSION_TTL_SECONDS: Joi.number().integer().min(60).max(7200).default(1800),
 })
   // Cloudinary/other unrelated vars are intentionally out of this sprint's
   // scope (see docs/sprints/sprint-01C-security-hardening.md) — `unknown`
