@@ -18,6 +18,7 @@ import { StudyTimeModule } from './study-time/study-time.module';
 import { ListeningModule } from './listening/listening.module';
 import { PlacementModule } from './placement/placement.module';
 import { DictionaryModule } from './dictionary/dictionary.module';
+import { ChatModule } from './chat/chat.module';
 import { envValidationSchema } from './config/env.validation';
 
 @Module({
@@ -44,6 +45,7 @@ import { envValidationSchema } from './config/env.validation';
     ListeningModule,
     PlacementModule,
     DictionaryModule,
+    ChatModule,
   ],
 })
 export class AppModule {}
