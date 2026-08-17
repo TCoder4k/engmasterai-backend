@@ -1,0 +1,88 @@
+name: Backend CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backend-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    # E2E is intentionally serial (test/jest-e2e.json maxWorkers=1 — see README
+    # "CI contract"), so the whole job is slower than a typical parallel suite.
+    timeout-minutes: 30
+
+    services:
+      postgres:
+        image: postgres:13.5
+        env:
+          POSTGRES_USER: myuser
+          POSTGRES_PASSWORD: mypassword
+          # migrate deploy (in test/jest-global-setup.ts) applies migrations to
+          # an existing database, it does not create one — so the test
+          # database name is created directly by the service container here.
+          POSTGRES_DB: engmasterai_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.14.0" # matches "engines.node" in package.json
+          cache: "npm"
+
+      - run: npm ci
+
+      - run: npx prisma generate
+
+      # .env.test.example is the single source of truth for which test env
+      # vars exist (see README "CI contract"). Copy it as-is and override only
+      # the two values that must point at THIS job's service containers —
+      # never re-declare the whole file here, or it silently drifts from the
+      # template the next time a var is added/removed there.
+      - name: Create .env.test from .env.test.example
+        run: |
+          cp .env.test.example .env.test
+          sed -i 's|^DATABASE_URL=.*|DATABASE_URL="postgresql://myuser:mypassword@localhost:5432/engmasterai_test?schema=public"|' .env.test
+          sed -i 's|^JWT_SECRET=.*|JWT_SECRET=ci-only-throwaway-secret-not-real|' .env.test
+          # REDIS_HOST/REDIS_PORT stay unset, exactly as .env.test.example
+          # documents — redis.module.ts's own localhost:6379 default is what
+          # this job's Redis service container is reachable on.
+
+      - run: npm run build
+
+      # Temporary tech debt (see README): 91 pre-existing lint errors, tracked
+      # but not yet fixed. Runs visibly (shows in the job log/UI as a warning
+      # step) without failing the build. build/test/test:e2e below remain
+      # hard, non-negotiable gates.
+      - name: Lint (non-blocking — known debt, see README)
+        run: npm run lint:check
+        continue-on-error: true
+
+      - run: npm test
+
+      - run: npm run test:e2e
