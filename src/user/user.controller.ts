@@ -28,6 +28,7 @@ import {
 import { JwtAuthGuard, RolesGuard } from '../auth/guards';
 import { Roles } from '../auth/decorators';
 import { UserRole } from '@prisma/client';
+import type { AuthenticatedRequest } from '../auth/types/authenticated-request.type';
 
 // The app-wide ValidationPipe (main.ts) doesn't enable `transform`, so query
 // string values ("5") wouldn't be coerced to numbers for QueryUserDto's
@@ -50,7 +51,7 @@ export class UserController {
 
   //Xem thông tin bản thân - ALL authenticated users can access
   @Get('me')
-  async getMe(@Req() req) {
+  async getMe(@Req() req: AuthenticatedRequest) {
     return this.userService.findOne(req.user.userId);
   }
 
@@ -65,14 +66,14 @@ export class UserController {
   // Uses UpdateProfileDto (no role/level/totalPoints) so a self-update can
   // never escalate privilege — see UserService.updateProfile.
   @Put('me')
-  async updateMe(@Req() req, @Body() updateProfileDto: UpdateProfileDto) {
+  async updateMe(@Req() req: AuthenticatedRequest, @Body() updateProfileDto: UpdateProfileDto) {
     return this.userService.updateProfile(req.user.userId, updateProfileDto);
   }
 
   //Upload avatar cho bản thân - ALL authenticated users can access
   @Post('me/avatar')
   @UseInterceptors(FileInterceptor('avatar'))
-  async uploadAvatar(@Req() req, @UploadedFile() file: Express.Multer.File) {
+  async uploadAvatar(@Req() req: AuthenticatedRequest, @UploadedFile() file: Express.Multer.File) {
     if (!file) {
       throw new BadRequestException('No file uploaded');
     }
@@ -102,7 +103,7 @@ export class UserController {
   //Đổi mật khẩu - ALL authenticated users can access
   @Post('me/password')
   async changePassword(
-    @Req() req,
+    @Req() req: AuthenticatedRequest,
     @Body() changePasswordDto: ChangePasswordDto,
   ) {
     return this.userService.changePassword(

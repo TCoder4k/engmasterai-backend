@@ -13,6 +13,7 @@ import { AnswerTrapDto, RequestTrapHintDto } from './dto';
 import { JwtAuthGuard } from '../../auth/guards';
 import { QuizRateLimitGuard } from './rate-limit/quiz-rate-limit.guard';
 import { QuizRateLimit } from './rate-limit/quiz-rate-limits.decorator';
+import type { AuthenticatedRequest } from '../../auth/types/authenticated-request.type';
 
 // Sprint 06C — student-facing Trap Hunter endpoints.
 //
@@ -29,7 +30,7 @@ export class TrapHunterStudentController {
   @Get()
   async getTrapHunter(
     @Param('lessonId', ParseUUIDPipe) lessonId: string,
-    @Req() req,
+    @Req() req: AuthenticatedRequest,
   ) {
     return this.trapHunterService.getTrapHunter(lessonId, req.user.userId);
   }
@@ -40,7 +41,7 @@ export class TrapHunterStudentController {
   async answerTrap(
     @Param('lessonId', ParseUUIDPipe) lessonId: string,
     @Body() dto: AnswerTrapDto,
-    @Req() req,
+    @Req() req: AuthenticatedRequest,
   ) {
     return this.trapHunterService.answerTrap(lessonId, req.user.userId, dto);
   }
@@ -51,7 +52,7 @@ export class TrapHunterStudentController {
   async requestHint(
     @Param('lessonId', ParseUUIDPipe) lessonId: string,
     @Body() dto: RequestTrapHintDto,
-    @Req() req,
+    @Req() req: AuthenticatedRequest,
   ) {
     return this.trapHunterService.requestHint(lessonId, req.user.userId, dto);
   }
@@ -74,7 +75,7 @@ export class TrapHunterCourseController {
   @Get()
   async getCourseTrapHunterProgress(
     @Param('courseId', ParseUUIDPipe) courseId: string,
-    @Req() req,
+    @Req() req: AuthenticatedRequest,
   ) {
     return {
       data: await this.trapHunterService.getCourseTrapHunterProgress(

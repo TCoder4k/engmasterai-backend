@@ -17,6 +17,7 @@ import { LibrariesProgressQueryDto } from './dto/libraries-progress-query.dto';
 import { JwtAuthGuard } from '../auth/guards';
 import { LearningRateLimitGuard } from './rate-limit/learning-rate-limit.guard';
 import { LearningRateLimit } from './rate-limit/learning-rate-limits.decorator';
+import type { AuthenticatedRequest } from '../auth/types/authenticated-request.type';
 
 // Same reasoning as every other list/query DTO in this codebase: the
 // app-wide ValidationPipe (main.ts) has no `transform`, so scope one
@@ -32,7 +33,7 @@ export class LearningController {
   @UseGuards(JwtAuthGuard, LearningRateLimitGuard)
   @LearningRateLimit({ kind: 'queue', max: 60, windowSeconds: 60 })
   @Get('reviews/due')
-  async getDueReviews(@Query(queryPipe) query: QueryDueReviewsDto, @Req() req) {
+  async getDueReviews(@Query(queryPipe) query: QueryDueReviewsDto, @Req() req: AuthenticatedRequest) {
     return this.learningService.getDueReviews(req.user.userId, query);
   }
 
@@ -44,7 +45,7 @@ export class LearningController {
   @Get('words/:wordId/progress')
   async getWordProgress(
     @Param('wordId', ParseUUIDPipe) wordId: string,
-    @Req() req,
+    @Req() req: AuthenticatedRequest,
   ) {
     return this.learningService.getWordProgress(req.user.userId, wordId);
   }
@@ -57,7 +58,7 @@ export class LearningController {
   async submitReview(
     @Param('wordId', ParseUUIDPipe) wordId: string,
     @Body() dto: SubmitReviewDto,
-    @Req() req,
+    @Req() req: AuthenticatedRequest,
   ) {
     return this.learningService.submitReview(req.user.userId, wordId, dto);
   }
@@ -69,7 +70,7 @@ export class LearningController {
   @Get('decks/:deckId/progress')
   async getDeckProgress(
     @Param('deckId', ParseUUIDPipe) deckId: string,
-    @Req() req,
+    @Req() req: AuthenticatedRequest,
   ) {
     return this.learningService.getDeckProgress(req.user.userId, deckId);
   }
@@ -92,7 +93,7 @@ export class LearningController {
   @Get('libraries/progress')
   async getLibrariesProgress(
     @Query(queryPipe) query: LibrariesProgressQueryDto,
-    @Req() req,
+    @Req() req: AuthenticatedRequest,
   ) {
     return this.learningService.getLibrariesProgress(req.user.userId, query.tz);
   }
@@ -102,7 +103,7 @@ export class LearningController {
   @Get('libraries/:libraryId/progress')
   async getLibraryProgress(
     @Param('libraryId', ParseUUIDPipe) libraryId: string,
-    @Req() req,
+    @Req() req: AuthenticatedRequest,
   ) {
     return this.learningService.getLibraryProgress(req.user.userId, libraryId);
   }

@@ -5,6 +5,7 @@ import { QuizRateLimitGuard } from '../lesson/quiz/rate-limit/quiz-rate-limit.gu
 import { StudyHeartbeatDto } from './dto/study-heartbeat.dto';
 import { StudyTimeService } from './study-time.service';
 import { StudyHeartbeatResponseDto } from './study-time.types';
+import type { AuthenticatedRequest } from '../auth/types/authenticated-request.type';
 
 // Sprint 10.5 — the one study-time write.
 //
@@ -36,7 +37,7 @@ export class StudyTimeController {
   @QuizRateLimit({ kind: 'study', max: 20, windowSeconds: 60 })
   @Post('heartbeat')
   async heartbeat(
-    @Req() req,
+    @Req() req: AuthenticatedRequest,
     @Body() dto: StudyHeartbeatDto,
   ): Promise<StudyHeartbeatResponseDto> {
     return this.studyTime.recordHeartbeat(req.user.userId, dto);

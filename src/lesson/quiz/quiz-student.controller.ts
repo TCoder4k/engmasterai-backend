@@ -14,6 +14,7 @@ import { JwtAuthGuard } from '../../auth/guards';
 import { QuizRateLimitGuard } from './rate-limit/quiz-rate-limit.guard';
 import { QuizRateLimit } from './rate-limit/quiz-rate-limits.decorator';
 import { toSubmitResponse } from './task-submit-response';
+import type { AuthenticatedRequest } from '../../auth/types/authenticated-request.type';
 
 // Sprint 06B — student-facing quiz endpoints. Every response here goes
 // through GetQuizResponseDto (quiz.types.ts), which structurally has no
@@ -39,7 +40,7 @@ export class QuizStudentController {
   @Get()
   async getQuiz(
     @Param('lessonId', ParseUUIDPipe) lessonId: string,
-    @Req() req,
+    @Req() req: AuthenticatedRequest,
   ) {
     return this.quizService.readStudentQuiz(lessonId, req.user.userId);
   }
@@ -57,7 +58,7 @@ export class QuizStudentController {
   @Post('start')
   async startQuiz(
     @Param('lessonId', ParseUUIDPipe) lessonId: string,
-    @Req() req,
+    @Req() req: AuthenticatedRequest,
   ) {
     return this.quizService.startQuizAttempt(lessonId, req.user.userId);
   }
@@ -72,7 +73,7 @@ export class QuizStudentController {
   async answerQuestion(
     @Param('lessonId', ParseUUIDPipe) lessonId: string,
     @Body() dto: AnswerQuestionDto,
-    @Req() req,
+    @Req() req: AuthenticatedRequest,
   ) {
     return this.quizService.answerQuestion(lessonId, req.user.userId, dto);
   }
@@ -85,7 +86,7 @@ export class QuizStudentController {
   async submitQuiz(
     @Param('lessonId', ParseUUIDPipe) lessonId: string,
     @Body() dto: SubmitQuizDto,
-    @Req() req,
+    @Req() req: AuthenticatedRequest,
   ) {
     return toSubmitResponse(
       await this.quizService.submitQuiz(lessonId, req.user.userId, dto),

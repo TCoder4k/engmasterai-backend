@@ -14,6 +14,7 @@ import { QuizRateLimitGuard } from '../lesson/quiz/rate-limit/quiz-rate-limit.gu
 import { QuizRateLimit } from '../lesson/quiz/rate-limit/quiz-rate-limits.decorator';
 import { PlacementService } from './placement.service';
 import { AnswerPlacementQuestionDto, SetPlacementGoalDto } from './dto';
+import type { AuthenticatedRequest } from '../auth/types/authenticated-request.type';
 
 // Personalized Onboarding & Placement Test — student-facing flow (Phase 3).
 // Same per-method @UseGuards repetition quiz-student.controller.ts uses
@@ -31,21 +32,21 @@ export class PlacementController {
   @UseGuards(JwtAuthGuard, QuizRateLimitGuard)
   @QuizRateLimit({ kind: 'placementSubmit', max: 30, windowSeconds: 600 })
   @Put('goal')
-  async setGoal(@Body() dto: SetPlacementGoalDto, @Req() req) {
+  async setGoal(@Body() dto: SetPlacementGoalDto, @Req() req: AuthenticatedRequest) {
     return this.placementService.setGoal(req.user.userId, dto.goal);
   }
 
   @UseGuards(JwtAuthGuard, QuizRateLimitGuard)
   @QuizRateLimit({ kind: 'placementSubmit', max: 30, windowSeconds: 600 })
   @Post('start-beginner')
-  async startBeginner(@Req() req) {
+  async startBeginner(@Req() req: AuthenticatedRequest) {
     return this.placementService.startBeginner(req.user.userId);
   }
 
   @UseGuards(JwtAuthGuard, QuizRateLimitGuard)
   @QuizRateLimit({ kind: 'placementSubmit', max: 30, windowSeconds: 600 })
   @Post('start')
-  async start(@Req() req) {
+  async start(@Req() req: AuthenticatedRequest) {
     return this.placementService.start(req.user.userId);
   }
 
@@ -54,7 +55,7 @@ export class PlacementController {
   @UseGuards(JwtAuthGuard, QuizRateLimitGuard)
   @QuizRateLimit({ kind: 'read', max: 60, windowSeconds: 60 })
   @Get('attempt')
-  async getAttempt(@Req() req) {
+  async getAttempt(@Req() req: AuthenticatedRequest) {
     return this.placementService.getAttempt(req.user.userId);
   }
 
@@ -64,7 +65,7 @@ export class PlacementController {
   async answer(
     @Param('attemptId', ParseUUIDPipe) attemptId: string,
     @Body() dto: AnswerPlacementQuestionDto,
-    @Req() req,
+    @Req() req: AuthenticatedRequest,
   ) {
     return this.placementService.answer(req.user.userId, attemptId, dto);
   }
@@ -76,7 +77,7 @@ export class PlacementController {
   @Post('attempt/:attemptId/submit')
   async submit(
     @Param('attemptId', ParseUUIDPipe) attemptId: string,
-    @Req() req,
+    @Req() req: AuthenticatedRequest,
   ) {
     return this.placementService.submit(req.user.userId, attemptId);
   }
@@ -89,7 +90,7 @@ export class PlacementController {
   @Get('attempt/:attemptId/review')
   async getAttemptReview(
     @Param('attemptId', ParseUUIDPipe) attemptId: string,
-    @Req() req,
+    @Req() req: AuthenticatedRequest,
   ) {
     return this.placementService.getAttemptReview(req.user.userId, attemptId);
   }
@@ -98,7 +99,7 @@ export class PlacementController {
   @UseGuards(JwtAuthGuard, QuizRateLimitGuard)
   @QuizRateLimit({ kind: 'read', max: 60, windowSeconds: 60 })
   @Get('roadmap')
-  async getRoadmap(@Req() req) {
+  async getRoadmap(@Req() req: AuthenticatedRequest) {
     return this.placementService.getRoadmap(req.user.userId);
   }
 
@@ -108,7 +109,7 @@ export class PlacementController {
   @UseGuards(JwtAuthGuard, QuizRateLimitGuard)
   @QuizRateLimit({ kind: 'read', max: 60, windowSeconds: 60 })
   @Get('status')
-  async getStatus(@Req() req) {
+  async getStatus(@Req() req: AuthenticatedRequest) {
     return this.placementService.getStatus(req.user.userId);
   }
 
@@ -125,7 +126,7 @@ export class PlacementController {
   @UseGuards(JwtAuthGuard, QuizRateLimitGuard)
   @QuizRateLimit({ kind: 'placementAnalysis', max: 10, windowSeconds: 600 })
   @Post('roadmap/analysis')
-  async requestRoadmapAnalysis(@Req() req) {
+  async requestRoadmapAnalysis(@Req() req: AuthenticatedRequest) {
     return this.placementService.requestRoadmapAnalysis(req.user.userId);
   }
 
@@ -146,7 +147,7 @@ export class PlacementController {
   @UseGuards(JwtAuthGuard, QuizRateLimitGuard)
   @QuizRateLimit({ kind: 'placementAnalysis', max: 10, windowSeconds: 600 })
   @Post('roadmap/plan')
-  async requestRoadmapPlan(@Req() req) {
+  async requestRoadmapPlan(@Req() req: AuthenticatedRequest) {
     return this.placementService.requestRoadmapPlan(req.user.userId);
   }
 }

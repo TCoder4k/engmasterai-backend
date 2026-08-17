@@ -2,7 +2,6 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { LessonStepKind, LessonStepProgress, Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { GamificationService } from '../../gamification/gamification.service';
-import { GamificationResultDto } from '../../gamification/gamification.types';
 import { stageAward } from '../../gamification/xp-rules';
 import { assertLessonVisible } from '../quiz/lesson-visibility';
 import { ProgressScope, scopeToLessonWhere } from '../quiz/progress-scope';

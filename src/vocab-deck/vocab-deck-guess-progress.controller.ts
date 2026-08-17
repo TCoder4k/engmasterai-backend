@@ -14,6 +14,7 @@ import { VocabDeckService } from './vocab-deck.service';
 import { JwtAuthGuard } from '../auth/guards';
 import { VocabDeckRateLimitGuard } from './rate-limit/vocab-deck-rate-limit.guard';
 import { VocabDeckRateLimit } from './rate-limit/vocab-deck-rate-limits.decorator';
+import type { AuthenticatedRequest } from '../auth/types/authenticated-request.type';
 
 // Fourth controller in the vocab-deck module, extending the established
 // three-controller split with a fourth natural base: a deck's persistent
@@ -36,7 +37,7 @@ export class VocabDeckGuessProgressController {
   @Get()
   async getGuessProgress(
     @Param('deckId', ParseUUIDPipe) deckId: string,
-    @Req() req,
+    @Req() req: AuthenticatedRequest,
   ) {
     return this.vocabDeckService.getGuessProgress(deckId, req.user);
   }
@@ -47,7 +48,7 @@ export class VocabDeckGuessProgressController {
   async markWordLearned(
     @Param('deckId', ParseUUIDPipe) deckId: string,
     @Param('wordId', ParseUUIDPipe) wordId: string,
-    @Req() req,
+    @Req() req: AuthenticatedRequest,
   ) {
     return this.vocabDeckService.markWordLearned(deckId, wordId, req.user);
   }
@@ -62,7 +63,7 @@ export class VocabDeckGuessProgressController {
   @HttpCode(HttpStatus.NO_CONTENT)
   async resetGuessProgress(
     @Param('deckId', ParseUUIDPipe) deckId: string,
-    @Req() req,
+    @Req() req: AuthenticatedRequest,
   ) {
     return this.vocabDeckService.resetGuessProgress(deckId, req.user);
   }

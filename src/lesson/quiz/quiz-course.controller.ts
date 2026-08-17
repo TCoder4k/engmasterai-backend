@@ -10,6 +10,7 @@ import { QuizService } from './quiz.service';
 import { JwtAuthGuard } from '../../auth/guards';
 import { QuizRateLimitGuard } from './rate-limit/quiz-rate-limit.guard';
 import { QuizRateLimit } from './rate-limit/quiz-rate-limits.decorator';
+import type { AuthenticatedRequest } from '../../auth/types/authenticated-request.type';
 
 // GET /courses/:courseId/quiz-progress — one row per quiz-bearing published
 // lesson, so the roadmap/course page needs one request instead of N (the
@@ -33,7 +34,7 @@ export class QuizCourseController {
   @Get()
   async getCourseQuizProgress(
     @Param('courseId', ParseUUIDPipe) courseId: string,
-    @Req() req,
+    @Req() req: AuthenticatedRequest,
   ) {
     return {
       data: await this.quizService.getCourseQuizProgress(

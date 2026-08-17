@@ -16,6 +16,7 @@ import { AttachVocabDeckWordsDto } from './dto';
 import { JwtAuthGuard, RolesGuard } from '../auth/guards';
 import { Roles } from '../auth/decorators';
 import { UserRole } from '@prisma/client';
+import type { AuthenticatedRequest } from '../auth/types/authenticated-request.type';
 
 // Third controller in the vocab-deck module, extending the established
 // two-controller split (VocabDeckLibraryController / VocabDeckController)
@@ -30,7 +31,7 @@ export class VocabDeckWordController {
   @Get()
   async findWordsByDeck(
     @Param('deckId', ParseUUIDPipe) deckId: string,
-    @Req() req,
+    @Req() req: AuthenticatedRequest,
   ) {
     return this.vocabDeckService.findWordsByDeck(deckId, req.user);
   }

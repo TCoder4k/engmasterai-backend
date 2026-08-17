@@ -4,6 +4,7 @@ import { QuizRateLimitGuard } from '../lesson/quiz/rate-limit/quiz-rate-limit.gu
 import { QuizRateLimit } from '../lesson/quiz/rate-limit/quiz-rate-limits.decorator';
 import { DashboardAnalyticsService } from './dashboard-analytics.service';
 import { DashboardAnalyticsQueryDto } from './dto/dashboard-analytics-query.dto';
+import type { AuthenticatedRequest } from '../auth/types/authenticated-request.type';
 
 // Sprint 09 — GET /analytics/dashboard
 //
@@ -27,7 +28,7 @@ export class DashboardAnalyticsController {
   @UseGuards(JwtAuthGuard, QuizRateLimitGuard)
   @QuizRateLimit({ kind: 'stats', max: 30, windowSeconds: 60 })
   @Get('dashboard')
-  async getDashboard(@Query() query: DashboardAnalyticsQueryDto, @Req() req) {
+  async getDashboard(@Query() query: DashboardAnalyticsQueryDto, @Req() req: AuthenticatedRequest) {
     return this.analytics.getDashboardAnalytics(req.user.userId, query.tz);
   }
 }

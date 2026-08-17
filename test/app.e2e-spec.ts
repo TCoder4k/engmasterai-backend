@@ -4,7 +4,13 @@ import request from 'supertest';
 import { App } from 'supertest/types';
 import { AppModule } from './../src/app.module';
 
-describe('AppController (e2e)', () => {
+// No AppController/root route exists in this app (every route lives under a
+// feature module — auth, course, listening, etc.). This suite exists purely
+// as an application-bootstrap smoke test: it proves the full Nest DI graph
+// compiles and the HTTP adapter actually serves requests end-to-end, not
+// that any specific route works. TODO: once a /health endpoint ships,
+// replace the assertion below with a real health-check request.
+describe('App bootstrap (e2e)', () => {
   let app: INestApplication<App>;
 
   beforeEach(async () => {
@@ -16,10 +22,7 @@ describe('AppController (e2e)', () => {
     await app.init();
   });
 
-  it('/ (GET)', () => {
-    return request(app.getHttpServer())
-      .get('/')
-      .expect(200)
-      .expect('Hello World!');
+  it('boots and serves HTTP (unmatched route correctly 404s)', () => {
+    return request(app.getHttpServer()).get('/').expect(404);
   });
 });
