@@ -13,6 +13,7 @@ import { QuizRateLimit } from '../quiz/rate-limit/quiz-rate-limits.decorator';
 import { VideoProgressDto } from './dto/video-progress.dto';
 import { LessonStepService } from './lesson-step.service';
 import { StepWriteOutcome } from './lesson-step.types';
+import type { AuthenticatedRequest } from '../../auth/types/authenticated-request.type';
 
 // Sprint 07 — the write half for the VIDEO and THEORY steps.
 //
@@ -42,7 +43,7 @@ export class LessonStepController {
   async recordVideoProgress(
     @Param('lessonId', ParseUUIDPipe) lessonId: string,
     @Body() dto: VideoProgressDto,
-    @Req() req,
+    @Req() req: AuthenticatedRequest,
   ) {
     return flatten(
       await this.stepService.recordVideoProgress(lessonId, req.user.userId, dto),
@@ -56,7 +57,7 @@ export class LessonStepController {
   @Post('theory/start')
   async startTheory(
     @Param('lessonId', ParseUUIDPipe) lessonId: string,
-    @Req() req,
+    @Req() req: AuthenticatedRequest,
   ) {
     return flatten(await this.stepService.startTheory(lessonId, req.user.userId));
   }
@@ -68,7 +69,7 @@ export class LessonStepController {
   @Post('theory/complete')
   async completeTheory(
     @Param('lessonId', ParseUUIDPipe) lessonId: string,
-    @Req() req,
+    @Req() req: AuthenticatedRequest,
   ) {
     return flatten(
       await this.stepService.completeTheory(lessonId, req.user.userId),

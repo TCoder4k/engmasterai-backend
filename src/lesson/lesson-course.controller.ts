@@ -13,6 +13,7 @@ import { CreateLessonDto } from './dto';
 import { JwtAuthGuard, RolesGuard } from '../auth/guards';
 import { Roles } from '../auth/decorators';
 import { UserRole } from '@prisma/client';
+import type { AuthenticatedRequest } from '../auth/types/authenticated-request.type';
 
 @Controller('courses/:courseId/lessons')
 export class LessonCourseController {
@@ -23,7 +24,7 @@ export class LessonCourseController {
   @Get()
   async findPublishedByCourse(
     @Param('courseId', ParseUUIDPipe) courseId: string,
-    @Req() req,
+    @Req() req: AuthenticatedRequest,
   ) {
     return this.lessonService.findPublishedByCourse(courseId, req.user);
   }

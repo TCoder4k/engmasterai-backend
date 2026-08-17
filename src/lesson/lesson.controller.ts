@@ -16,6 +16,7 @@ import { UpdateLessonDto } from './dto';
 import { JwtAuthGuard, RolesGuard } from '../auth/guards';
 import { Roles } from '../auth/decorators';
 import { UserRole } from '@prisma/client';
+import type { AuthenticatedRequest } from '../auth/types/authenticated-request.type';
 
 @Controller('lessons')
 export class LessonController {
@@ -24,7 +25,7 @@ export class LessonController {
   // Authenticated users — a single published lesson of an accessible course.
   @UseGuards(JwtAuthGuard)
   @Get(':id')
-  async findOnePublished(@Param('id', ParseUUIDPipe) id: string, @Req() req) {
+  async findOnePublished(@Param('id', ParseUUIDPipe) id: string, @Req() req: AuthenticatedRequest) {
     return this.lessonService.findOnePublished(id, req.user);
   }
 

@@ -11,6 +11,7 @@ import { QuizRateLimitGuard } from '../quiz/rate-limit/quiz-rate-limit.guard';
 import { QuizRateLimit } from '../quiz/rate-limit/quiz-rate-limits.decorator';
 import { CourseProgressService } from './course-progress.service';
 import { CourseProgressQueryDto } from './dto/course-progress-query.dto';
+import type { AuthenticatedRequest } from '../../auth/types/authenticated-request.type';
 
 // The app-wide ValidationPipe (main.ts) doesn't enable `transform`, so the
 // DTO's @Transform would never run on a query string. Scoping a
@@ -48,7 +49,7 @@ export class CourseProgressController {
   @Get('courses')
   async getCourseProgress(
     @Query(queryPipe) query: CourseProgressQueryDto,
-    @Req() req,
+    @Req() req: AuthenticatedRequest,
   ) {
     return this.courseProgress.getCourseProgress(
       query.courseIds,

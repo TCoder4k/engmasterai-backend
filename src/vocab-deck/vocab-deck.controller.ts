@@ -16,6 +16,7 @@ import { UpdateVocabDeckDto } from './dto';
 import { JwtAuthGuard, RolesGuard } from '../auth/guards';
 import { Roles } from '../auth/decorators';
 import { UserRole } from '@prisma/client';
+import type { AuthenticatedRequest } from '../auth/types/authenticated-request.type';
 
 @Controller('vocab/decks')
 export class VocabDeckController {
@@ -26,7 +27,7 @@ export class VocabDeckController {
   // deck up by id internally for its own guard checks.
   @UseGuards(JwtAuthGuard)
   @Get(':id')
-  async findOnePublished(@Param('id', ParseUUIDPipe) id: string, @Req() req) {
+  async findOnePublished(@Param('id', ParseUUIDPipe) id: string, @Req() req: AuthenticatedRequest) {
     return this.vocabDeckService.findOnePublished(id, req.user);
   }
 

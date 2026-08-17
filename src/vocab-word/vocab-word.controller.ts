@@ -19,6 +19,7 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { VocabWordService } from './vocab-word.service';
+import type { AuthenticatedRequest } from '../auth/types/authenticated-request.type';
 import {
   CreateVocabWordDto,
   UpdateVocabWordDto,
@@ -179,7 +180,7 @@ export class VocabWordController {
   @Get(':id')
   async findOneVisibleToUser(
     @Param('id', ParseUUIDPipe) id: string,
-    @Req() req,
+    @Req() req: AuthenticatedRequest,
   ) {
     return this.vocabWordService.findOneVisibleToUser(id, req.user);
   }

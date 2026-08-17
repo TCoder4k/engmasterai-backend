@@ -14,6 +14,7 @@ import { JwtAuthGuard } from '../../auth/guards';
 import { QuizRateLimitGuard } from './rate-limit/quiz-rate-limit.guard';
 import { QuizRateLimit } from './rate-limit/quiz-rate-limits.decorator';
 import { toSubmitResponse } from './task-submit-response';
+import type { AuthenticatedRequest } from '../../auth/types/authenticated-request.type';
 
 // Sprint 06D — student-facing Advanced Practice endpoints.
 //
@@ -41,7 +42,7 @@ export class PracticeStudentController {
   @Get()
   async getPractice(
     @Param('lessonId', ParseUUIDPipe) lessonId: string,
-    @Req() req,
+    @Req() req: AuthenticatedRequest,
   ) {
     return this.practiceService.getPractice(lessonId, req.user.userId);
   }
@@ -53,7 +54,7 @@ export class PracticeStudentController {
   @Post('start')
   async startPractice(
     @Param('lessonId', ParseUUIDPipe) lessonId: string,
-    @Req() req,
+    @Req() req: AuthenticatedRequest,
   ) {
     return this.practiceService.startPractice(lessonId, req.user.userId);
   }
@@ -64,7 +65,7 @@ export class PracticeStudentController {
   async answerPractice(
     @Param('lessonId', ParseUUIDPipe) lessonId: string,
     @Body() dto: AnswerQuestionDto,
-    @Req() req,
+    @Req() req: AuthenticatedRequest,
   ) {
     return this.practiceService.answerPractice(lessonId, req.user.userId, dto);
   }
@@ -75,7 +76,7 @@ export class PracticeStudentController {
   async submitPractice(
     @Param('lessonId', ParseUUIDPipe) lessonId: string,
     @Body() dto: SubmitQuizDto,
-    @Req() req,
+    @Req() req: AuthenticatedRequest,
   ) {
     return toSubmitResponse(
       await this.practiceService.submitPractice(lessonId, req.user.userId, dto),
@@ -106,7 +107,7 @@ export class PracticeCourseController {
   @Get()
   async getStageProgress(
     @Param('courseId', ParseUUIDPipe) courseId: string,
-    @Req() req,
+    @Req() req: AuthenticatedRequest,
   ) {
     return this.practiceService.getCourseStageProgress(
       courseId,

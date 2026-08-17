@@ -4,6 +4,7 @@ import { QuizRateLimit } from '../lesson/quiz/rate-limit/quiz-rate-limits.decora
 import { QuizRateLimitGuard } from '../lesson/quiz/rate-limit/quiz-rate-limit.guard';
 import { GamificationService } from './gamification.service';
 import { GamificationProfileDto } from './gamification.types';
+import type { AuthenticatedRequest } from '../auth/types/authenticated-request.type';
 
 // Sprint 10 — the one gamification read.
 //
@@ -33,7 +34,7 @@ export class GamificationController {
   @UseGuards(JwtAuthGuard, QuizRateLimitGuard)
   @QuizRateLimit({ kind: 'gamification', max: 30, windowSeconds: 60 })
   @Get('profile')
-  async getProfile(@Req() req): Promise<GamificationProfileDto> {
+  async getProfile(@Req() req: AuthenticatedRequest): Promise<GamificationProfileDto> {
     return this.gamification.buildProfile(req.user.userId);
   }
 }

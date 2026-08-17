@@ -634,16 +634,21 @@ describe('Gamification (e2e) — Sprint 10', () => {
       expect(hasKeyDeep(progress.lastSubmitResult, 'gamification')).toBe(false);
     });
 
-    it('leaves GET /analytics/dashboard exactly as Sprint 09 shaped it', async () => {
+    it('leaves GET /analytics/dashboard free of gamification/xp fields', async () => {
       const { token } = await registerAndLogin('dash');
       const res = await request(app.getHttpServer())
         .get('/analytics/dashboard?tz=Asia/Ho_Chi_Minh')
         .set('Authorization', `Bearer ${token}`)
         .expect(200);
 
+      // Sprint 09 shape plus `recentAccuracyPercent` (added later, unrelated to
+      // Sprint 10 gamification — see DashboardAnalyticsDto). This assertion only
+      // guards against gamification/xp leaking in here, not against the DTO
+      // ever growing a new, intentional field.
       expect(Object.keys(res.body).sort()).toEqual([
         'activity',
         'effectiveTimeZone',
+        'recentAccuracyPercent',
         'today',
       ]);
       // streakCapped is still there — Sprint 10 must not have quietly changed

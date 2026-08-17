@@ -120,7 +120,7 @@ export class PlacementQuestionService {
         difficulty: dto.difficulty,
         content: dto.content,
         options: dto.options as unknown as Prisma.InputJsonValue,
-        correctAnswer: dto.correctAnswer as unknown as Prisma.InputJsonValue,
+        correctAnswer: dto.correctAnswer as Prisma.InputJsonValue,
         explanation: dto.explanation,
         audioUrl: dto.audioUrl,
         transcript: dto.transcript,

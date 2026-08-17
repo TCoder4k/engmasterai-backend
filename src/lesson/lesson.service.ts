@@ -90,7 +90,7 @@ export class LessonService {
     return { data: lessons.map(withPublishedTaskTypes) };
   }
 
-  async findOnePublished(id: string, user: { userId: string }) {
+  async findOnePublished(id: string, _user: { userId: string }) {
     const lesson = await this.prismaService.lesson.findUnique({
       where: { id },
       select: {
@@ -106,7 +106,7 @@ export class LessonService {
       throw new NotFoundException(`Lesson with ID ${id} not found`);
     }
 
-    const { isPublished, course, ...publicLesson } = lesson;
+    const { isPublished: _isPublished, course: _course, ...publicLesson } = lesson;
     return withPublishedTaskTypes(publicLesson);
   }
 

@@ -10,6 +10,7 @@ import { JwtAuthGuard } from '../../auth/guards';
 import { QuizRateLimitGuard } from '../quiz/rate-limit/quiz-rate-limit.guard';
 import { QuizRateLimit } from '../quiz/rate-limit/quiz-rate-limits.decorator';
 import { LessonProgressService } from './lesson-progress.service';
+import type { AuthenticatedRequest } from '../../auth/types/authenticated-request.type';
 
 // Sprint 07 — GET /lessons/:lessonId/progress.
 //
@@ -29,7 +30,7 @@ export class LessonProgressController {
   @Get()
   async getLessonProgress(
     @Param('lessonId', ParseUUIDPipe) lessonId: string,
-    @Req() req,
+    @Req() req: AuthenticatedRequest,
   ) {
     return this.progressService.getLessonProgress(lessonId, req.user.userId);
   }
