@@ -1,0 +1,3 @@
+# Force LF for migration SQL so Prisma's per-environment checksum never
+# drifts by line-ending alone (see src/production-bootstrap/migration-checksum-guard.ts).
+prisma/migrations/**/*.sql text eol=lf
