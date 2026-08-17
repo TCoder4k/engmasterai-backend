@@ -1,6 +1,10 @@
-import { Global, Module } from '@nestjs/common';
+import { Global, Module, OnModuleDestroy } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
-import { RedisModule as IoRedisModule } from '@nestjs-modules/ioredis';
+import {
+  InjectRedis,
+  RedisModule as IoRedisModule,
+} from '@nestjs-modules/ioredis';
+import type Redis from 'ioredis';
 
 // The single Redis connection for the whole app. Registered exactly once,
 // imported only by AppModule (see docs/memory.md's auth architecture notes).
@@ -34,4 +38,20 @@ import { RedisModule as IoRedisModule } from '@nestjs-modules/ioredis';
   ],
   exports: [IoRedisModule],
 })
-export class SharedRedisModule {}
+export class SharedRedisModule implements OnModuleDestroy {
+  // @nestjs-modules/ioredis has no lifecycle hook of its own (its
+  // RedisCoreModule never closes the client it creates) — without this, the
+  // raw socket and the retryStrategy's pending reconnect timer both outlive
+  // app.close(), which is what actually keeps the process alive after tests
+  // finish. Deliberately `disconnect()`, not `quit()`: `quit` is sent as a
+  // normal Redis command, so against an unreachable Redis (see
+  // auth.e2e-spec.ts's "Redis outage" suite, which points this client at a
+  // closed port) it would sit in the offline queue waiting for a connection
+  // that will never come. `disconnect()` clears the reconnect timer and
+  // closes the socket synchronously regardless of connection state.
+  constructor(@InjectRedis() private readonly redis: Redis) {}
+
+  onModuleDestroy(): void {
+    this.redis.disconnect();
+  }
+}

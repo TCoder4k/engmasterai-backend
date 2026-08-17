@@ -16,6 +16,14 @@ import { REFRESH_COOKIE_NAME } from '../src/auth/refresh-token.constants';
 // matching the project's existing curl/build-verification convention
 // rather than introducing a mocking layer for full-stack auth flows.
 
+// Phase 3 — POST /auth/refresh and POST /auth/logout now sit behind
+// TrustedOriginGuard (fail-closed CSRF defense for the two cookie-only
+// endpoints — see src/auth/guards/trusted-origin.guard.ts). Every existing
+// call to either endpoint below now needs a trusted Origin header, or it
+// would 403 before ever reaching the business logic these tests exercise.
+// Matches .env.test.example's CORS_ALLOWED_ORIGINS.
+const TRUSTED_ORIGIN = 'http://localhost:5174';
+
 type SetCookieHeader = string[] | undefined;
 
 interface AuthApiResponseBody {
@@ -97,6 +105,19 @@ describe('Auth (e2e) — Sprint 01A: Redis sessions, strict single-use refresh r
       expect(cookieLine).toMatch(/HttpOnly/i);
       expect(cookieLine).toMatch(/SameSite=Lax/i);
       expect(cookieLine).toMatch(/Path=\/auth/i);
+
+      // Phase 3 — attributes not previously asserted here. Test env is
+      // NODE_ENV=test, so `secure` is false and no `Secure` flag should be
+      // on the wire at all (asserting its absence, not just "not true").
+      expect(cookieLine).not.toMatch(/;\s*Secure/i);
+      // Host-only cookie by design (see refresh-cookie.util.ts) — Vercel and
+      // Railway are unrelated domains, not subdomains of one root, so a
+      // Domain attribute would be actively wrong here, not just unset.
+      expect(cookieLine).not.toMatch(/Domain=/i);
+      // REFRESH_TOKEN_TTL_SECONDS default is 30 days — asserting "present
+      // and large", not the literal figure, so this doesn't silently start
+      // failing if that default is ever retuned.
+      expect(cookieLine).toMatch(/Max-Age=\d{6,}/i);
     });
   });
 
@@ -110,6 +131,7 @@ describe('Auth (e2e) — Sprint 01A: Redis sessions, strict single-use refresh r
 
       const refreshRes = await request(app.getHttpServer())
         .post('/auth/refresh')
+        .set('Origin', TRUSTED_ORIGIN)
         .set('Cookie', `${REFRESH_COOKIE_NAME}=${cookie}`);
 
       expect(refreshRes.status).toBe(201);
@@ -139,6 +161,7 @@ describe('Auth (e2e) — Sprint 01A: Redis sessions, strict single-use refresh r
 
       const firstRefresh = await request(app.getHttpServer())
         .post('/auth/refresh')
+        .set('Origin', TRUSTED_ORIGIN)
         .set('Cookie', `${REFRESH_COOKIE_NAME}=${originalCookie}`);
       expect(firstRefresh.status).toBe(201);
       const latestCookie = extractCookieValue(
@@ -148,11 +171,13 @@ describe('Auth (e2e) — Sprint 01A: Redis sessions, strict single-use refresh r
 
       const reuseAttempt = await request(app.getHttpServer())
         .post('/auth/refresh')
+        .set('Origin', TRUSTED_ORIGIN)
         .set('Cookie', `${REFRESH_COOKIE_NAME}=${originalCookie}`);
       expect(reuseAttempt.status).toBe(401);
 
       const followUp = await request(app.getHttpServer())
         .post('/auth/refresh')
+        .set('Origin', TRUSTED_ORIGIN)
         .set('Cookie', `${REFRESH_COOKIE_NAME}=${latestCookie}`);
       expect(followUp.status).toBe(401);
     });
@@ -167,9 +192,11 @@ describe('Auth (e2e) — Sprint 01A: Redis sessions, strict single-use refresh r
       const [a, b] = await Promise.all([
         request(app.getHttpServer())
           .post('/auth/refresh')
+        .set('Origin', TRUSTED_ORIGIN)
           .set('Cookie', `${REFRESH_COOKIE_NAME}=${cookie}`),
         request(app.getHttpServer())
           .post('/auth/refresh')
+        .set('Origin', TRUSTED_ORIGIN)
           .set('Cookie', `${REFRESH_COOKIE_NAME}=${cookie}`),
       ]);
 
@@ -183,16 +210,19 @@ describe('Auth (e2e) — Sprint 01A: Redis sessions, strict single-use refresh r
 
       const followUp = await request(app.getHttpServer())
         .post('/auth/refresh')
+        .set('Origin', TRUSTED_ORIGIN)
         .set('Cookie', `${REFRESH_COOKIE_NAME}=${winnerCookie}`);
       expect(followUp.status).toBe(401);
     });
 
     it('malformed or absent refresh cookie returns a clean 401, not a 500', async () => {
-      const noCookie = await request(app.getHttpServer()).post('/auth/refresh');
+      const noCookie = await request(app.getHttpServer()).post('/auth/refresh')
+        .set('Origin', TRUSTED_ORIGIN);
       expect(noCookie.status).toBe(401);
 
       const malformed = await request(app.getHttpServer())
         .post('/auth/refresh')
+        .set('Origin', TRUSTED_ORIGIN)
         .set('Cookie', `${REFRESH_COOKIE_NAME}=not-a-valid-shape-no-separator`);
       expect(malformed.status).toBe(401);
     });
@@ -214,6 +244,7 @@ describe('Auth (e2e) — Sprint 01A: Redis sessions, strict single-use refresh r
 
       const logoutRes = await request(app.getHttpServer())
         .post('/auth/logout')
+        .set('Origin', TRUSTED_ORIGIN)
         .set('Authorization', `Bearer ${accessToken}`)
         .set('Cookie', `${REFRESH_COOKIE_NAME}=${cookie}`);
       expect(logoutRes.status).toBe(201);
@@ -240,6 +271,7 @@ describe('Auth (e2e) — Sprint 01A: Redis sessions, strict single-use refresh r
 
       const logoutRes = await request(app.getHttpServer())
         .post('/auth/logout')
+        .set('Origin', TRUSTED_ORIGIN)
         .set('Authorization', `Bearer ${expiredToken}`)
         .set('Cookie', `${REFRESH_COOKIE_NAME}=${cookie}`);
 
@@ -256,6 +288,7 @@ describe('Auth (e2e) — Sprint 01A: Redis sessions, strict single-use refresh r
 
       const logoutRes = await request(app.getHttpServer())
         .post('/auth/logout')
+        .set('Origin', TRUSTED_ORIGIN)
         .set('Cookie', `${REFRESH_COOKIE_NAME}=${cookie}`);
 
       expect(logoutRes.status).toBe(201);
@@ -271,10 +304,12 @@ describe('Auth (e2e) — Sprint 01A: Redis sessions, strict single-use refresh r
 
       await request(app.getHttpServer())
         .post('/auth/logout')
+        .set('Origin', TRUSTED_ORIGIN)
         .set('Cookie', `${REFRESH_COOKIE_NAME}=${cookie}`);
 
       const refreshAfterLogout = await request(app.getHttpServer())
         .post('/auth/refresh')
+        .set('Origin', TRUSTED_ORIGIN)
         .set('Cookie', `${REFRESH_COOKIE_NAME}=${cookie}`);
       expect(refreshAfterLogout.status).toBe(401);
     });
@@ -288,6 +323,7 @@ describe('Auth (e2e) — Sprint 01A: Redis sessions, strict single-use refresh r
 
       const logoutRes = await request(app.getHttpServer())
         .post('/auth/logout')
+        .set('Origin', TRUSTED_ORIGIN)
         .set('Cookie', `${REFRESH_COOKIE_NAME}=${cookie}`);
 
       const clearedLine = cookieLineFor(
@@ -296,6 +332,34 @@ describe('Auth (e2e) — Sprint 01A: Redis sessions, strict single-use refresh r
       );
       expect(clearedLine).toBeDefined();
       expect(clearedLine).toMatch(new RegExp(`^${REFRESH_COOKIE_NAME}=;`));
+    });
+
+    it('clears the cookie with the same Path/SameSite/Secure scope it was set with (a mismatch means the browser would not actually delete it)', async () => {
+      const { res: registerRes } = await registerUser();
+      const cookie = extractCookieValue(
+        registerRes.headers['set-cookie'] as unknown as SetCookieHeader,
+        REFRESH_COOKIE_NAME,
+      );
+      const setLine = cookieLineFor(
+        registerRes.headers['set-cookie'] as unknown as SetCookieHeader,
+        REFRESH_COOKIE_NAME,
+      )!;
+
+      const logoutRes = await request(app.getHttpServer())
+        .post('/auth/logout')
+        .set('Origin', TRUSTED_ORIGIN)
+        .set('Cookie', `${REFRESH_COOKIE_NAME}=${cookie}`);
+      const clearLine = cookieLineFor(
+        logoutRes.headers['set-cookie'] as unknown as SetCookieHeader,
+        REFRESH_COOKIE_NAME,
+      )!;
+
+      const scopeOf = (line: string) => ({
+        path: /Path=([^;]+)/i.exec(line)?.[1],
+        sameSite: /SameSite=([^;]+)/i.exec(line)?.[1],
+        secure: /;\s*Secure(;|$)/i.test(line),
+      });
+      expect(scopeOf(clearLine)).toEqual(scopeOf(setLine));
     });
 
     it('remains successful and idempotent on repeated calls with the same stale credentials', async () => {
@@ -308,10 +372,12 @@ describe('Auth (e2e) — Sprint 01A: Redis sessions, strict single-use refresh r
 
       const first = await request(app.getHttpServer())
         .post('/auth/logout')
+        .set('Origin', TRUSTED_ORIGIN)
         .set('Authorization', `Bearer ${accessToken}`)
         .set('Cookie', `${REFRESH_COOKIE_NAME}=${cookie}`);
       const second = await request(app.getHttpServer())
         .post('/auth/logout')
+        .set('Origin', TRUSTED_ORIGIN)
         .set('Authorization', `Bearer ${accessToken}`)
         .set('Cookie', `${REFRESH_COOKIE_NAME}=${cookie}`);
 
@@ -319,6 +385,89 @@ describe('Auth (e2e) — Sprint 01A: Redis sessions, strict single-use refresh r
       expect(second.status).toBe(201);
       expect(first.body).toEqual({ message: 'Logout successful' });
       expect(second.body).toEqual({ message: 'Logout successful' });
+    });
+  });
+
+  describe('Phase 3 — TrustedOriginGuard (CSRF defense on cookie-only endpoints)', () => {
+    // These endpoints authenticate by cookie alone (no Authorization header
+    // required), and production sameSite is 'none' (cross-site by design —
+    // see refresh-cookie.util.ts) — so CORS's response-reading block is not
+    // enough by itself. The guard must fail closed on every branch except an
+    // exact allowlist match; a valid refresh cookie is deliberately still
+    // presented in each case, to prove rejection happens on the Origin check
+    // itself, not because the request was otherwise invalid.
+    it.each([
+      ['an untrusted Origin', 'https://evil.example.com'],
+      ['a literal "null" Origin', 'null'],
+    ])('POST /auth/refresh: 403s on %s', async (_label, origin) => {
+      const { res: registerRes } = await registerUser();
+      const cookie = extractCookieValue(
+        registerRes.headers['set-cookie'] as unknown as SetCookieHeader,
+        REFRESH_COOKIE_NAME,
+      );
+
+      const res = await request(app.getHttpServer())
+        .post('/auth/refresh')
+        .set('Origin', origin)
+        .set('Cookie', `${REFRESH_COOKIE_NAME}=${cookie}`);
+      expect(res.status).toBe(403);
+    });
+
+    it('POST /auth/refresh: 403s when the Origin header is missing entirely', async () => {
+      const { res: registerRes } = await registerUser();
+      const cookie = extractCookieValue(
+        registerRes.headers['set-cookie'] as unknown as SetCookieHeader,
+        REFRESH_COOKIE_NAME,
+      );
+
+      const res = await request(app.getHttpServer())
+        .post('/auth/refresh')
+        .set('Cookie', `${REFRESH_COOKIE_NAME}=${cookie}`);
+      expect(res.status).toBe(403);
+    });
+
+    it.each([
+      ['an untrusted Origin', 'https://evil.example.com'],
+      ['a literal "null" Origin', 'null'],
+    ])('POST /auth/logout: 403s on %s', async (_label, origin) => {
+      const { res: registerRes } = await registerUser();
+      const cookie = extractCookieValue(
+        registerRes.headers['set-cookie'] as unknown as SetCookieHeader,
+        REFRESH_COOKIE_NAME,
+      );
+
+      const res = await request(app.getHttpServer())
+        .post('/auth/logout')
+        .set('Origin', origin)
+        .set('Cookie', `${REFRESH_COOKIE_NAME}=${cookie}`);
+      expect(res.status).toBe(403);
+    });
+
+    it('POST /auth/logout: 403s when the Origin header is missing entirely', async () => {
+      const { res: registerRes } = await registerUser();
+      const cookie = extractCookieValue(
+        registerRes.headers['set-cookie'] as unknown as SetCookieHeader,
+        REFRESH_COOKIE_NAME,
+      );
+
+      const res = await request(app.getHttpServer())
+        .post('/auth/logout')
+        .set('Cookie', `${REFRESH_COOKIE_NAME}=${cookie}`);
+      expect(res.status).toBe(403);
+    });
+
+    it('a trusted Origin is unaffected — refresh still succeeds normally', async () => {
+      const { res: registerRes } = await registerUser();
+      const cookie = extractCookieValue(
+        registerRes.headers['set-cookie'] as unknown as SetCookieHeader,
+        REFRESH_COOKIE_NAME,
+      );
+
+      const res = await request(app.getHttpServer())
+        .post('/auth/refresh')
+        .set('Origin', TRUSTED_ORIGIN)
+        .set('Cookie', `${REFRESH_COOKIE_NAME}=${cookie}`);
+      expect(res.status).toBe(201);
     });
   });
 
@@ -333,6 +482,7 @@ describe('Auth (e2e) — Sprint 01A: Redis sessions, strict single-use refresh r
 
       await request(app.getHttpServer())
         .post('/auth/logout')
+        .set('Origin', TRUSTED_ORIGIN)
         .set('Authorization', `Bearer ${accessToken}`)
         .set('Cookie', `${REFRESH_COOKIE_NAME}=${cookie}`);
 
@@ -365,6 +515,7 @@ describe('Auth (e2e) — Sprint 01A: Redis sessions, strict single-use refresh r
 
       await request(app.getHttpServer())
         .post('/auth/logout')
+        .set('Origin', TRUSTED_ORIGIN)
         .set('Authorization', `Bearer ${accessToken}`);
 
       const randomId = randomUUID();
@@ -435,6 +586,7 @@ describe('Auth (e2e) — Sprint 01A: Redis sessions, strict single-use refresh r
     it('/auth/refresh returns 503', async () => {
       const res = await request(brokenApp.getHttpServer())
         .post('/auth/refresh')
+        .set('Origin', TRUSTED_ORIGIN)
         .set('Cookie', `${REFRESH_COOKIE_NAME}=some-family.some-secret`);
       expect(res.status).toBe(503);
     }, 20000);
@@ -466,6 +618,7 @@ describe('Auth (e2e) — Sprint 01A: Redis sessions, strict single-use refresh r
 
       const res = await request(brokenApp.getHttpServer())
         .post('/auth/logout')
+        .set('Origin', TRUSTED_ORIGIN)
         .set('Authorization', `Bearer ${validlySignedToken}`);
       expect(res.status).toBe(503);
     }, 20000);

@@ -348,11 +348,15 @@ describe('Password Reset (e2e) — Sprint 02C: forgot/reset, cross-token invalid
 
       const firstRefreshAfterReset = await request(app.getHttpServer())
         .post('/auth/refresh')
+        // Phase 3 — TrustedOriginGuard requires a trusted Origin (.env.test.example's CORS_ALLOWED_ORIGINS).
+        .set('Origin', 'http://localhost:5174')
         .set('Cookie', `${REFRESH_COOKIE_NAME}=${firstDeviceCookie}`);
       expect(firstRefreshAfterReset.status).toBe(401);
 
       const secondRefreshAfterReset = await request(app.getHttpServer())
         .post('/auth/refresh')
+        // Phase 3 — TrustedOriginGuard requires a trusted Origin (.env.test.example's CORS_ALLOWED_ORIGINS).
+        .set('Origin', 'http://localhost:5174')
         .set('Cookie', `${REFRESH_COOKIE_NAME}=${secondDeviceCookie}`);
       expect(secondRefreshAfterReset.status).toBe(401);
     });
