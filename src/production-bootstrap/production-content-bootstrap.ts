@@ -472,17 +472,29 @@ async function main(): Promise<void> {
       }
 
       try {
-        await destPrisma.$transaction(async (tx) => {
-          for (const model of domainModels) {
-            const rowsToInsert = diffByModelName.get(model.name)!.toInsert;
-            if (rowsToInsert.length === 0) {
-              continue;
+        await destPrisma.$transaction(
+          async (tx) => {
+            for (const model of domainModels) {
+              const rowsToInsert = diffByModelName.get(model.name)!.toInsert;
+              if (rowsToInsert.length === 0) {
+                continue;
+              }
+              await getDelegate(tx as unknown as PrismaClient, model.delegate).createMany({
+                data: rowsToInsert,
+              });
             }
-            await getDelegate(tx as unknown as PrismaClient, model.delegate).createMany({
-              data: rowsToInsert,
-            });
-          }
-        });
+          },
+          // Prisma's interactive-transaction default (timeout: 5000ms) is
+          // tuned for typical request-path usage, not for pushing thousands
+          // of rows over an SSH tunnel to Railway. The "grammar" domain
+          // (551 rows, 4 createMany calls) committed in ~4s even after
+          // batching; the "vocabulary" domain (9,601 rows, 6 createMany
+          // calls, including a single 4,166-row VocabWordMeaning batch)
+          // measured 6,078ms and hit the default 5000ms ceiling. 60s leaves
+          // ample headroom without holding the transaction open
+          // indefinitely on a genuine hang.
+          { timeout: 60_000, maxWait: 10_000 },
+        );
         manifest = withDomainStatus(manifest, domain, 'committed');
         persistManifest(manifest);
         console.log(`Domain "${domain}": committed (${toInsertCount} row(s) inserted).`);
