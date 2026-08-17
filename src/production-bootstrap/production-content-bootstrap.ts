@@ -76,7 +76,15 @@ import { PLACEMENT_SECTIONS, DIFFICULTY_REQUIREMENTS } from '../placement/placem
 // cast used only here.
 interface GenericDelegate {
   findMany: () => Promise<ContentRow[]>;
-  create: (args: { data: ContentRow }) => Promise<ContentRow>;
+  // One createMany() call per model, not one create() call per row: a
+  // sequential per-row create over the SSH tunnel used to reach production
+  // (real network round-trip latency per call) is what caused the very
+  // first apply attempt to blow Prisma's interactive-transaction timeout
+  // partway through the grammar domain (551 rows) — verified rolled back
+  // cleanly with zero rows written, then fixed here rather than by simply
+  // raising the timeout, since the same issue would recur harder on the
+  // 9,601-row vocabulary domain.
+  createMany: (args: { data: readonly ContentRow[] }) => Promise<{ count: number }>;
 }
 
 const getDelegate = (client: PrismaClient, delegateName: string): GenericDelegate =>
@@ -467,11 +475,12 @@ async function main(): Promise<void> {
         await destPrisma.$transaction(async (tx) => {
           for (const model of domainModels) {
             const rowsToInsert = diffByModelName.get(model.name)!.toInsert;
-            for (const row of rowsToInsert) {
-              await getDelegate(tx as unknown as PrismaClient, model.delegate).create({
-                data: row,
-              });
+            if (rowsToInsert.length === 0) {
+              continue;
             }
+            await getDelegate(tx as unknown as PrismaClient, model.delegate).createMany({
+              data: rowsToInsert,
+            });
           }
         });
         manifest = withDomainStatus(manifest, domain, 'committed');
