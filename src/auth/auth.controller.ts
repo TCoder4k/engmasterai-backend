@@ -18,6 +18,7 @@ import {
 import { buildRefreshCookieOptions } from './utils/refresh-cookie.util';
 import { AuthRateLimitGuard } from './guards/auth-rate-limit.guard';
 import { JwtAuthGuard } from './guards';
+import { TrustedOriginGuard } from './guards/trusted-origin.guard';
 import { RateLimits } from './decorators/rate-limits.decorator';
 import { hashClientIp } from './utils/client-ip.util';
 import type { RequestWithId } from './logging/request-id.middleware';
@@ -135,6 +136,7 @@ export class AuthController {
   // cookie) — otherwise a fabricated, valid-looking-but-fake family id on
   // every request would land in its own empty bucket and never trip the
   // family-keyed limit (see docs/memory.md's Sprint 01C entry).
+  @UseGuards(TrustedOriginGuard)
   @RateLimits([
     {
       kind: 'refresh-family',
@@ -311,6 +313,7 @@ export class AuthController {
   // logout must succeed even with a missing/expired/malformed access
   // token, so it cannot sit behind JwtAuthGuard, which would reject the
   // request before the handler ever runs.
+  @UseGuards(TrustedOriginGuard)
   @Post('logout')
   async logout(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
     const cookieValue = (

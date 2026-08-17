@@ -86,9 +86,26 @@ anywhere except the one lint step below.
   trades speed for determinism — a full e2e run now takes several minutes
   instead of ~70s. Do not re-enable parallel workers to make CI faster
   without re-solving the underlying cross-suite isolation problem.
-- **"Jest did not exit one second after the test run has completed"** /
-  "A worker process has failed to exit gracefully" appears on every Jest run
-  (unit and e2e alike). Jest force-exits after printing it and the process
-  still exits 0 — it does not hang CI — but it indicates something (likely a
-  Prisma or Redis client) isn't being closed in a teardown hook somewhere.
-  Not yet root-caused; a candidate for a future `--detectOpenHandles` pass.
+- **Resolved: full e2e run hanging after all tests passed.** Root-caused via
+  bisection (not `--detectOpenHandles`, whose own forced-GC handle-collection
+  pass proved unreliable in this environment and never printed a report — a
+  separate, cosmetic Jest/Windows quirk, not the leak itself) and fixed by
+  two changes:
+  - `PrismaService` (`src/prisma/prisma.service.ts`) and `SharedRedisModule`
+    (`src/shared/redis/redis.module.ts`) had no `OnModuleDestroy` hook, so
+    `app.close()` never released the Prisma connection or the ioredis
+    client/reconnect timer. Every e2e file compiles its own `AppModule`, so
+    a full run leaked one of each per file. Fixed by disconnecting both on
+    `onModuleDestroy` — `SharedRedisModule` deliberately uses
+    `redis.disconnect()`, not `.quit()`: `quit` is sent as a normal Redis
+    command, so against an unreachable Redis (see `auth.e2e-spec.ts`'s
+    "Redis outage" suite) it would sit in the offline queue forever waiting
+    for a connection that never comes.
+  - `test/app.e2e-spec.ts` built its Nest app in `beforeEach` but had no
+    matching `afterEach` — the only e2e file that never called
+    `app.close()` at all. Alone, a single un-closed app didn't reproduce the
+    hang (nothing forced Node to notice); paired with any second file in the
+    same worker process, it did. Fixed by adding the missing `afterEach`.
+  Verified via bisection down to a 2-file minimal repro (`app` + `auth`),
+  confirmed fixed there, then re-confirmed on the full 24-file suite: exits
+  naturally, exit code 0, no "did not exit" warning.

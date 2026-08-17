@@ -22,6 +22,10 @@ describe('App bootstrap (e2e)', () => {
     await app.init();
   });
 
+  afterEach(async () => {
+    await app.close();
+  });
+
   it('boots and serves HTTP (unmatched route correctly 404s)', () => {
     return request(app.getHttpServer()).get('/').expect(404);
   });

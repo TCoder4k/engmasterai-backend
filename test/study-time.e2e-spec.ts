@@ -160,6 +160,8 @@ describe('Study time (e2e) — Sprint 10.5', () => {
       const { token } = await registerAndLogin('loggedout');
       await request(app.getHttpServer())
         .post('/auth/logout')
+        // Phase 3 — TrustedOriginGuard requires a trusted Origin (.env.test.example's CORS_ALLOWED_ORIGINS).
+        .set('Origin', 'http://localhost:5174')
         .set('Authorization', `Bearer ${token}`);
 
       await heartbeat(token).expect(401);
