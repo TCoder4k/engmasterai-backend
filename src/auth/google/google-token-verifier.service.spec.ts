@@ -1,4 +1,4 @@
-import { ServiceUnavailableException } from '@nestjs/common';
+import { Logger, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { GoogleTokenVerifierService } from './google-token-verifier.service';
 import { GoogleTokenInvalidError } from './google-token-invalid.error';
@@ -127,5 +127,25 @@ describe('GoogleTokenVerifierService', () => {
       ServiceUnavailableException,
     );
     expect(verifyIdToken).not.toHaveBeenCalled();
+  });
+
+  it('logs a sanitized warning (no credential/token content) when GOOGLE_AUTH_ENABLED is false', async () => {
+    config = enabledConfig({ GOOGLE_AUTH_ENABLED: false });
+    service = new GoogleTokenVerifierService(
+      config as unknown as ConfigService,
+    );
+    const warnSpy = jest
+      .spyOn(Logger.prototype, 'warn')
+      .mockImplementation(() => undefined);
+
+    await expect(
+      service.verify('super-secret.jwt.credential'),
+    ).rejects.toBeInstanceOf(ServiceUnavailableException);
+
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    const loggedArgs = warnSpy.mock.calls[0];
+    expect(loggedArgs.join(' ')).not.toContain('super-secret.jwt.credential');
+
+    warnSpy.mockRestore();
   });
 });

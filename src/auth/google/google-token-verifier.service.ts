@@ -1,4 +1,8 @@
-import { Injectable, ServiceUnavailableException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { OAuth2Client } from 'google-auth-library';
 import { GoogleTokenInvalidError } from './google-token-invalid.error';
@@ -24,11 +28,21 @@ export class GoogleTokenVerifierService {
   // Google's published JWKS, so reusing the instance avoids re-fetching keys
   // on every call.
   private client: OAuth2Client | null = null;
+  private readonly logger = new Logger(GoogleTokenVerifierService.name);
 
   constructor(private readonly config: ConfigService) {}
 
   async verify(idToken: string): Promise<VerifiedGoogleIdentity> {
     if (this.config.get<boolean>('GOOGLE_AUTH_ENABLED') !== true) {
+      // Phase 11 production incident: this branch previously threw silently
+      // — no log line anywhere — so a misconfigured deployment (flag never
+      // flipped on) was indistinguishable from a real Google outage without
+      // reading source. Warn-level, no request/credential content: only the
+      // fact that a client attempted Google sign-in while the feature flag
+      // is off, which is itself the actionable signal.
+      this.logger.warn(
+        'POST /auth/google rejected: GOOGLE_AUTH_ENABLED is not true',
+      );
       throw new ServiceUnavailableException('Google sign-in is not available');
     }
 
