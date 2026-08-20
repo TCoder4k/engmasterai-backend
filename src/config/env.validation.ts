@@ -411,6 +411,48 @@ export const envValidationSchema = Joi.object({
   // late legitimate replay within this window still gets its answer without
   // a second Gemini call.
   CHAT_SESSION_TTL_SECONDS: Joi.number().integer().min(60).max(7200).default(1800),
+
+  // Speaking Partner. The conversation itself is Gemini Live
+  // (GEMINI_LIVE_MODEL/GEMINI_LIVE_VOICE, src/speaking/live/) — a single
+  // audio-to-audio session replaces the old two-step transcription +
+  // conversational-reply pipeline entirely (retired vars:
+  // GEMINI_SPEAKING_STT_MODEL, SPEAKING_STT_TIMEOUT_MS,
+  // GEMINI_SPEAKING_MODEL, SPEAKING_REPLY_TIMEOUT_MS — no longer read
+  // anywhere). Shares GEMINI_API_KEY like every other Gemini feature here.
+  GEMINI_LIVE_MODEL: Joi.string().default('gemini-3.1-flash-live-preview'),
+  GEMINI_LIVE_VOICE: Joi.string().default('Erinome'),
+  // BCP-47 language hints for Gemini's own transcription of each side of the
+  // call (AudioTranscriptionConfig.languageCodes) — comma-separated, split
+  // in gemini-speaking-live-connection.provider.ts. Deliberately TWO
+  // independent vars, not one shared list: input is the student's own
+  // speech (may be English or Vietnamese), output is Gemini's spoken reply
+  // (mostly English, occasionally one short Vietnamese aside per the system
+  // instruction) — different reasoning, so a different knob, even though
+  // today's defaults happen to match. An EMPTY string omits the field
+  // entirely (Gemini's own automatic language detection, the original
+  // behaviour before this var existed) — set this to run the A/B/C
+  // comparison documented in the Speaking Live sprint doc, not a supported
+  // permanent configuration.
+  GEMINI_LIVE_INPUT_LANGUAGE_CODES: Joi.string().allow('').default('en-US,vi-VN'),
+  GEMINI_LIVE_OUTPUT_LANGUAGE_CODES: Joi.string().allow('').default('en-US,vi-VN'),
+  // Temporary diagnostic scaffolding, OFF by default — when enabled, dumps
+  // each real Speaking Live turn's raw captured audio to a WAV file in the
+  // OS temp dir (never the repo) plus duration/RMS/peak/clipping stats to
+  // the console, never conversation content. A deliberate, opt-in exception
+  // to this codebase's "audio is never persisted" rule (see Shadowing),
+  // scoped to local debugging only. Meant to be removed once the Speaking
+  // Live transcription-accuracy investigation concludes — see
+  // docs/sprints/sprint-13-speaking-partner.md.
+  SPEAKING_LIVE_AUDIO_DEBUG_DUMP: Joi.boolean().default(false),
+  // Sliding TTL for a bounded Redis conversation history
+  // (speaking:session:<userId>:<attemptId>) — same shape as
+  // CHAT_SESSION_TTL_SECONDS.
+  SPEAKING_SESSION_TTL_SECONDS: Joi.number().integer().min(60).max(7200).default(1800),
+  // A THIRD, independent Speaking Gemini job — on-demand subtitle
+  // translation (POST /speaking/translate), own token/provider/env vars,
+  // never folded into GEMINI_SPEAKING_MODEL's own call.
+  GEMINI_SPEAKING_TRANSLATE_MODEL: Joi.string().default('gemini-3.5-flash-lite'),
+  SPEAKING_TRANSLATE_TIMEOUT_MS: Joi.number().integer().min(1000).max(60000).default(20000),
 })
   // Cloudinary/other unrelated vars are intentionally out of this sprint's
   // scope (see docs/sprints/sprint-01C-security-hardening.md) — `unknown`

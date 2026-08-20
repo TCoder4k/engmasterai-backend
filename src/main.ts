@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import { NestFactory } from '@nestjs/core';
 import { NestExpressApplication } from '@nestjs/platform-express';
+import { WsAdapter } from '@nestjs/platform-ws';
 import { AppModule } from './app.module';
 import { ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -11,6 +12,12 @@ import { resolveTrustProxyValue } from './config/trust-proxy.util';
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
   const config = app.get(ConfigService);
+
+  // Speaking Partner Live (SpeakingLiveGateway, /speaking/live) is the only
+  // WebSocket surface in this app — plain `ws` via @nestjs/platform-ws, not
+  // socket.io: it's a simple bidirectional relay with no rooms/broadcast
+  // needs, matching the codebase's lean-dependency ethos everywhere else.
+  app.useWebSocketAdapter(new WsAdapter(app));
 
   // Backend port — validated/defaulted by env.validation.ts, read via
   // ConfigService rather than process.env directly (Sprint 01C: single

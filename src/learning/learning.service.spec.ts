@@ -1,5 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { NotFoundException, BadRequestException } from '@nestjs/common';
+import { WsAdapter } from '@nestjs/platform-ws';
 import { randomUUID } from 'crypto';
 import { AppModule } from '../app.module';
 import { PrismaService } from '../prisma/prisma.service';
@@ -64,6 +65,13 @@ describe('LearningService (integration — real Postgres)', () => {
       imports: [AppModule],
     }).compile();
     const app = moduleRef.createNestApplication();
+    // AppModule now includes SpeakingLiveGateway (src/speaking/live/) — any
+    // app.init() over the FULL module graph triggers NestJS's WS-gateway
+    // auto-connect, which needs an adapter explicitly registered (this
+    // codebase uses plain `ws` via @nestjs/platform-ws, not the
+    // socket.io default) or init() throws. Same registration main.ts and
+    // speaking.e2e-spec.ts already do for the same reason.
+    app.useWebSocketAdapter(new WsAdapter(app));
     await app.init();
     prisma = app.get(PrismaService);
     service = app.get(LearningService);
