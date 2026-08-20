@@ -29,11 +29,13 @@
     "seed:grammar-theory": "ts-node -r tsconfig-paths/register prisma/seeds/grammar-theory.seed.ts",
     "seed:listening": "ts-node -r tsconfig-paths/register prisma/seeds/listening-content.seed.ts",
     "seed:placement-questions": "ts-node -r tsconfig-paths/register prisma/seeds/placement-questions.seed.ts",
+    "seed:speaking": "ts-node -r tsconfig-paths/register prisma/seeds/speaking-content.seed.ts",
     "bootstrap:content:dry-run": "ts-node -r tsconfig-paths/register src/production-bootstrap/production-content-bootstrap.ts",
     "bootstrap:content:verify": "ts-node -r tsconfig-paths/register src/production-bootstrap/production-content-bootstrap.ts --verify-only",
     "bootstrap:content:apply": "ts-node -r tsconfig-paths/register src/production-bootstrap/production-content-bootstrap.ts --apply"
   },
   "dependencies": {
+    "@google/genai": "^2.17.1",
     "@nestjs-modules/ioredis": "^2.0.2",
     "@nestjs/common": "^11.0.1",
     "@nestjs/config": "^4.0.2",
@@ -41,6 +43,8 @@
     "@nestjs/jwt": "^11.0.2",
     "@nestjs/passport": "^11.0.5",
     "@nestjs/platform-express": "^11.0.1",
+    "@nestjs/platform-ws": "^11.2.1",
+    "@nestjs/websockets": "^11.2.1",
     "@prisma/client": "6.19.2",
     "@types/multer": "^2.0.0",
     "argon2": "^0.44.0",
@@ -60,7 +64,8 @@
     "passport-jwt": "^4.0.1",
     "prisma": "6.19.2",
     "reflect-metadata": "^0.2.2",
-    "rxjs": "^7.8.1"
+    "rxjs": "^7.8.1",
+    "ws": "^8.21.3"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.2.0",
@@ -74,6 +79,7 @@
     "@types/jest": "^30.0.0",
     "@types/node": "^22.10.7",
     "@types/supertest": "^6.0.2",
+    "@types/ws": "^8.18.1",
     "eslint": "^9.18.0",
     "eslint-config-prettier": "^10.0.1",
     "eslint-plugin-prettier": "^5.2.2",

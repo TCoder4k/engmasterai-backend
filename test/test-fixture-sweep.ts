@@ -187,6 +187,30 @@ export async function sweepTestFixtures(): Promise<void> {
       where: { name: { startsWith: TEST_FIXTURE_PREFIX } },
     });
 
+    // Speaking Partner (Phase 1+2). Exercises BEFORE scenarios, because
+    // SpeakingExercise.scenario is `Restrict`: a fixture scenario holding an
+    // exercise cannot be deleted, and leaving it behind would poison every
+    // later suite in the run exactly as an unswept ListeningCategory does.
+    //
+    // NOTE: speakingAttempt needs NO entry here. Its `user` relation is
+    // onDelete: Cascade, so the user sweep above already removes every
+    // fixture-owned attempt row before this point runs — every attempt in
+    // this suite belongs to an `@example.test` student, never an
+    // independently-created row. Same reasoning as the
+    // placementAttempt/vocabGuessProgress/listeningSegment notes elsewhere
+    // in this file; do not "fix" this omission by adding one.
+    await prisma.speakingExercise.deleteMany({
+      where: {
+        OR: [
+          { title: { startsWith: TEST_FIXTURE_PREFIX } },
+          { scenario: { name: { startsWith: TEST_FIXTURE_PREFIX } } },
+        ],
+      },
+    });
+    await prisma.speakingScenario.deleteMany({
+      where: { name: { startsWith: TEST_FIXTURE_PREFIX } },
+    });
+
     // Personalized Onboarding & Placement Test.
     //
     // NOTE: placementAttempt, placementAnswer and roadmap need NO entry

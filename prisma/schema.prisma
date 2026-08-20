@@ -293,6 +293,8 @@ model User {
   placementAttempts PlacementAttempt[]
   roadmap           Roadmap?
 
+  speakingAttempts SpeakingAttempt[]
+
   @@map("users") //users dùng cho query sql , còn User dùng cho code
 }
 
@@ -1840,4 +1842,146 @@ model Roadmap {
   updatedAt   DateTime @updatedAt
 
   @@map("roadmaps")
+}
+
+// Speaking Partner (Phase 1+2) — a topic card, e.g. "Giới thiệu bản thân".
+// Mirrors ListeningCategory's shape and semantics: own isPublished kill
+// switch, visibility is two-level (see speaking-visibility.ts), no cached
+// aggregates.
+model SpeakingScenario {
+  id          String     @id @default(uuid())
+  name        String
+  nameVi      String
+  description String?
+  /// Vietnamese translation of `description` — added 2026-08-20 so the
+  /// student UI never mixes languages (title already had titleVi/nameVi;
+  /// description never did). Optional, matching `description?`'s own
+  /// optionality — a scenario is free to have neither.
+  descriptionVi String?
+  orderIndex  Int        @default(0)
+  isPublished Boolean    @default(false)
+  // Optional, like ListeningCategory.level — a scenario can span several
+  // exercise levels.
+  level       CefrLevel?
+
+  /// Marks the ONE open-topic scenario ("Nói chuyện tự do"/"Free Talk"),
+  /// rendered in its own catalog section instead of the regular
+  /// scenario grid. No new pipeline: start()/submitTurn()/complete() and
+  /// the Gemini providers are fully generic over any SpeakingExercise row
+  /// already — this bit exists purely so the catalog knows which section to
+  /// render a scenario in. Not exclusive by schema (nothing stops two rows
+  /// from being true), but the catalog only ever surfaces one free-talk
+  /// entry point today.
+  isFreeTalk Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  exercises SpeakingExercise[]
+
+  @@index([isPublished, orderIndex])
+  @@map("speaking_scenarios")
+}
+
+// One authored conversation topic — the practice unit. Not modeled after
+// ListeningContent+ListeningSegment: a conversation has no fixed script to
+// author line-by-line, only a persona, an opening line, and rules. Plain
+// nested CRUD, no whole-document PUT (no child array to upsert).
+model SpeakingExercise {
+  id          String    @id @default(uuid())
+  scenarioId  String
+  title       String
+  titleVi     String
+  description String // shown to the student before starting, e.g. "Order a coffee"
+  /// Vietnamese translation of `description` — added 2026-08-20 (real
+  /// student report: the session header always showed titleVi as the
+  /// heading but description stayed English-only, so Vietnamese-mode never
+  /// stopped mixing languages). Required, matching description/title/
+  /// titleVi's own required-ness — `@default("")` exists ONLY to satisfy
+  /// the migration against existing rows; the application always supplies
+  /// a real value going forward (CreateSpeakingExerciseDto requires it) and
+  /// the seed's own backfill step overwrites the empty default immediately.
+  descriptionVi String @default("")
+  level       CefrLevel // required, like ListeningContent.level
+
+  /// Who the AI plays, e.g. "a barista at a busy coffee shop". SERVER/AI
+  /// CONTEXT ONLY — feeds the Gemini system instruction
+  /// (gemini-speaking-ai.provider.ts). NEVER returned in the student read
+  /// DTO (SpeakingExerciseStudentView has no field for it) — see
+  /// speaking.types.ts.
+  aiRole String
+
+  /// The AI's authored, non-generated first line — returned directly from
+  /// this row at attempt-start, never produced by Gemini.
+  openingLine String
+
+  /// Optional steering guidance for the AI persona. SERVER/AI CONTEXT ONLY,
+  /// same discipline as aiRole above — a hidden instruction that must never
+  /// reach the client, or a student reading it in DevTools could game the
+  /// exercise.
+  conversationGoal String?
+
+  /// A soft hint for a future Phase-3 "Bài luyện 1/5"-style UI. Forward
+  /// column, same precedent as Lesson.notes — not consumed by anything in
+  /// this phase, and deliberately not part of SpeakingExerciseStudentView
+  /// yet (add it there the moment a real UI needs it, not before).
+  targetTurns Int @default(5)
+
+  orderIndex  Int     @default(0)
+  isPublished Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Restrict (default, no onDelete): a scenario holding exercises cannot be
+  // deleted, only unpublished — same shape as ListeningContent.category.
+  scenario SpeakingScenario  @relation(fields: [scenarioId], references: [id])
+  attempts SpeakingAttempt[]
+
+  @@index([scenarioId, isPublished, orderIndex])
+  @@index([isPublished, level])
+  @@map("speaking_exercises")
+}
+
+// One practice session's AGGREGATE ONLY. Mirrors Chat's "no Prisma model for
+// messages" choice: per-turn conversation text is Redis-only and ephemeral
+// (SpeakingSessionStore) — nothing here is a transcript log. This row exists
+// (unlike Chat, which has no Prisma model at all) because Speaking needs a
+// real start/complete lifecycle, an idempotency anchor per turn, and a
+// durable turnCount outcome.
+model SpeakingAttempt {
+  id         String @id @default(uuid())
+  userId     String
+  exerciseId String
+
+  startedAt   DateTime  @default(now())
+  completedAt DateTime?
+
+  /// Written EXACTLY ONCE, inside complete() — derived from the Redis
+  /// session's own turn count at that moment, never incremented per turn.
+  /// An earlier draft incremented this on every submitted turn alongside a
+  /// separate Redis append and a separate Redis idempotency commit — three
+  /// writes across two datastores with no way to make them atomic, so a
+  /// crash between any two silently drops or double-counts a turn. The
+  /// Redis session is already the authoritative turn history for the whole
+  /// life of the conversation, so there is nothing to increment here until
+  /// the conversation is over. See SpeakingAttemptService.complete().
+  turnCount Int @default(0)
+
+  // Deliberately NO durationSeconds column. completedAt - startedAt would
+  // count idle/away time as practice time (a student who steps away for 40
+  // minutes mid-conversation would "practice" for 42 minutes), and this
+  // codebase already has a considered answer to exactly that class of
+  // problem (StudyTimeEvent's clamped creditableSeconds) that a bare
+  // timestamp subtraction doesn't replicate. Speaking's route already sits
+  // inside StudyTimeBoundary, which is what actually measures active study
+  // time for this feature.
+  user     User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // Restrict (default): an exercise with real attempts cannot be deleted,
+  // only unpublished — same shape as ListeningContent's Restrict from its
+  // progress tables.
+  exercise SpeakingExercise @relation(fields: [exerciseId], references: [id])
+
+  @@index([userId, exerciseId, startedAt])
+  @@map("speaking_attempts")
 }

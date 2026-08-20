@@ -1,5 +1,6 @@
 import { INestApplication } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
+import { WsAdapter } from '@nestjs/platform-ws';
 import { ConfigService } from '@nestjs/config';
 import request from 'supertest';
 import type { App } from 'supertest/types';
@@ -29,6 +30,8 @@ describe('CORS (e2e)', () => {
     }).compile();
 
     app = moduleFixture.createNestApplication();
+    // AppModule includes SpeakingLiveGateway — app.init() over the full module graph needs an explicit WS adapter (plain 'ws', not the socket.io default) or it throws. See learning.service.spec.ts's own comment.
+    app.useWebSocketAdapter(new WsAdapter(app));
     const config = app.get(ConfigService);
     const allowedOrigins = parseAllowedOrigins(
       config.get<string>('CORS_ALLOWED_ORIGINS'),

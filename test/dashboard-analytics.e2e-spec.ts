@@ -1,5 +1,6 @@
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
+import { WsAdapter } from '@nestjs/platform-ws';
 import request from 'supertest';
 import type { App } from 'supertest/types';
 import { randomUUID } from 'crypto';
@@ -118,6 +119,8 @@ describe('Dashboard analytics (e2e) — Sprint 09', () => {
       imports: [AppModule],
     }).compile();
     app = moduleFixture.createNestApplication();
+    // AppModule includes SpeakingLiveGateway — app.init() over the full module graph needs an explicit WS adapter (plain 'ws', not the socket.io default) or it throws. See learning.service.spec.ts's own comment.
+    app.useWebSocketAdapter(new WsAdapter(app));
     app.useGlobalPipes(new ValidationPipe());
     await app.init();
     prisma = app.get(PrismaService);

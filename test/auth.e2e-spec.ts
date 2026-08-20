@@ -1,5 +1,6 @@
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
+import { WsAdapter } from '@nestjs/platform-ws';
 import { JwtService } from '@nestjs/jwt';
 import request from 'supertest';
 import type { App } from 'supertest/types';
@@ -74,6 +75,8 @@ describe('Auth (e2e) — Sprint 01A: Redis sessions, strict single-use refresh r
     }).compile();
 
     app = moduleFixture.createNestApplication();
+    // AppModule includes SpeakingLiveGateway — app.init() over the full module graph needs an explicit WS adapter (plain 'ws', not the socket.io default) or it throws. See learning.service.spec.ts's own comment.
+    app.useWebSocketAdapter(new WsAdapter(app));
     app.use(cookieParser());
     app.useGlobalPipes(new ValidationPipe());
     await app.init();
@@ -564,6 +567,8 @@ describe('Auth (e2e) — Sprint 01A: Redis sessions, strict single-use refresh r
         imports: [AppModule],
       }).compile();
       brokenApp = moduleFixture.createNestApplication();
+      // AppModule includes SpeakingLiveGateway — app.init() over the full module graph needs an explicit WS adapter (plain 'ws', not the socket.io default) or it throws. See learning.service.spec.ts's own comment.
+      brokenApp.useWebSocketAdapter(new WsAdapter(brokenApp));
       brokenApp.use(cookieParser());
       brokenApp.useGlobalPipes(new ValidationPipe());
       await brokenApp.init();

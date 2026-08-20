@@ -19,6 +19,7 @@ import { ListeningModule } from './listening/listening.module';
 import { PlacementModule } from './placement/placement.module';
 import { DictionaryModule } from './dictionary/dictionary.module';
 import { ChatModule } from './chat/chat.module';
+import { SpeakingModule } from './speaking/speaking.module';
 import { HealthModule } from './health/health.module';
 import { envValidationSchema } from './config/env.validation';
 
@@ -47,6 +48,7 @@ import { envValidationSchema } from './config/env.validation';
     PlacementModule,
     DictionaryModule,
     ChatModule,
+    SpeakingModule,
     HealthModule,
   ],
 })

@@ -1,4 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { WsAdapter } from '@nestjs/platform-ws';
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { App } from 'supertest/types';
@@ -19,6 +20,8 @@ describe('App bootstrap (e2e)', () => {
     }).compile();
 
     app = moduleFixture.createNestApplication();
+    // AppModule includes SpeakingLiveGateway — app.init() over the full module graph needs an explicit WS adapter (plain 'ws', not the socket.io default) or it throws. See learning.service.spec.ts's own comment.
+    app.useWebSocketAdapter(new WsAdapter(app));
     await app.init();
   });
 
