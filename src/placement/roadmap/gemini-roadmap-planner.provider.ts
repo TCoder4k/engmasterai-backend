@@ -53,12 +53,12 @@ export const MAX_OVERALL_REASON_CHARS = 300;
  */
 const PLANNING_PROMPT = [
   'You are an English-learning curriculum planner for a Vietnamese student.',
-  "You are given the student's goal, an estimated CEFR level, optional section scores, and a CLOSED list of real resource candidates grouped by pillar (Grammar/Vocabulary/Listening). Each candidate has a resourceType: COURSE (Grammar), VOCAB_LIBRARY (Vocabulary), or LISTENING_CATEGORY (Listening).",
+  "You are given the student's goal, an estimated CEFR level, optional section scores, and a CLOSED list of real resource candidates grouped by pillar (Grammar/Vocabulary/Listening, and sometimes a fourth pillar, Speaking). Each candidate has a resourceType: COURSE (Grammar), VOCAB_LIBRARY (Vocabulary), LISTENING_CATEGORY (Listening), or SPEAKING_SCENARIO (Speaking).",
   'Select exactly ONE resource per pillar that has at least one candidate, choosing whichever candidate in that pillar best fits the given level and goal.',
-  'If section scores are given, order the selected phases weakest-pillar-first. If no section scores are given, keep the pillar order Grammar, then Vocabulary, then Listening.',
+  'If section scores are given, order the Grammar/Vocabulary/Listening phases weakest-pillar-first. If no section scores are given, keep those three in the order Grammar, then Vocabulary, then Listening. The Speaking pillar has no section score and is never placement-tested — if a Speaking candidate is given, its phase must always be placed LAST, after every other phase, regardless of section scores.',
   'Return resourceType and resourceId values ONLY from the candidate list given in this request — never invent, rename, or reference any resource, id, pillar, or resourceType that was not explicitly listed.',
-  'For each phase, write one short, encouraging reason (under 30 words) explaining why that resource fits this student.',
-  'Also write one short overallReason (under 40 words) summarizing why the whole plan is prioritized this way across all phases.',
+  'For each phase, write one short, encouraging reason (under 30 words) explaining why that resource fits this student. For the Speaking phase, describe it as natural conversation practice with an AI partner — never state or imply a score, percentage, or CEFR level for it, since it is never tested.',
+  "Also write one overallReason: 2-3 short sentences (under 40 words total) summarizing why the whole plan is prioritized this way across all phases, written directly to the student (\"bạn\") so it reads like personal advice, not a generic label. Wrap the 1-2 most important keywords or phrases (e.g. the student's weakest skill, or the pillar they should focus on first) in double asterisks for bold emphasis, like **kỹ năng nghe yếu nhất** — plain Markdown bold syntax, nothing else (no headings, lists, or other Markdown).",
   'Do not state or imply any score, percentage, CEFR level, duration, lesson count, deck count, word count, or recording count that was not explicitly given to you in this request.',
   'Answer in Vietnamese.',
 ].join(' ');

@@ -152,6 +152,16 @@ const buildHarness = (
   // that only cares about the GRAMMAR pillar doesn't need to mock these.
   const vocabLibraryFindMany = jest.fn(() => Promise.resolve([] as never));
   const listeningCategoryFindMany = jest.fn(() => Promise.resolve([] as never));
+  // Fourth, OPTIONAL source — only ever queried by loadAvailableResources
+  // when goal === 'GENERAL_ENGLISH' (fail-closed, see the header comment on
+  // loadAvailableResources). Empty by default, same as the other three.
+  // Typed with an explicit args parameter (unlike courseFindMany/etc. above)
+  // so `.mock.calls[0][0]` is a valid index below — a same-arity no-args
+  // jest.fn() infers Parameters as `[]`, which TypeScript then refuses to
+  // index into.
+  const speakingScenarioFindMany = jest.fn(
+    (_args?: { where?: Record<string, unknown> }) => Promise.resolve([] as never),
+  );
   // Backs getEstimatedMinutesByCourseId (shared/estimated-minutes.ts), called
   // by joinLiveResources. Empty by default -> totalEstimatedMinutes falls
   // back to 0 for every course, same as CourseService's own `?? 0` convention.
@@ -206,6 +216,7 @@ const buildHarness = (
     course: { findMany: courseFindMany },
     vocabLibrary: { findMany: vocabLibraryFindMany },
     listeningCategory: { findMany: listeningCategoryFindMany },
+    speakingScenario: { findMany: speakingScenarioFindMany },
     lesson: { groupBy: lessonGroupBy },
     $transaction: jest.fn((ops: Promise<unknown>[]) => Promise.all(ops)),
   };
@@ -236,6 +247,7 @@ const buildHarness = (
     courseFindMany,
     vocabLibraryFindMany,
     listeningCategoryFindMany,
+    speakingScenarioFindMany,
     lessonGroupBy,
     roadmapAnalysisGenerate,
     roadmapPlannerPlan,
@@ -586,6 +598,43 @@ describe('PlacementService.startBeginner', () => {
     expect(listeningCategoryFindMany).toHaveBeenCalledWith(
       expect.objectContaining({ where: expect.objectContaining({ isPublished: true, ...goalFilter }) }),
     );
+  });
+
+  // Speaking is a fourth, OPTIONAL source with FAIL-CLOSED semantics,
+  // deliberately the opposite of the other three tables above: it is never
+  // queried at all for a goal other than GENERAL_ENGLISH, and even then
+  // requires an explicit suitableGoals match (no isEmpty-means-eligible-
+  // for-all fallback) — an untagged scenario must never leak into anyone's
+  // roadmap. See loadAvailableResources' own header comment.
+  it('never queries SpeakingScenario for a non-GENERAL_ENGLISH goal', async () => {
+    const { service, speakingScenarioFindMany } = buildHarness(
+      {},
+      { learningGoal: 'FOUNDATION' },
+    );
+    await service.startBeginner('user-1');
+    expect(speakingScenarioFindMany).not.toHaveBeenCalled();
+  });
+
+  it('queries SpeakingScenario fail-closed (isFreeTalk + explicit suitableGoals has, no isEmpty fallback) for GENERAL_ENGLISH', async () => {
+    const { service, speakingScenarioFindMany } = buildHarness(
+      {},
+      { learningGoal: 'GENERAL_ENGLISH' },
+    );
+    await service.startBeginner('user-1');
+    expect(speakingScenarioFindMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          isPublished: true,
+          isFreeTalk: true,
+          suitableGoals: { has: 'GENERAL_ENGLISH' },
+        }),
+      }),
+    );
+    // Never the isEmpty-means-eligible-for-all pattern the other 3 tables use.
+    const call = speakingScenarioFindMany.mock.calls[0][0] as {
+      where: Record<string, unknown>;
+    };
+    expect(call.where.OR).toBeUndefined();
   });
 
   // THE regression guard for the reported bug: goal=FOUNDATION + "start from

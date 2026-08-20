@@ -50,6 +50,18 @@ const listeningCategory = (
   orderIndex = 0,
 ) => resource('LISTENING_CATEGORY', 'LISTENING', id, level, orderIndex);
 
+// Only ever present in `candidates` when the caller's goal is
+// GENERAL_ENGLISH — that gating happens upstream, at the query level, in
+// PlacementService.loadAvailableResources (see its own header comment), not
+// in this pure function. generateRoadmap itself has no goal-based branching
+// for Speaking at all: it simply appends whatever pickResource('SPEAKING',
+// ...) finds (or nothing, if the candidates array has none).
+const speakingScenario = (
+  id: string,
+  level: 'A1' | 'A2' | 'B1' | 'B2' | 'C1' | 'C2' | null = null,
+  orderIndex = 0,
+) => resource('SPEAKING_SCENARIO', 'SPEAKING', id, level, orderIndex);
+
 const beginnerInput = (
   overrides: Partial<GenerateRoadmapInput> = {},
 ): GenerateRoadmapInput => ({
@@ -294,6 +306,75 @@ describe('generateRoadmap', () => {
       expect(last.pillar).toBe('LISTENING');
       expect(last.resourceType).toBe('LISTENING_CATEGORY');
       expect(last.resourceId).toBe('l2-b2');
+    });
+  });
+
+  // Acceptance criteria pinned with the product owner: GENERAL_ENGLISH +
+  // beginner-skip -> 4 phases, Speaking last. GENERAL_ENGLISH + graded ->
+  // 3 pillars + consolidation + Speaking, Speaking still last, up to 5
+  // phases. Any other goal -> a `candidates` array with no SPEAKING
+  // resource at all (that gating is PlacementService.loadAvailableResources'
+  // job, not this function's — see the file header), so Speaking is simply
+  // never added.
+  describe('SPEAKING pillar', () => {
+    it('GENERAL_ENGLISH + beginner-assumed: appends Speaking as phase 4, after the 3 fixed pillars', () => {
+      const candidates = [
+        course('g1', 'A1', new Date('2024-01-01')),
+        vocabLibrary('v1', 'A1'),
+        listeningCategory('l1', 'A1'),
+        speakingScenario('free-talk'),
+      ];
+      const items = generateRoadmap(
+        beginnerInput({ goal: 'GENERAL_ENGLISH' }),
+        candidates,
+      );
+      expect(items.map((i) => i.pillar)).toEqual([
+        'GRAMMAR',
+        'VOCABULARY',
+        'LISTENING',
+        'SPEAKING',
+      ]);
+      expect(items.map((i) => i.phase)).toEqual([1, 2, 3, 4]);
+      const speaking = items[items.length - 1];
+      expect(speaking.resourceType).toBe('SPEAKING_SCENARIO');
+      expect(speaking.resourceId).toBe('free-talk');
+      expect(speaking.reason).not.toMatch(/%/); // never a fabricated score
+    });
+
+    it('GENERAL_ENGLISH + graded with consolidation: Speaking is still last, up to 5 phases total', () => {
+      const candidates = [
+        course('g1', 'B1', new Date('2024-01-01')),
+        vocabLibrary('v1', 'B1'),
+        vocabLibrary('v2-b2', 'B2'),
+        listeningCategory('l1', 'B1'),
+        speakingScenario('free-talk'),
+      ];
+      const items = generateRoadmap(
+        gradedInput({
+          goal: 'GENERAL_ENGLISH',
+          sectionScores: { GRAMMAR: 75, VOCABULARY: 25, LISTENING: 50 },
+        }),
+        candidates,
+      );
+      expect(items).toHaveLength(5);
+      expect(items.map((i) => i.phase)).toEqual([1, 2, 3, 4, 5]);
+      const last = items[items.length - 1];
+      expect(last.pillar).toBe('SPEAKING');
+      expect(last.resourceId).toBe('free-talk');
+    });
+
+    it('never appends Speaking when no SPEAKING candidate is present (any other goal, per the upstream gate)', () => {
+      const candidates = [
+        course('g1', 'A1', new Date('2024-01-01')),
+        vocabLibrary('v1', 'A1'),
+        listeningCategory('l1', 'A1'),
+      ];
+      const items = generateRoadmap(
+        beginnerInput({ goal: 'TOEIC_450' }),
+        candidates,
+      );
+      expect(items.some((i) => i.pillar === 'SPEAKING')).toBe(false);
+      expect(items).toHaveLength(3);
     });
   });
 });

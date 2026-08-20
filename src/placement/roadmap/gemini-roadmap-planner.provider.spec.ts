@@ -103,6 +103,43 @@ describe('GeminiRoadmapPlannerProvider', () => {
     );
   });
 
+  it('the prompt describes SPEAKING_SCENARIO and instructs the model to always place it last', async () => {
+    const fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValue(
+      okPlan([
+        { resourceType: 'COURSE', resourceId: 'foundation-grammar', reason: 'Fits your level.' },
+      ]),
+    );
+    const provider = new GeminiRoadmapPlannerProvider(config({ GEMINI_API_KEY: 'k' }));
+
+    await provider.plan(planningRequest);
+
+    const body = JSON.parse(
+      (fetchSpy.mock.calls[0][1] as RequestInit).body as string,
+    ) as { contents: { parts: { text?: string }[] }[] };
+    const promptText = body.contents[0].parts[0].text ?? '';
+    expect(promptText).toContain('SPEAKING_SCENARIO');
+    expect(promptText).toMatch(/Speaking.*must always be placed LAST/);
+  });
+
+  it('the prompt asks for a short, bolded-keyword overallReason written directly to the student', async () => {
+    const fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValue(
+      okPlan([
+        { resourceType: 'COURSE', resourceId: 'foundation-grammar', reason: 'Fits your level.' },
+      ]),
+    );
+    const provider = new GeminiRoadmapPlannerProvider(config({ GEMINI_API_KEY: 'k' }));
+
+    await provider.plan(planningRequest);
+
+    const body = JSON.parse(
+      (fetchSpy.mock.calls[0][1] as RequestInit).body as string,
+    ) as { contents: { parts: { text?: string }[] }[] };
+    const promptText = body.contents[0].parts[0].text ?? '';
+    expect(promptText).toContain('2-3 short sentences');
+    expect(promptText).toContain('double asterisks');
+    expect(promptText).toContain('bạn');
+  });
+
   it('sends the API key as a header, never in the URL', async () => {
     const fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValue(
       okPlan([{ resourceType: 'COURSE', resourceId: 'foundation-grammar', reason: 'x' }]),

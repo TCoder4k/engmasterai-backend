@@ -51,7 +51,7 @@ export interface RoadmapPlanningRequest {
 
 /** One phase the model chose. Read-only, re-validated by the caller — see the file header. */
 export interface RoadmapPlanningPhase {
-  resourceType: 'COURSE' | 'VOCAB_LIBRARY' | 'LISTENING_CATEGORY';
+  resourceType: 'COURSE' | 'VOCAB_LIBRARY' | 'LISTENING_CATEGORY' | 'SPEAKING_SCENARIO';
   resourceId: string;
   reason: string;
 }

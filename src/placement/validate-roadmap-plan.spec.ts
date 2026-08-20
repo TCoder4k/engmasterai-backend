@@ -155,4 +155,50 @@ describe('validateRoadmapPlan', () => {
     );
     expect(result?.items).toHaveLength(3);
   });
+
+  // Speaking-last is a PRODUCT INVARIANT, not just a prompt suggestion —
+  // mirrors roadmap-algorithm.ts's deterministic generateRoadmap, which
+  // always appends Speaking after every other phase. A model could return a
+  // perfectly valid, non-duplicate, fully-covering plan that simply places
+  // Speaking in the wrong position; this must be rejected just as hard as a
+  // hallucinated resource.
+  describe('Speaking-last invariant', () => {
+    const grammar = candidate('c1', 'COURSE', 'GRAMMAR');
+    const vocab = candidate('c2', 'VOCAB_LIBRARY', 'VOCABULARY');
+    const listening = candidate('c3', 'LISTENING_CATEGORY', 'LISTENING');
+    const speaking = candidate('c4', 'SPEAKING_SCENARIO', 'SPEAKING');
+
+    it('rejects the whole plan when Speaking is NOT the last phase', () => {
+      const candidates = [grammar, vocab, listening, speaking];
+      const result = validateRoadmapPlan(
+        plan([
+          { resourceType: 'COURSE', resourceId: 'c1', reason: 'x' },
+          { resourceType: 'VOCAB_LIBRARY', resourceId: 'c2', reason: 'y' },
+          { resourceType: 'SPEAKING_SCENARIO', resourceId: 'c4', reason: 'z' },
+          { resourceType: 'LISTENING_CATEGORY', resourceId: 'c3', reason: 'w' },
+        ]),
+        candidates,
+      );
+      expect(result).toBeNull();
+    });
+
+    it('accepts the plan when Speaking IS the last phase', () => {
+      const candidates = [grammar, vocab, listening, speaking];
+      const result = validateRoadmapPlan(
+        plan([
+          { resourceType: 'COURSE', resourceId: 'c1', reason: 'x' },
+          { resourceType: 'VOCAB_LIBRARY', resourceId: 'c2', reason: 'y' },
+          { resourceType: 'LISTENING_CATEGORY', resourceId: 'c3', reason: 'w' },
+          { resourceType: 'SPEAKING_SCENARIO', resourceId: 'c4', reason: 'z' },
+        ]),
+        candidates,
+      );
+      expect(result?.items.map((i) => i.pillar)).toEqual([
+        'GRAMMAR',
+        'VOCABULARY',
+        'LISTENING',
+        'SPEAKING',
+      ]);
+    });
+  });
 });

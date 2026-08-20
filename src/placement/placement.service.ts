@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import {
   CefrLevel,
+  CourseType,
   LearningGoal,
   LevelSource,
   PlacementAttempt,
@@ -839,6 +840,16 @@ export class PlacementService {
   // roadmap-algorithm.ts's header) means a Course row typed VOCABULARY or
   // LISTENING is dormant for roadmap purposes; Vocabulary/Listening pillars
   // are backed by VocabLibrary/ListeningCategory instead.
+  //
+  // SPEAKING is a fourth, OPTIONAL source queried with the OPPOSITE
+  // semantics on purpose: it is only ever queried at all when goal ===
+  // GENERAL_ENGLISH, and even then requires an EXPLICIT suitableGoals match
+  // (no isEmpty fallback). This is fail-closed by design — the product
+  // decision is "only the communication goal gets a Speaking pillar", never
+  // "every goal gets it unless someone opts a scenario out". Reusing the
+  // other three tables' isEmpty-means-eligible-for-all pattern here would
+  // let a newly published, un-tagged SpeakingScenario silently leak into
+  // every student's roadmap regardless of goal.
   private async loadAvailableResources(
     goal: LearningGoal,
   ): Promise<RoadmapResourceCandidate[]> {
@@ -846,7 +857,7 @@ export class PlacementService {
       OR: [{ suitableGoals: { isEmpty: true } }, { suitableGoals: { has: goal } }],
     };
 
-    const [courses, libraries, categories] = await Promise.all([
+    const [courses, libraries, categories, scenarios] = await Promise.all([
       this.prisma.course.findMany({
         where: { isPublished: true, type: 'GRAMMAR', ...goalFilter },
         select: {
@@ -880,6 +891,27 @@ export class PlacementService {
           suitableGoals: true,
         },
       }),
+      goal === 'GENERAL_ENGLISH'
+        ? this.prisma.speakingScenario.findMany({
+            where: {
+              isPublished: true,
+              isFreeTalk: true,
+              suitableGoals: { has: 'GENERAL_ENGLISH' },
+              // Never recommend a scenario with no published exercise —
+              // it would lead straight to an empty page. Mirrors
+              // SpeakingScenarioService.findPublishedCatalog's own rule.
+              exercises: { some: { isPublished: true } },
+            },
+            select: {
+              id: true,
+              level: true,
+              orderIndex: true,
+              name: true,
+              nameVi: true,
+              suitableGoals: true,
+            },
+          })
+        : Promise.resolve([]),
     ]);
 
     return [
@@ -916,6 +948,16 @@ export class PlacementService {
         description: cat.name,
         suitableGoals: cat.suitableGoals,
       })),
+      ...scenarios.map((s) => ({
+        resourceType: 'SPEAKING_SCENARIO' as const,
+        id: s.id,
+        pillar: 'SPEAKING' as const,
+        level: s.level,
+        sortKey: s.orderIndex,
+        title: s.nameVi,
+        description: s.name,
+        suitableGoals: s.suitableGoals,
+      })),
     ];
   }
 
@@ -945,8 +987,11 @@ export class PlacementService {
     const categoryIds = items
       .filter((i) => i.resourceType === 'LISTENING_CATEGORY')
       .map((i) => i.resourceId);
+    const scenarioIds = items
+      .filter((i) => i.resourceType === 'SPEAKING_SCENARIO')
+      .map((i) => i.resourceId);
 
-    const [courses, libraries, categories, minutesByCourse] = await Promise.all([
+    const [courses, libraries, categories, scenarios, minutesByCourse] = await Promise.all([
       this.prisma.course.findMany({
         where: { id: { in: courseIds }, isPublished: true },
         select: { id: true, title: true, thumbnail: true },
@@ -957,6 +1002,10 @@ export class PlacementService {
       }),
       this.prisma.listeningCategory.findMany({
         where: { id: { in: categoryIds }, isPublished: true },
+        select: { id: true, nameVi: true },
+      }),
+      this.prisma.speakingScenario.findMany({
+        where: { id: { in: scenarioIds }, isPublished: true },
         select: { id: true, nameVi: true },
       }),
       // Same shared helper CourseService's own course-card tile uses — see
@@ -993,6 +1042,18 @@ export class PlacementService {
         totalEstimatedMinutes: 0,
       });
     }
+    for (const s of scenarios) {
+      // SpeakingScenario has no thumbnail column and no estimable-minutes
+      // aggregate — same "never fabricated" rule as VOCAB_LIBRARY/
+      // LISTENING_CATEGORY above. RoadmapCard.tsx already omits the
+      // "~X tuần" line entirely for totalEstimatedMinutes <= 0 rather than
+      // rendering a fake "0 tuần", so this needs no special-casing there.
+      resourceByKey.set(`SPEAKING_SCENARIO:${s.id}`, {
+        title: s.nameVi,
+        thumbnail: null,
+        totalEstimatedMinutes: 0,
+      });
+    }
 
     return items
       .map((item) => {
@@ -1006,12 +1067,23 @@ export class PlacementService {
     items: RoadmapItem[],
   ): Promise<RoadmapAnalysisPhase[]> {
     const joined = await this.joinLiveResources(items);
-    return joined.map(({ item, resource }) => ({
-      phase: item.phase,
-      courseType: item.pillar,
-      courseTitle: resource.title,
-      reason: item.reason,
-    }));
+    // RoadmapAnalysisPhase.courseType is a CourseType (GRAMMAR/VOCABULARY/
+    // LISTENING) — this whole endpoint (POST /placement/roadmap/analysis)
+    // predates the Speaking pillar and is deprecated (see
+    // roadmap-planner.provider.ts's file header: nothing in the live
+    // onboarding/dashboard flow calls it anymore). Rather than widen this
+    // DTO for a pillar this narration was never written to describe, a
+    // SPEAKING item is simply excluded from what gets narrated here.
+    return joined
+      .filter((j): j is typeof j & { item: { pillar: CourseType } } =>
+        j.item.pillar !== 'SPEAKING',
+      )
+      .map(({ item, resource }) => ({
+        phase: item.phase,
+        courseType: item.pillar,
+        courseTitle: resource.title,
+        reason: item.reason,
+      }));
   }
 
   // Null on the beginner-skip path — no test was ever taken, so there is
