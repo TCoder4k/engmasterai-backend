@@ -1,5 +1,5 @@
 import { ConfigService } from '@nestjs/config';
-import { ResendMailProvider } from './resend-mail.provider';
+import { BrevoMailProvider } from './brevo-mail.provider';
 import { RenderedEmail } from '../mail.types';
 
 const rendered: RenderedEmail = {
@@ -8,8 +8,8 @@ const rendered: RenderedEmail = {
   text: 'hello',
 };
 
-describe('ResendMailProvider', () => {
-  let provider: ResendMailProvider;
+describe('BrevoMailProvider', () => {
+  let provider: BrevoMailProvider;
   let configService: jest.Mocked<ConfigService>;
   let fetchMock: jest.Mock;
 
@@ -26,7 +26,7 @@ describe('ResendMailProvider', () => {
       }),
     } as unknown as jest.Mocked<ConfigService>;
 
-    provider = new ResendMailProvider(configService);
+    provider = new BrevoMailProvider(configService);
 
     fetchMock = jest.fn();
     global.fetch = fetchMock as unknown as typeof fetch;
@@ -36,11 +36,12 @@ describe('ResendMailProvider', () => {
     jest.restoreAllMocks();
   });
 
-  it('returns a success MailSendResult on a 2xx provider response — no real network call is made (fetch is mocked)', async () => {
+  it('returns a success MailSendResult on a 201 response — no real network call is made (fetch is mocked)', async () => {
     fetchMock.mockResolvedValue({
       ok: true,
-      status: 200,
-      json: () => Promise.resolve({ id: 'resend-message-id-1' }),
+      status: 201,
+      json: () =>
+        Promise.resolve({ messageId: '<brevo-message-id-1@smtp-relay>' }),
     });
 
     const result = await provider.send(rendered, 'user@example.com');
@@ -48,17 +49,32 @@ describe('ResendMailProvider', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(result.success).toBe(true);
     if (result.success) {
-      expect(result.providerMessageId).toBe('resend-message-id-1');
+      expect(result.providerMessageId).toBe('<brevo-message-id-1@smtp-relay>');
       expect(typeof result.durationMs).toBe('number');
     }
+  });
+
+  it('sends the api-key header, not an Authorization bearer token', async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 201,
+      json: () => Promise.resolve({ messageId: 'x' }),
+    });
+
+    await provider.send(rendered, 'user@example.com');
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const headers = init.headers as Record<string, string>;
+    expect(headers['api-key']).toBe('test-api-key');
+    expect(headers).not.toHaveProperty('Authorization');
   });
 
   it('never leaks the raw fetch Response object — only a MailSendResult is ever returned', async () => {
     const rawResponse = {
       ok: true,
-      status: 200,
+      status: 201,
       json: () =>
-        Promise.resolve({ id: 'resend-message-id-1', secret: 'leak-me-not' }),
+        Promise.resolve({ messageId: 'brevo-message-id-1', secret: 'leak-me-not' }),
     };
     fetchMock.mockResolvedValue(rawResponse);
 
@@ -71,8 +87,9 @@ describe('ResendMailProvider', () => {
   it('maps a non-2xx provider response to a structured provider_rejected failure, never throwing', async () => {
     fetchMock.mockResolvedValue({
       ok: false,
-      status: 422,
-      json: () => Promise.resolve({ message: 'invalid recipient' }),
+      status: 401,
+      json: () =>
+        Promise.resolve({ code: 'unauthorized', message: 'Key not found' }),
     });
 
     const result = await provider.send(rendered, 'user@example.com');
@@ -126,8 +143,8 @@ describe('ResendMailProvider', () => {
   it('sends only already-rendered content plus the recipient — never a template id or raw variables', async () => {
     fetchMock.mockResolvedValue({
       ok: true,
-      status: 200,
-      json: () => Promise.resolve({ id: 'x' }),
+      status: 201,
+      json: () => Promise.resolve({ messageId: 'x' }),
     });
 
     await provider.send(rendered, 'user@example.com');
@@ -135,9 +152,9 @@ describe('ResendMailProvider', () => {
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     const body = JSON.parse(init.body as string) as Record<string, unknown>;
     expect(body.subject).toBe(rendered.subject);
-    expect(body.html).toBe(rendered.html);
-    expect(body.text).toBe(rendered.text);
-    expect(body.to).toEqual(['user@example.com']);
+    expect(body.htmlContent).toBe(rendered.html);
+    expect(body.textContent).toBe(rendered.text);
+    expect(body.to).toEqual([{ email: 'user@example.com' }]);
     expect(body).not.toHaveProperty('template');
     expect(body).not.toHaveProperty('variables');
   });

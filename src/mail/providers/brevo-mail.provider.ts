@@ -2,25 +2,30 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { MailProvider, MailSendResult, RenderedEmail } from '../mail.types';
 
-const RESEND_API_URL = 'https://api.resend.com/emails';
+const BREVO_API_URL = 'https://api.brevo.com/v3/smtp/email';
 
 /**
- * The one concrete MailProvider adapter this sprint ships (ADR 005). Talks
- * to Resend's REST API via native `fetch` — no SDK dependency added,
- * consistent with this project's lean dependency footprint. Enforces its
- * own strict timeout (EMAIL_PROVIDER_TIMEOUT_MS) via AbortController, the
- * same pattern the frontend's `fetchWithTimeout` already uses.
+ * Third `MailProvider` adapter (ADR 005 anticipated this: "migrating to
+ * [another provider] later is a new adapter class, not an
+ * AuthService/TransactionalMailService change"). Talks to Brevo's
+ * transactional email v3 REST API via native `fetch` — no SDK dependency,
+ * same convention as ResendMailProvider/SendGridMailProvider. Selected
+ * instead of them when EMAIL_PROVIDER=brevo (see mail.module.ts).
  *
- * Every failure mode — a non-2xx response, a thrown network error, an
- * aborted request — is caught here and mapped to exactly one
- * `MailSendResult.failureCategory`. The raw `fetch` Response/error never
- * escapes this class: no module outside `src/mail/providers/` ever sees a
- * provider-specific detail (ADR 005's "no raw provider response escapes the
+ * Brevo authenticates this endpoint with an `api-key` header carrying a v3
+ * **API key** (dashboard prefix `xkeysib-`) — NOT the separate SMTP key
+ * (prefix `xsmtpsib-`) used only for SMTP relay login. The two are issued
+ * from different tabs of the same settings page and are not interchangeable;
+ * sending the SMTP key here fails auth (`provider_rejected`).
+ *
+ * Every failure mode is caught here and mapped to exactly one
+ * `MailSendResult.failureCategory` — the raw `fetch` Response/error never
+ * escapes this class (ADR 005's "no raw provider response escapes the
  * provider adapter" requirement).
  */
 @Injectable()
-export class ResendMailProvider implements MailProvider {
-  private readonly logger = new Logger(ResendMailProvider.name);
+export class BrevoMailProvider implements MailProvider {
+  private readonly logger = new Logger(BrevoMailProvider.name);
 
   constructor(private readonly config: ConfigService) {}
 
@@ -37,7 +42,7 @@ export class ResendMailProvider implements MailProvider {
       // Guaranteed present at boot when EMAIL_ENABLED=true (Joi validation) —
       // reaching this branch means runtime config drifted from what was
       // validated at startup. Never thrown — every expected failure mode
-      // resolves to a MailSendResult, per Sprint 02B's failure semantics.
+      // resolves to a MailSendResult, per ADR 005's failure semantics.
       return {
         success: false,
         failureCategory: 'invalid_configuration',
@@ -49,18 +54,19 @@ export class ResendMailProvider implements MailProvider {
     const timeoutHandle = setTimeout(() => controller.abort(), timeoutMs);
 
     try {
-      const response = await fetch(RESEND_API_URL, {
+      const response = await fetch(BREVO_API_URL, {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${apiKey}`,
+          'api-key': apiKey,
           'Content-Type': 'application/json',
+          Accept: 'application/json',
         },
         body: JSON.stringify({
-          from: `${fromName} <${from}>`,
-          to: [to],
+          sender: { email: from, name: fromName },
+          to: [{ email: to }],
           subject: rendered.subject,
-          html: rendered.html,
-          text: rendered.text,
+          htmlContent: rendered.html,
+          textContent: rendered.text,
         }),
         signal: controller.signal,
       });
@@ -71,7 +77,7 @@ export class ResendMailProvider implements MailProvider {
         // Never logs/returns the raw response body — it may contain
         // recipient/request details echoed back by the provider.
         this.logger.warn(
-          `Resend rejected a send attempt (status ${response.status})`,
+          `Brevo rejected a send attempt (status ${response.status})`,
         );
         return {
           success: false,
@@ -81,17 +87,17 @@ export class ResendMailProvider implements MailProvider {
       }
 
       const body = (await response.json().catch(() => ({}))) as {
-        id?: string;
+        messageId?: string;
       };
-      return { success: true, providerMessageId: body.id, durationMs };
+      return { success: true, providerMessageId: body.messageId, durationMs };
     } catch (error) {
       const durationMs = Date.now() - startedAt;
       const isAbort = error instanceof Error && error.name === 'AbortError';
       // Never logs the raw error object — may embed request details.
       this.logger.warn(
         isAbort
-          ? 'Resend send attempt timed out'
-          : 'Resend send attempt failed to reach the network',
+          ? 'Brevo send attempt timed out'
+          : 'Brevo send attempt failed to reach the network',
       );
       return {
         success: false,

@@ -1021,7 +1021,7 @@ export class AuthService {
   // (nonexistent email, or a Google-only account with the instructional
   // notice disabled) takes comparable wall-clock time to a branch that
   // actually sends — see forgotPassword()'s timing-safety requirement.
-  // Sized to ResendMailProvider's observed P50 for a fetch-based HTTP call.
+  // Sized to a typical MailProvider's observed P50 for a fetch-based HTTP call.
   private async simulateMailLatency(): Promise<void> {
     const SIMULATED_MAIL_LATENCY_MS = 200;
     await new Promise((resolve) =>
