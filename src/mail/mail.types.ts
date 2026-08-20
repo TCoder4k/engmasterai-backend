@@ -11,7 +11,7 @@
 export type MailSendResult =
   | {
       success: true;
-      /** Resend's own opaque delivery id — not logged this sprint (see ADR 005). */
+      /** The provider's own opaque delivery id (Brevo's `messageId`) — not logged this sprint (see ADR 005). */
       providerMessageId?: string;
       durationMs: number;
     }

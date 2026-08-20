@@ -8,8 +8,8 @@ import type { MailProvider, MailSendResult } from './mail.types';
  * The one boundary AuthService (and any future domain service) talks to —
  * never a MailProvider or the provider SDK directly (ADR 005). Selects a
  * template, asks EmailTemplateRenderer to render it, hands the rendered
- * content to whichever MailProvider was wired in (Resend, or NullProvider
- * when EMAIL_ENABLED=false), and always resolves to a MailSendResult —
+ * content to whichever MailProvider was wired in (currently Brevo, or
+ * NullProvider when EMAIL_ENABLED=false), and always resolves to a MailSendResult —
  * never throws for an expected failure mode, so every call site can safely
  * `await` it without a try/catch around anything but genuine programmer
  * errors.

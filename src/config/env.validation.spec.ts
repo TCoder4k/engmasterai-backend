@@ -191,7 +191,7 @@ describe('env.validation', () => {
   describe('Sprint 02B — EMAIL_ENABLED / transactional mail config', () => {
     const validEmailConfig = {
       EMAIL_ENABLED: true,
-      EMAIL_PROVIDER: 'resend',
+      EMAIL_PROVIDER: 'brevo',
       EMAIL_FROM: 'noreply@example.com',
       EMAIL_FROM_NAME: 'EngMasterAI',
       EMAIL_PROVIDER_API_KEY: 'test-key',
@@ -249,6 +249,15 @@ describe('env.validation', () => {
         (value as unknown as Record<string, unknown>)
           .EMAIL_VERIFICATION_TOKEN_TTL_MINUTES,
       ).toBe(30);
+    });
+
+    it('rejects an EMAIL_PROVIDER value with no real adapter (resend/sendgrid were both removed 2026-08-20)', () => {
+      const { error } = validate({
+        ...baseDevEnv,
+        ...validEmailConfig,
+        EMAIL_PROVIDER: 'resend',
+      });
+      expect(error?.message).toMatch(/EMAIL_PROVIDER/);
     });
 
     it('defaults FRONTEND_APP_URL to the local dev frontend origin when EMAIL_ENABLED is false', () => {

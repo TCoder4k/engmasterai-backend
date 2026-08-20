@@ -183,11 +183,17 @@ export const envValidationSchema = Joi.object({
   // validated together so a half-configured deployment fails at boot rather
   // than at the first send (same conditional pattern as GOOGLE_AUTH_ENABLED).
   EMAIL_ENABLED: Joi.boolean().default(false),
-  EMAIL_PROVIDER: Joi.string().valid('resend').when('EMAIL_ENABLED', {
-    is: true,
-    then: Joi.required(),
-    otherwise: Joi.optional(),
-  }),
+  // Only 'brevo' has a real adapter today (BrevoMailProvider) — Resend and
+  // SendGrid were both tried and removed the same day, 2026-08-20 (see
+  // docs/memory.md). Widen this enum again only alongside a new
+  // MailProvider class in src/mail/providers/.
+  EMAIL_PROVIDER: Joi.string()
+    .valid('brevo')
+    .when('EMAIL_ENABLED', {
+      is: true,
+      then: Joi.required(),
+      otherwise: Joi.optional(),
+    }),
   EMAIL_FROM: Joi.string().email().when('EMAIL_ENABLED', {
     is: true,
     then: Joi.required(),
@@ -199,7 +205,7 @@ export const envValidationSchema = Joi.object({
     otherwise: Joi.optional(),
   }),
   // Never exposed to the frontend — backend-only, read exclusively by
-  // ResendMailProvider.
+  // BrevoMailProvider.
   EMAIL_PROVIDER_API_KEY: Joi.string().min(1).when('EMAIL_ENABLED', {
     is: true,
     then: Joi.required(),

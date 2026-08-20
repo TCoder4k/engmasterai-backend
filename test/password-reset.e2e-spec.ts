@@ -19,7 +19,7 @@ import {
 
 // Sprint 02C e2e coverage. Requires `docker-compose up -d` (Postgres +
 // Redis) from engmasterai-backend/, same convention as auth.e2e-spec.ts.
-// The real ResendMailProvider is swapped for a capturing fake at the
+// The real MailProvider (currently BrevoMailProvider) is swapped for a capturing fake at the
 // MAIL_PROVIDER injection boundary (ADR 005's own substitutable-provider
 // design) — Postgres and Redis remain real throughout; only the outbound
 // network call to the mail provider is stubbed, so the raw reset token
