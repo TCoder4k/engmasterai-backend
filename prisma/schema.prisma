@@ -1874,6 +1874,17 @@ model SpeakingScenario {
   /// entry point today.
   isFreeTalk Boolean @default(false)
 
+  /// Personalized Roadmap eligibility — mirrors Course/VocabLibrary/
+  /// ListeningCategory's own suitableGoals field, EXCEPT the empty-array
+  /// semantics are intentionally NOT reused: for those three, [] means
+  /// "eligible for every goal" (an untagged resource must not vanish from
+  /// every roadmap). For Speaking, PlacementService.loadAvailableResources
+  /// queries this table ONLY for goal=GENERAL_ENGLISH and requires an
+  /// explicit `has` match — fail-closed, so a scenario nobody has tagged yet
+  /// simply never appears in anyone's roadmap, rather than appearing in
+  /// everyone's.
+  suitableGoals LearningGoal[] @default([])
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

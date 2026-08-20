@@ -1,4 +1,4 @@
-import { CefrLevel, PrismaClient } from '@prisma/client';
+import { CefrLevel, LearningGoal, PrismaClient } from '@prisma/client';
 
 // Sprint 13 — real, reusable Speaking Partner content. Unlike the Listening
 // migration seed, there is no media dependency blocking publication here: a
@@ -36,6 +36,8 @@ interface SeedScenario {
   level?: CefrLevel;
   /** Marks the one open-topic scenario — see the schema comment on SpeakingScenario.isFreeTalk. */
   isFreeTalk?: boolean;
+  /** Roadmap eligibility — see the schema comment on SpeakingScenario.suitableGoals. Defaults to []. */
+  suitableGoals?: LearningGoal[];
   exercises: SeedExercise[];
 }
 
@@ -110,6 +112,10 @@ const SCENARIOS: SeedScenario[] = [
     description: 'An open conversation on any topic the student wants — no fixed scenario.',
     descriptionVi: 'Trò chuyện tự do về bất kỳ chủ đề nào bạn muốn — không theo kịch bản cố định.',
     isFreeTalk: true,
+    // Roadmap: the ONE speaking scenario the deterministic/AI roadmap
+    // planners are allowed to recommend, and only for GENERAL_ENGLISH
+    // ("Tiếng Anh giao tiếp") — see PlacementService.loadAvailableResources.
+    suitableGoals: [LearningGoal.GENERAL_ENGLISH],
     exercises: [
       {
         title: 'Open conversation',
@@ -160,6 +166,7 @@ const seedScenario = async (scenario: SeedScenario, orderIndex: number): Promise
         orderIndex,
         isPublished: true,
         isFreeTalk: scenario.isFreeTalk ?? false,
+        suitableGoals: scenario.suitableGoals ?? [],
       },
       select: { id: true },
     });

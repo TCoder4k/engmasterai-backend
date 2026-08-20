@@ -72,5 +72,20 @@ export const validateRoadmapPlan = (
     if (!coveredPillars.has(pillar)) return null;
   }
 
+  // Speaking-last guarantee: this is a PRODUCT INVARIANT (mirrors
+  // roadmap-algorithm.ts's deterministic generateRoadmap, which always
+  // appends Speaking after every other phase), not merely a prompt
+  // suggestion — PLANNING_PROMPT asks the model to place it last, but a
+  // prompt is not a guarantee. The model could still return Grammar ->
+  // Speaking -> Vocabulary -> Listening and pass every check above (the
+  // resource is real, not a duplicate, and no pillar was dropped). If a
+  // SPEAKING phase is present anywhere but the final position, reject the
+  // whole plan — same "reject entirely, never partially apply" discipline
+  // as every other check in this function.
+  const speakingIndex = items.findIndex((i) => i.pillar === 'SPEAKING');
+  if (speakingIndex !== -1 && speakingIndex !== items.length - 1) {
+    return null;
+  }
+
   return { items, overallReason: result.overallReason };
 };

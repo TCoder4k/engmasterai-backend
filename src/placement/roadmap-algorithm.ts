@@ -9,17 +9,25 @@ import { PLACEMENT_SECTIONS } from './placement.constants';
 // itself never returns a title/thumbnail (see RoadmapItem below), so a
 // renamed or unpublished resource is never served stale from a snapshot.
 
-// Multi-pillar roadmap: each of the three pillars (Grammar/Vocabulary/
-// Listening) is backed by a DIFFERENT resource table, with a fixed 1:1
-// mapping — GRAMMAR -> Course, VOCABULARY -> VocabLibrary,
+// Multi-pillar roadmap: each of the three CourseType pillars (Grammar/
+// Vocabulary/Listening) is backed by a DIFFERENT resource table, with a
+// fixed 1:1 mapping — GRAMMAR -> Course, VOCABULARY -> VocabLibrary,
 // LISTENING -> ListeningCategory. Library/category is the roadmap-item
 // granularity (not VocabDeck/ListeningContent), which is why this candidate
 // shape is deliberately display-level, not lesson-level.
-export type RoadmapPillar = CourseType;
+//
+// SPEAKING is a fourth, OPTIONAL pillar layered on top — deliberately NOT a
+// CourseType member (that enum also backs Course.type and
+// PlacementQuestion.section, neither of which Speaking participates in; see
+// PlacementService.loadAvailableResources for why it's queried as a
+// completely separate, fail-closed candidate source). It never appears in
+// PLACEMENT_SECTIONS and is never placement-tested.
+export type RoadmapPillar = CourseType | 'SPEAKING';
 export type RoadmapResourceType =
   | 'COURSE'
   | 'VOCAB_LIBRARY'
-  | 'LISTENING_CATEGORY';
+  | 'LISTENING_CATEGORY'
+  | 'SPEAKING_SCENARIO';
 
 // Extends the shape used elsewhere (display-only fields) rather than a
 // second, separately-maintained "candidate" type — the AI planner's prompt
@@ -76,6 +84,7 @@ const PILLAR_LABELS: Record<RoadmapPillar, string> = {
   GRAMMAR: 'ngữ pháp',
   VOCABULARY: 'từ vựng',
   LISTENING: 'kỹ năng nghe',
+  SPEAKING: 'giao tiếp',
 };
 
 // Prefers the resource whose level is closest to the student's estimated
@@ -143,6 +152,14 @@ const buildReason = (
     ? `Phần yếu nhất (${score}%) — nên học trước.`
     : `Củng cố ${label} (${score}%).`;
 };
+
+// Speaking never has a section score — it is never placement-tested (see
+// PLACEMENT_SECTIONS) — so, unlike buildReason, this never renders a
+// percentage. Fixed copy, not templated by levelSource/phase: the pitch for
+// "practice speaking naturally with an AI partner" doesn't change based on
+// where in the roadmap it lands.
+const buildSpeakingReason = (): string =>
+  'Giao tiếp tự nhiên với AI Partner — luyện phản xạ nói mỗi ngày.';
 
 const nextLevelUp = (level: CefrLevel): CefrLevel | null => {
   const index = LEVEL_ORDER.indexOf(level);
@@ -233,7 +250,29 @@ export const generateRoadmap = (
       availableResources,
       phase,
     );
-    if (consolidation) items.push(consolidation);
+    if (consolidation) {
+      items.push(consolidation);
+      phase += 1;
+    }
+  }
+
+  // Speaking: always attempted LAST, after the 3 fixed pillars and the
+  // optional consolidation phase — never conditioned on goal here (that
+  // gating already happened upstream, at the query level, in
+  // PlacementService.loadAvailableResources: availableResources only ever
+  // contains a SPEAKING candidate when the caller's goal is
+  // GENERAL_ENGLISH). Omitted, not a crash, when no eligible candidate
+  // exists — same "content gap, not a failure" discipline as every other
+  // pillar above.
+  const speakingResource = pickResource('SPEAKING', input.estimatedLevel, availableResources);
+  if (speakingResource) {
+    items.push({
+      phase,
+      pillar: 'SPEAKING',
+      resourceType: speakingResource.resourceType,
+      resourceId: speakingResource.id,
+      reason: buildSpeakingReason(),
+    });
   }
 
   return items;
