@@ -59,9 +59,12 @@ describe('DictionaryService.lookup', () => {
     expect(result.audioUrl).toBe('https://cdn/apple.mp3');
     expect(result.viTranslation).toBe('quả táo');
     expect(result.viTranslationSource).toBe('CURATED');
-    // Honest about what VocabWord cannot provide, per this codebase's own
-    // "do not display a field the source cannot reliably provide" rule.
+    // Honest about what VocabWord cannot provide (no English definition
+    // exists on this source) — but the Vietnamese meaning IS a real,
+    // required field per VocabWordMeaning row, so it must surface per
+    // meaning, not just as the top-level `viTranslation`.
     expect(result.meanings[0].definitionEn).toBeNull();
+    expect(result.meanings[0].definitionVi).toBe('quả táo');
     expect(result.meanings[0].exampleEn).toBe('I ate an apple.');
     expect(cache.get).not.toHaveBeenCalled();
     expect(source.lookup).not.toHaveBeenCalled();
@@ -112,6 +115,10 @@ describe('DictionaryService.lookup', () => {
     expect(result.audioUrl).toBeNull();
     expect(result.viTranslation).toBe('Xin chào');
     expect(result.viTranslationSource).toBe('AI');
+    // Per-meaning definitionVi is a VOCAB_WORD-only field — this tier only
+    // ever translates the FIRST definition, into the top-level viTranslation
+    // above.
+    expect(result.meanings[0].definitionVi).toBeNull();
     expect(cache.set).toHaveBeenCalledWith('hello', expect.objectContaining({ source: 'EXTERNAL' }));
   });
 
