@@ -120,12 +120,15 @@ export class DictionaryService {
       ipa: word.ipa,
       audioUrl: word.audioUrl,
       // No English definition is stored on VocabWord — only a curated
-      // Vietnamese meaning and an English example sentence. Leaving
-      // definitionEn null here is honest, not a bug: this codebase's own
-      // rule is "do not display a field the source cannot reliably provide".
+      // Vietnamese meaning (required on every VocabWordMeaning row, hence
+      // `definitionVi` below) and an English example sentence. `definitionEn`
+      // stays null here — genuinely absent, not just unpopulated — per this
+      // codebase's "do not display a field the source cannot reliably
+      // provide" rule.
       meanings: word.meanings.map((m, index) => ({
         partOfSpeech: m.partOfSpeech ? m.partOfSpeech.toLowerCase() : null,
         definitionEn: null,
+        definitionVi: m.meaning,
         exampleEn: word.examples[index]?.sentence ?? null,
       })),
       synonyms: word.synonyms,
@@ -191,7 +194,11 @@ export class DictionaryService {
       ipa: sourceLookup.ipa,
       // Never populated from this tier — see free-dictionary-api.provider.ts.
       audioUrl: null,
-      meanings: sourceLookup.meanings,
+      // definitionVi is per-meaning and only ever populated for a VOCAB_WORD
+      // hit (see lookupVocabWord) — this tier only AI-translates the FIRST
+      // definition, into the top-level `viTranslation` above, not one
+      // translation per meaning.
+      meanings: sourceLookup.meanings.map((m) => ({ ...m, definitionVi: null })),
       synonyms: sourceLookup.synonyms,
       viTranslation,
       viTranslationSource,

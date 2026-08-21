@@ -8,6 +8,14 @@ export type ViTranslationSource = 'NONE' | 'AI' | 'CURATED';
 export interface DictionaryLookupMeaning {
   partOfSpeech: string | null;
   definitionEn: string | null;
+  /**
+   * A curated Vietnamese sense, populated ONLY for a VOCAB_WORD hit (from
+   * VocabWordMeaning.meaning, a required field — every meaning row has one).
+   * Always null for DICTIONARY_CACHE/EXTERNAL, which only ever AI-translate
+   * the FIRST definition into the top-level `viTranslation`, not one
+   * translation per meaning.
+   */
+  definitionVi: string | null;
   exampleEn: string | null;
 }
 
