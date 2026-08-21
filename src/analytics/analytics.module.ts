@@ -3,6 +3,8 @@ import { PrismaModule } from '../prisma/prisma.module';
 import { LessonModule } from '../lesson/lesson.module';
 import { DashboardAnalyticsController } from './dashboard-analytics.controller';
 import { DashboardAnalyticsService } from './dashboard-analytics.service';
+import { AdminDashboardAnalyticsController } from './admin-dashboard-analytics.controller';
+import { AdminDashboardAnalyticsService } from './admin-dashboard-analytics.service';
 
 // Sprint 09 — Dashboard Analytics.
 //
@@ -22,7 +24,7 @@ import { DashboardAnalyticsService } from './dashboard-analytics.service';
 // RateLimiterService need no import — AuthModule is @Global() and exports both.
 @Module({
   imports: [PrismaModule, LessonModule],
-  controllers: [DashboardAnalyticsController],
-  providers: [DashboardAnalyticsService],
+  controllers: [DashboardAnalyticsController, AdminDashboardAnalyticsController],
+  providers: [DashboardAnalyticsService, AdminDashboardAnalyticsService],
 })
 export class AnalyticsModule {}
