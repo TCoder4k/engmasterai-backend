@@ -295,6 +295,8 @@ model User {
 
   speakingAttempts SpeakingAttempt[]
 
+  communityMessages CommunityMessage[]
+
   @@map("users") //users dùng cho query sql , còn User dùng cho code
 }
 
@@ -1995,4 +1997,40 @@ model SpeakingAttempt {
 
   @@index([userId, exerciseId, startedAt])
   @@map("speaking_attempts")
+}
+
+// Community Chat ("Tán gẫu") — a public room, everyone reads the same feed.
+// Deliberately NOT modeled like Engy's ChatModule (Redis-only, no Prisma
+// row): that design fits one user's private, ephemeral session; this is
+// shared, durable history every user needs to be able to page back through.
+model CommunityMessage {
+  id     String @id @default(uuid())
+  userId String
+  content String
+
+  // The send-idempotency key, generated client-side once per logical
+  // outgoing message and reused verbatim on retry (same convention as
+  // ChatModule's clientMessageId). Enforced here at the DB layer via the
+  // compound unique constraint below, NOT via a Redis claim store —
+  // ChatIdempotencyStore's claim/poll/commit dance exists to stop a slow,
+  // *paid* Gemini call from double-firing; this is a single fast Postgres
+  // insert with nothing slow in between, so a unique constraint alone
+  // already makes a retried POST a no-op instead of a duplicate row.
+  clientMessageId String
+
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, clientMessageId])
+  // Deliberately NOT @@index([userId, createdAt]) — every real read here is
+  // the GLOBAL feed ("all messages, newest first"), never "this user's own
+  // messages" (no such screen in MVP scope), so that usual per-user index
+  // would be pure write overhead with no query to serve.
+  //
+  // (createdAt, id) — not createdAt alone — is what makes cursor pagination
+  // (see CommunityChatService.listMessages) exact even on a same-millisecond
+  // tie; id (a UUID) is only ever the tie-breaker, never the primary sort.
+  @@index([createdAt, id])
+  @@map("community_messages")
 }

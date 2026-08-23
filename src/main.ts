@@ -13,10 +13,12 @@ async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
   const config = app.get(ConfigService);
 
-  // Speaking Partner Live (SpeakingLiveGateway, /speaking/live) is the only
-  // WebSocket surface in this app — plain `ws` via @nestjs/platform-ws, not
-  // socket.io: it's a simple bidirectional relay with no rooms/broadcast
-  // needs, matching the codebase's lean-dependency ethos everywhere else.
+  // WebSocket surfaces in this app: Speaking Live (SpeakingLiveGateway,
+  // /speaking/live) and Community Chat (CommunityChatGateway,
+  // /community/live) — both plain `ws` via @nestjs/platform-ws, not
+  // socket.io, matching the codebase's lean-dependency ethos everywhere
+  // else. One WsAdapter instance serves every @WebSocketGateway path on
+  // this same HTTP server with no extra wiring per gateway.
   app.useWebSocketAdapter(new WsAdapter(app));
 
   // Backend port — validated/defaulted by env.validation.ts, read via
