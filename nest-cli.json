@@ -4,7 +4,13 @@
   "sourceRoot": "src",
   "compilerOptions": {
     "deleteOutDir": true,
-    "assets": ["auth/lua/*.lua", "chat/lua/*.lua", "speaking/lua/*.lua", "speaking/live/lua/*.lua"],
+    "assets": [
+      "auth/lua/*.lua",
+      "chat/lua/*.lua",
+      "speaking/lua/*.lua",
+      "speaking/live/lua/*.lua",
+      "community-chat/live/lua/*.lua"
+    ],
     "watchAssets": true
   }
 }

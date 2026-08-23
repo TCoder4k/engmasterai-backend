@@ -1,0 +1,171 @@
+import { Prisma } from '@prisma/client';
+import { CommunityChatService } from './community-chat.service';
+import { CommunityChatGateway } from './live/community-chat.gateway';
+
+const resolve = <T>(value: T) => Promise.resolve(value);
+
+const AUTHOR = { id: 'author-1', name: 'Alice', avatarUrl: null, level: 5 };
+
+const buildHarness = () => {
+  const create = jest.fn();
+  const findUnique = jest.fn();
+  const findMany = jest.fn();
+  const prisma = {
+    communityMessage: { create, findUnique, findMany },
+  };
+  const gateway = { broadcast: jest.fn() } as unknown as CommunityChatGateway;
+  const service = new CommunityChatService(prisma as never, gateway);
+  return { service, prisma, gateway, create, findUnique, findMany };
+};
+
+const row = (id: string, createdAt: string, overrides: Record<string, unknown> = {}) => ({
+  id,
+  content: `content-${id}`,
+  clientMessageId: `client-${id}`,
+  createdAt: new Date(createdAt),
+  user: AUTHOR,
+  ...overrides,
+});
+
+describe('CommunityChatService.sendMessage', () => {
+  it('persists a message via the safe author projection and never leaks fields beyond id/name/avatarUrl/level', async () => {
+    const { service, create } = buildHarness();
+    create.mockResolvedValue(
+      row('msg-1', '2026-01-01T00:00:00.000Z', {
+        content: 'hello',
+        clientMessageId: 'c1',
+        // Simulates a future accidental widening of the Prisma `select` —
+        // the DTO mapper must still only ever copy through the four safe
+        // fields, never whatever else the row happens to carry.
+        user: { ...AUTHOR, email: 'leaked@test.com', role: 'ADMIN', totalPoints: 999 },
+      }),
+    );
+
+    const result = await service.sendMessage('user-1', 'c1', 'hello');
+
+    expect(result).toEqual({
+      id: 'msg-1',
+      content: 'hello',
+      clientMessageId: 'c1',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      author: { id: 'author-1', name: 'Alice', avatarUrl: null, level: 5 },
+    });
+    expect(create).toHaveBeenCalledWith({
+      data: { userId: 'user-1', clientMessageId: 'c1', content: 'hello' },
+      include: { user: { select: { id: true, name: true, avatarUrl: true, level: true } } },
+    });
+  });
+
+  it('broadcasts exactly once on a first-time send', async () => {
+    const { service, create, gateway } = buildHarness();
+    create.mockResolvedValue(row('msg-1', '2026-01-01T00:00:00.000Z', { content: 'hi', clientMessageId: 'c1' }));
+
+    await service.sendMessage('user-1', 'c1', 'hi');
+
+    expect(gateway.broadcast).toHaveBeenCalledTimes(1);
+    expect(gateway.broadcast).toHaveBeenCalledWith(expect.objectContaining({ id: 'msg-1', content: 'hi' }));
+  });
+
+  it('a retried send with the same (userId, clientMessageId) returns the original row and does not create a duplicate or re-broadcast', async () => {
+    const { service, create, findUnique, gateway } = buildHarness();
+    const p2002 = new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
+      code: 'P2002',
+      clientVersion: 'test',
+    });
+    create.mockRejectedValue(p2002);
+    findUnique.mockResolvedValue(row('msg-1', '2026-01-01T00:00:00.000Z', { content: 'hi', clientMessageId: 'c1' }));
+
+    const result = await service.sendMessage('user-1', 'c1', 'hi');
+
+    expect(result.id).toBe('msg-1');
+    expect(findUnique).toHaveBeenCalledWith({
+      where: { userId_clientMessageId: { userId: 'user-1', clientMessageId: 'c1' } },
+      include: { user: { select: { id: true, name: true, avatarUrl: true, level: true } } },
+    });
+    expect(gateway.broadcast).not.toHaveBeenCalled();
+  });
+
+  it('propagates a non-P2002 error rather than swallowing it', async () => {
+    const { service, create } = buildHarness();
+    create.mockRejectedValue(new Error('connection lost'));
+
+    await expect(service.sendMessage('user-1', 'c1', 'hi')).rejects.toThrow('connection lost');
+  });
+});
+
+describe('CommunityChatService.listMessages', () => {
+  it('returns the most recent page, oldest -> newest, when no cursor is given', async () => {
+    const { service, findMany } = buildHarness();
+    // The service queries DESC (newest first); the mock mirrors that.
+    findMany.mockReturnValue(
+      resolve([
+        row('3', '2026-01-03T00:00:00.000Z'),
+        row('2', '2026-01-02T00:00:00.000Z'),
+        row('1', '2026-01-01T00:00:00.000Z'),
+      ]),
+    );
+
+    const result = await service.listMessages(undefined, 3);
+
+    expect(result.data.map((m) => m.id)).toEqual(['1', '2', '3']);
+    expect(result.meta).toEqual({ hasMore: false, oldestId: '1' });
+  });
+
+  it('hasMore is true exactly when limit+1 rows come back, and the extra row is trimmed', async () => {
+    const { service, findMany } = buildHarness();
+    findMany.mockReturnValue(
+      resolve([
+        row('4', '2026-01-04T00:00:00.000Z'),
+        row('3', '2026-01-03T00:00:00.000Z'),
+        row('2', '2026-01-02T00:00:00.000Z'),
+        row('1', '2026-01-01T00:00:00.000Z'), // the +1 boundary row, must be trimmed
+      ]),
+    );
+
+    const result = await service.listMessages(undefined, 3);
+
+    expect(result.data.map((m) => m.id)).toEqual(['2', '3', '4']);
+    expect(result.meta).toEqual({ hasMore: true, oldestId: '2' });
+  });
+
+  it('a `before` cursor resolves the anchor row then queries strictly older rows, returned oldest -> newest', async () => {
+    const { service, findMany, findUnique } = buildHarness();
+    findUnique.mockResolvedValue({ id: 'anchor', createdAt: new Date('2026-01-05T00:00:00.000Z') });
+    findMany.mockReturnValue(
+      resolve([row('2', '2026-01-02T00:00:00.000Z'), row('1', '2026-01-01T00:00:00.000Z')]),
+    );
+
+    const result = await service.listMessages('anchor', 10);
+
+    expect(result.data.map((m) => m.id)).toEqual(['1', '2']);
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          OR: [
+            { createdAt: { lt: new Date('2026-01-05T00:00:00.000Z') } },
+            { createdAt: new Date('2026-01-05T00:00:00.000Z'), id: { lt: 'anchor' } },
+          ],
+        },
+      }),
+    );
+  });
+
+  it('an unresolvable `before` id returns an empty page, not an error', async () => {
+    const { service, findUnique, findMany } = buildHarness();
+    findUnique.mockResolvedValue(null);
+
+    const result = await service.listMessages('missing-id', 10);
+
+    expect(result).toEqual({ data: [], meta: { hasMore: false, oldestId: null } });
+    expect(findMany).not.toHaveBeenCalled();
+  });
+
+  it('an empty result set reports hasMore:false and oldestId:null, not a thrown error', async () => {
+    const { service, findMany } = buildHarness();
+    findMany.mockReturnValue(resolve([]));
+
+    const result = await service.listMessages(undefined, 10);
+
+    expect(result).toEqual({ data: [], meta: { hasMore: false, oldestId: null } });
+  });
+});
