@@ -7,6 +7,7 @@ import { sumStudySecondsSince } from '../shared/study-time-window';
 import { startOfDayInTimeZone } from '../learning/timezone.util';
 import {
   countCurrentStreak,
+  enumerateCalendarWeekInTimeZone,
   enumerateDaysInTimeZone,
   formatDayInTimeZone,
 } from './day-window';
@@ -82,17 +83,33 @@ export class DashboardAnalyticsService {
 
     const now = new Date();
     const startOfToday = startOfDayInTimeZone(now, effectiveTimeZone);
-    const days = enumerateDaysInTimeZone(
+    const todayLabel = formatDayInTimeZone(now, effectiveTimeZone);
+    // TWO different 7-day windows, deliberately kept separate:
+    //  - `streakDays` is the ROLLING window ending today — the only one
+    //    `countCurrentStreak` may ever see, since its contract requires the
+    //    array to end on today (see day-window.ts).
+    //  - `calendarDays` is the FIXED Monday-Sunday week containing today —
+    //    what the widget actually DISPLAYS. A rolling window reads fine when
+    //    it always ends on today, but shown as a labelled week it looks
+    //    backwards on every day except Sunday (e.g. on a Monday it would
+    //    show Tue-through-Mon, stranding today's tile on the far right).
+    //    Days after today are real future dates (`isFuture: true` below),
+    //    never a false "missed" mark.
+    const streakDays = enumerateDaysInTimeZone(
       now,
       effectiveTimeZone,
       ACTIVITY_WINDOW_DAYS,
     );
+    const calendarDays = enumerateCalendarWeekInTimeZone(now, effectiveTimeZone);
     // The window opens at the START of its first day, not `now - 7 days`.
     // Subtracting a duration would clip the earliest day at whatever time of
     // day it happens to be, so that tile would light up only for activity
-    // later than this morning's clock time.
+    // later than this morning's clock time. `streakDays[0]` is always the
+    // earlier of the two windows' starts (the calendar week's Monday is
+    // never more than 6 days before today, exactly the rolling window's own
+    // span), so one query still covers both.
     const windowStart = startOfDayInTimeZone(
-      new Date(`${days[0]}T12:00:00.000Z`),
+      new Date(`${streakDays[0]}T12:00:00.000Z`),
       effectiveTimeZone,
     );
 
@@ -205,7 +222,7 @@ export class DashboardAnalyticsService {
     ).length;
 
     const today: TodayAnalyticsDto = {
-      date: formatDayInTimeZone(now, effectiveTimeZone),
+      date: todayLabel,
       stagesCompleted: stepCompletions + taskCompletions,
       taskAttempts: { quiz, practice, total: todayAttempts.length },
       newWordsLearned,
@@ -215,9 +232,13 @@ export class DashboardAnalyticsService {
 
     const activity: ActivityAnalyticsDto = {
       windowDays: ACTIVITY_WINDOW_DAYS,
-      days: days.map((date) => ({ date, active: activeDays.has(date) })),
-      currentStreakDays: countCurrentStreak(days, activeDays),
-      streakCapped: days.every((date) => activeDays.has(date)),
+      days: calendarDays.map((date) => ({
+        date,
+        active: activeDays.has(date),
+        isFuture: date > todayLabel,
+      })),
+      currentStreakDays: countCurrentStreak(streakDays, activeDays),
+      streakCapped: streakDays.every((date) => activeDays.has(date)),
     };
 
     // null for a student with no graded attempts EVER — never a fabricated

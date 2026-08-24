@@ -64,11 +64,23 @@ export interface ActivityDayDto {
   /** 'YYYY-MM-DD' in effectiveTimeZone. */
   date: string;
   active: boolean;
+  /** True for a day later than today — the remainder of the fixed
+   * Monday-Sunday calendar week, which hasn't happened yet. Render as
+   * "not yet", never as a false "missed" mark. */
+  isFuture: boolean;
 }
 
 export interface ActivityAnalyticsDto {
   windowDays: number;
-  /** Ascending, exactly `windowDays` long, last element is today. */
+  /**
+   * Ascending, exactly `windowDays` long — the FIXED Monday-Sunday calendar
+   * week containing today, not a rolling window. Today is wherever Monday
+   * falls in the week, not always the last element; `isFuture` marks the
+   * days after it. `currentStreakDays`/`streakCapped` below are computed
+   * from a SEPARATE rolling window that always ends on today (see
+   * countCurrentStreak's contract in day-window.ts) — do not derive them
+   * from this array.
+   */
   days: ActivityDayDto[];
   /**
    * Consecutive active days counting back from today.
