@@ -82,6 +82,20 @@ export interface LeaderboardEntryDto {
   isCurrentUserPair: boolean;
 }
 
+// GET /streaks/invite-link — the caller's own persistent, reusable invite
+// token (not a per-invite record; see StreakService.getOrCreateInviteLink).
+export interface StreakInviteLinkDto {
+  token: string;
+}
+
+// GET /streaks/invite-link/:token — PUBLIC. Its own narrow shape, same
+// "never reuse an authenticated DTO on a public route" discipline as
+// PublicStreakDto below: no id, no email, no level.
+export interface StreakInviteLinkPreviewDto {
+  inviterName: string;
+  inviterAvatarUrl: string | null;
+}
+
 // The ONLY shape ever returned by GET /streaks/public/:shareId — built from
 // its own dedicated narrow Prisma select, never by reusing toStreakPairDto,
 // so an authenticated field can never leak onto the public route by

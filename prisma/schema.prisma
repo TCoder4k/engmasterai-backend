@@ -303,6 +303,13 @@ model User {
   streakPairsAsHigh         StreakPair[]       @relation("StreakPairHigh")
   notifications             Notification[]
 
+  // Streak Together — a persistent, reusable per-user invite link (NOT a
+  // per-invite token — confirmed product decision). Lazily generated on
+  // first GET /streaks/invite-link, same randomBytes(16).toString('base64url')
+  // idiom as StreakPair.publicShareId. Never expires, never rotated in this
+  // MVP — the same link can be sent to many different friends.
+  streakInviteToken String? @unique
+
   @@map("users") //users dùng cho query sql , còn User dùng cho code
 }
 

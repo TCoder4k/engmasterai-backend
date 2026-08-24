@@ -22,6 +22,8 @@ import {
   StreakDetailDto,
   StreakDayStatus,
   StreakInvitationDto,
+  StreakInviteLinkDto,
+  StreakInviteLinkPreviewDto,
   StreakPairDto,
   StreakPartnerDto,
 } from './streak.types';
@@ -199,36 +201,56 @@ export class StreakService {
       });
       if (updated.count === 0) throw new ConflictException('Invitation already resolved');
 
-      const [userLowId, userHighId] = canonicalPair(invitation.inviterId, invitation.inviteeId);
-
-      const activeCount = await tx.streakPair.count({
-        where: { status: 'ACTIVE', OR: [{ userLowId: userId }, { userHighId: userId }] },
-      });
-      if (activeCount >= MAX_ACTIVE_STREAKS_PER_USER) {
-        throw new ConflictException('Too many active streaks');
-      }
-
-      // Upsert, not insert — restarts an existing BROKEN pair IN PLACE
-      // (preserving longestStreak/publicShareId) rather than creating a
-      // duplicate, which @@unique([userLowId, userHighId]) would reject
-      // anyway.
-      const pair = await tx.streakPair.upsert({
-        where: { userLowId_userHighId: { userLowId, userHighId } },
-        create: { userLowId, userHighId, status: 'ACTIVE' },
-        update: { status: 'ACTIVE', currentStreak: 0, lastQualifiedDay: null, startedAt: new Date() },
-        include: { userLow: { select: SAFE_PARTNER_SELECT }, userHigh: { select: SAFE_PARTNER_SELECT } },
-      });
-
       const acceptedBy = invitation.inviterId === userId ? invitation.inviter : invitation.invitee;
-      await this.notifications.create(tx, invitation.inviterId, 'STREAK_INVITATION_ACCEPTED', {
-        partnerId: acceptedBy.id,
-        partnerName: acceptedBy.name,
-        partnerAvatarUrl: acceptedBy.avatarUrl,
-        streakId: pair.id,
-      });
+      const pair = await this.createOrRestartPair(tx, invitation.inviterId, acceptedBy);
 
       return toStreakPairDto(pair, userId);
     });
+  }
+
+  /**
+   * Shared by acceptInvitation above and acceptInviteLink below — both are
+   * "two people just mutually agreed to pair up," they only differ in HOW
+   * that agreement was reached (a targeted PENDING invitation vs. a
+   * persistent shareable link). Upsert, not insert — restarts an existing
+   * BROKEN pair IN PLACE (preserving longestStreak/publicShareId) rather
+   * than creating a duplicate, which @@unique([userLowId, userHighId])
+   * would reject anyway.
+   *
+   * Callers are responsible for deciding whether this should run at all —
+   * in particular, acceptInviteLink must NOT call this for a pair that is
+   * already ACTIVE (see its own comment), since the `update` branch below
+   * unconditionally resets currentStreak/lastQualifiedDay.
+   */
+  private async createOrRestartPair(
+    tx: Prisma.TransactionClient,
+    inviterId: string,
+    acceptedBy: { id: string; name: string; avatarUrl: string | null },
+  ): Promise<PairWithUsers> {
+    const [userLowId, userHighId] = canonicalPair(inviterId, acceptedBy.id);
+
+    const activeCount = await tx.streakPair.count({
+      where: { status: 'ACTIVE', OR: [{ userLowId: acceptedBy.id }, { userHighId: acceptedBy.id }] },
+    });
+    if (activeCount >= MAX_ACTIVE_STREAKS_PER_USER) {
+      throw new ConflictException('Too many active streaks');
+    }
+
+    const pair = await tx.streakPair.upsert({
+      where: { userLowId_userHighId: { userLowId, userHighId } },
+      create: { userLowId, userHighId, status: 'ACTIVE' },
+      update: { status: 'ACTIVE', currentStreak: 0, lastQualifiedDay: null, startedAt: new Date() },
+      include: { userLow: { select: SAFE_PARTNER_SELECT }, userHigh: { select: SAFE_PARTNER_SELECT } },
+    });
+
+    await this.notifications.create(tx, inviterId, 'STREAK_INVITATION_ACCEPTED', {
+      partnerId: acceptedBy.id,
+      partnerName: acceptedBy.name,
+      partnerAvatarUrl: acceptedBy.avatarUrl,
+      streakId: pair.id,
+    });
+
+    return pair;
   }
 
   async declineInvitation(userId: string, invitationId: string): Promise<void> {
@@ -253,6 +275,64 @@ export class StreakService {
       data: { status: StreakInvitationStatus.CANCELLED, respondedAt: new Date() },
     });
     if (updated.count === 0) throw new ConflictException('Invitation already resolved');
+  }
+
+  // ---- invite link (persistent, reusable — distinct from the targeted ----
+  // ---- invitations above; see docs/memory.md for why this is a plain  ----
+  // ---- User column rather than a new table)                          ----
+
+  /** Lazy-generate-or-return the caller's own persistent invite token. */
+  async getOrCreateInviteLink(userId: string): Promise<StreakInviteLinkDto> {
+    const user = await this.prisma.user.findUniqueOrThrow({
+      where: { id: userId },
+      select: { streakInviteToken: true },
+    });
+    if (user.streakInviteToken) return { token: user.streakInviteToken };
+
+    const token = randomBytes(16).toString('base64url');
+    await this.prisma.user.update({ where: { id: userId }, data: { streakInviteToken: token } });
+    return { token };
+  }
+
+  /** PUBLIC, unauthenticated — who is behind this invite link. */
+  async previewInviteLink(token: string): Promise<StreakInviteLinkPreviewDto> {
+    const user = await this.prisma.user.findUnique({
+      where: { streakInviteToken: token },
+      select: { name: true, avatarUrl: true },
+    });
+    if (!user) throw new NotFoundException('Invite link not found');
+    return { inviterName: user.name, inviterAvatarUrl: user.avatarUrl };
+  }
+
+  async acceptInviteLink(userId: string, token: string): Promise<StreakPairDto> {
+    const inviter = await this.prisma.user.findUnique({
+      where: { streakInviteToken: token },
+      select: SAFE_PARTNER_SELECT,
+    });
+    if (!inviter) throw new NotFoundException('Invite link not found');
+    if (inviter.id === userId) {
+      throw new BadRequestException("You can't use your own invite link");
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const [userLowId, userHighId] = canonicalPair(inviter.id, userId);
+      const existing = await tx.streakPair.findUnique({
+        where: { userLowId_userHighId: { userLowId, userHighId } },
+        include: { userLow: { select: SAFE_PARTNER_SELECT }, userHigh: { select: SAFE_PARTNER_SELECT } },
+      });
+      // Re-joining via a link you already used must be a harmless no-op,
+      // never a silent reset — unlike acceptInvitation, there is no PENDING
+      // guard here to make a second accept impossible, and
+      // createOrRestartPair's upsert unconditionally zeroes currentStreak
+      // in its update branch.
+      if (existing?.status === 'ACTIVE') {
+        return toStreakPairDto(existing, userId);
+      }
+
+      const me = await tx.user.findUniqueOrThrow({ where: { id: userId }, select: SAFE_PARTNER_SELECT });
+      const pair = await this.createOrRestartPair(tx, inviter.id, me);
+      return toStreakPairDto(pair, userId);
+    });
   }
 
   // ---- streaks (read) ---------------------------------------------------

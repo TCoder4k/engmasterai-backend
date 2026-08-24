@@ -64,6 +64,32 @@ export class StreakController {
     return { success: true };
   }
 
+  // ---- invite link (persistent, reusable) ----------------------------------
+
+  // Registered BEFORE ':id' below — same reasoning as 'leaderboard': a bare
+  // literal segment must be matched before Nest treats it as a pair id.
+  @UseGuards(JwtAuthGuard, StreakRateLimitGuard)
+  @StreakRateLimit({ kind: 'inviteLink', max: 30, windowSeconds: 3600 })
+  @Get('invite-link')
+  async getMyInviteLink(@Req() req: RequestWithUser) {
+    return this.streakService.getOrCreateInviteLink(req.user.userId);
+  }
+
+  /** PUBLIC, unauthenticated — same pattern as GET public/:shareId below. */
+  @Get('invite-link/:token')
+  async previewInviteLink(@Req() req: Request, @Param('token') token: string) {
+    const result = await this.rateLimiter.checkAndIncrement(`streak:invite-link-read:${req.ip}`, 30, 60);
+    if (!result.allowed) throw new RateLimitExceededException();
+    return this.streakService.previewInviteLink(token);
+  }
+
+  @UseGuards(JwtAuthGuard, StreakRateLimitGuard)
+  @StreakRateLimit({ kind: 'linkJoin', max: 20, windowSeconds: 3600 })
+  @Post('invite-link/:token/accept')
+  async acceptInviteLink(@Req() req: RequestWithUser, @Param('token') token: string) {
+    return this.streakService.acceptInviteLink(req.user.userId, token);
+  }
+
   // ---- streaks --------------------------------------------------------------
 
   @UseGuards(JwtAuthGuard, StreakRateLimitGuard)

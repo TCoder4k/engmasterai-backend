@@ -19,6 +19,7 @@ interface FakeUser {
   level: number;
   timezone: string | null;
   totalPoints: number;
+  streakInviteToken: string | null;
 }
 
 interface FakeInvitation {
@@ -80,6 +81,7 @@ class FakeStore {
       level: 1,
       timezone: 'UTC',
       totalPoints: 0,
+      streakInviteToken: null,
       ...over,
     };
     this.users.push(user);
@@ -106,13 +108,27 @@ class FakeStore {
 const buildPrismaClient = (store: FakeStore) => {
   const client = {
     user: {
-      findUnique: jest.fn(({ where: { id } }: { where: { id: string } }) =>
-        Promise.resolve(store.users.find((u) => u.id === id) ? { id } : null),
+      // Returns every field any caller might select — callers only ever
+      // destructure the subset they asked for, same pragmatic "mock the
+      // datastore, not the exact Prisma `select` projection" approach the
+      // rest of this fake already uses (e.g. streakPair.upsert below).
+      findUnique: jest.fn(
+        ({ where }: { where: { id?: string; streakInviteToken?: string } }) => {
+          const u = where.id
+            ? store.users.find((row) => row.id === where.id)
+            : store.users.find((row) => row.streakInviteToken === where.streakInviteToken);
+          return Promise.resolve(u ? { ...userSelect(u), streakInviteToken: u.streakInviteToken } : null);
+        },
       ),
       findUniqueOrThrow: jest.fn(({ where: { id } }: { where: { id: string } }) => {
         const u = store.users.find((row) => row.id === id);
         if (!u) throw new Error('not found');
-        return Promise.resolve({ timezone: u.timezone });
+        return Promise.resolve({ ...userSelect(u), timezone: u.timezone, streakInviteToken: u.streakInviteToken });
+      }),
+      update: jest.fn(({ where: { id }, data }: { where: { id: string }; data: Partial<FakeUser> }) => {
+        const u = store.users.find((row) => row.id === id)!;
+        Object.assign(u, data);
+        return Promise.resolve({ ...userSelect(u), streakInviteToken: u.streakInviteToken });
       }),
     },
     streakInvitation: {
@@ -817,5 +833,118 @@ describe('StreakService — public sharing', () => {
   it('404s for an unknown share id', async () => {
     const { service } = buildHarness();
     await expect(service.getPublicStreak('does-not-exist')).rejects.toThrow();
+  });
+});
+
+describe('StreakService — invite link (persistent, reusable)', () => {
+  it('lazily creates a token once, then returns the same one on a second call', async () => {
+    const { service, store } = buildHarness();
+    const a = store.addUser();
+
+    const first = await service.getOrCreateInviteLink(a.id);
+    const second = await service.getOrCreateInviteLink(a.id);
+
+    expect(first.token).toBeTruthy();
+    expect(second.token).toBe(first.token);
+  });
+
+  it('rejects using your own invite link', async () => {
+    const { service, store } = buildHarness();
+    const a = store.addUser();
+    const { token } = await service.getOrCreateInviteLink(a.id);
+
+    await expect(service.acceptInviteLink(a.id, token)).rejects.toThrow();
+  });
+
+  it('404s previewing an unknown token', async () => {
+    const { service } = buildHarness();
+    await expect(service.previewInviteLink('does-not-exist')).rejects.toThrow();
+  });
+
+  it('404s accepting an unknown token', async () => {
+    const { service, store } = buildHarness();
+    const a = store.addUser();
+    await expect(service.acceptInviteLink(a.id, 'does-not-exist')).rejects.toThrow();
+  });
+
+  it('the preview never includes id, email or any authenticated-only field', async () => {
+    const { service, store } = buildHarness();
+    const a = store.addUser({ name: 'Alice' });
+    const { token } = await service.getOrCreateInviteLink(a.id);
+
+    const preview = await service.previewInviteLink(token);
+    expect(preview).toEqual({ inviterName: 'Alice', inviterAvatarUrl: null });
+    expect(JSON.stringify(preview)).not.toMatch(/"id"|level/);
+  });
+
+  it('joining creates a fresh ACTIVE pair and notifies the inviter', async () => {
+    const { service, store, notifications } = buildHarness();
+    const a = store.addUser();
+    const b = store.addUser();
+    const { token } = await service.getOrCreateInviteLink(a.id);
+
+    const pair = await service.acceptInviteLink(b.id, token);
+
+    expect(pair.status).toBe('ACTIVE');
+    expect(store.pairs).toHaveLength(1);
+    expect(notifications.create).toHaveBeenCalledWith(
+      expect.anything(),
+      a.id,
+      'STREAK_INVITATION_ACCEPTED',
+      expect.objectContaining({ partnerId: b.id }),
+    );
+  });
+
+  it('joining via link restarts a BROKEN pair in place, preserving longestStreak', async () => {
+    const { service, store } = buildHarness();
+    const a = store.addUser();
+    const b = store.addUser();
+    const { token } = await service.getOrCreateInviteLink(a.id);
+    await service.acceptInviteLink(b.id, token);
+    store.pairs[0].status = 'BROKEN';
+    store.pairs[0].longestStreak = 9;
+    store.pairs[0].currentStreak = 0;
+
+    const restarted = await service.acceptInviteLink(b.id, token);
+
+    expect(restarted.status).toBe('ACTIVE');
+    expect(restarted.longestStreak).toBe(9);
+    expect(store.pairs).toHaveLength(1);
+  });
+
+  // The one real correctness trap this feature introduces: unlike
+  // acceptInvitation (guarded by a PENDING invitation that can only be
+  // accepted once), a reusable link has nothing stopping the same friend
+  // from clicking it again after they've already joined — and
+  // createOrRestartPair's upsert unconditionally zeroes currentStreak in
+  // its update branch.
+  it('re-joining an already-ACTIVE pair via the same link is a no-op — it does NOT reset currentStreak', async () => {
+    const { service, store } = buildHarness();
+    const a = store.addUser();
+    const b = store.addUser();
+    const { token } = await service.getOrCreateInviteLink(a.id);
+    await service.acceptInviteLink(b.id, token);
+    store.pairs[0].currentStreak = 12;
+    store.pairs[0].lastQualifiedDay = '2026-08-23';
+
+    const again = await service.acceptInviteLink(b.id, token);
+
+    expect(again.currentStreak).toBe(12);
+    expect(store.pairs[0].currentStreak).toBe(12);
+    expect(store.pairs[0].lastQualifiedDay).toBe('2026-08-23');
+    expect(store.pairs).toHaveLength(1);
+  });
+
+  it('a different friend joining the SAME link creates a SEPARATE pair (multiple concurrent streaks)', async () => {
+    const { service, store } = buildHarness();
+    const a = store.addUser();
+    const b = store.addUser();
+    const c = store.addUser();
+    const { token } = await service.getOrCreateInviteLink(a.id);
+
+    await service.acceptInviteLink(b.id, token);
+    await service.acceptInviteLink(c.id, token);
+
+    expect(store.pairs).toHaveLength(2);
   });
 });
