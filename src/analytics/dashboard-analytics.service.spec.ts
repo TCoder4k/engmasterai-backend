@@ -210,7 +210,9 @@ describe('DashboardAnalyticsService — day boundaries', () => {
     const result = await service.getDashboardAnalytics('user-1', VN);
 
     expect(result.today.date).toBe('2026-07-31');
-    expect(result.activity.days.at(-1)?.date).toBe('2026-07-31');
+    const todayTile = result.activity.days.find((day) => day.date === '2026-07-31');
+    expect(todayTile).toBeDefined();
+    expect(todayTile?.isFuture).toBe(false);
   });
 
   it('reports the local day for a negative UTC offset', async () => {
@@ -223,7 +225,11 @@ describe('DashboardAnalyticsService — day boundaries', () => {
     expect(result.today.date).toBe('2026-07-30');
   });
 
-  it('returns exactly seven ascending days ending today', async () => {
+  // NOW is Friday 2026-07-31 in VN, so the fixed Monday-Sunday week
+  // containing it is 07-27..08-02 — a DIFFERENT 7 days than the rolling
+  // window countCurrentStreak uses (07-25..07-31, see the next describe
+  // block), and deliberately so: this array is what the widget DISPLAYS.
+  it('returns exactly seven ascending days for the calendar week containing today, Monday first', async () => {
     freezeNow(NOW);
     const { service } = buildHarness();
 
@@ -231,13 +237,30 @@ describe('DashboardAnalyticsService — day boundaries', () => {
 
     expect(activity.windowDays).toBe(7);
     expect(activity.days.map((day) => day.date)).toEqual([
-      '2026-07-25',
-      '2026-07-26',
       '2026-07-27',
       '2026-07-28',
       '2026-07-29',
       '2026-07-30',
       '2026-07-31',
+      '2026-08-01',
+      '2026-08-02',
+    ]);
+  });
+
+  it('marks only the days AFTER today as future, never today itself', async () => {
+    freezeNow(NOW);
+    const { service } = buildHarness();
+
+    const { activity } = await service.getDashboardAnalytics('user-1', VN);
+
+    expect(activity.days.map((day) => day.isFuture)).toEqual([
+      false, // 07-27 Mon
+      false, // 07-28 Tue
+      false, // 07-29 Wed
+      false, // 07-30 Thu
+      false, // 07-31 Fri — today
+      true, // 08-01 Sat
+      true, // 08-02 Sun
     ]);
   });
 });
@@ -362,7 +385,8 @@ describe('DashboardAnalyticsService — activity calendar and streak', () => {
     const { activity } = await service.getDashboardAnalytics('user-1', VN);
 
     expect(activity.currentStreakDays).toBe(2);
-    expect(activity.days.at(-1)?.active).toBe(false);
+    const todayTile = activity.days.find((day) => day.date === '2026-07-31');
+    expect(todayTile?.active).toBe(false);
   });
 
   it('ignores active days sitting before a gap', async () => {
@@ -413,18 +437,42 @@ describe('DashboardAnalyticsService — activity calendar and streak', () => {
     expect(activity.days.filter((day) => day.active)).toHaveLength(1);
   });
 
-  // The window must open at the START of its first day. Fetching from
-  // `now - 7 days` would clip the earliest day at 11:00 and miss this row.
-  it("includes activity from early in the window's first day", async () => {
+  // The (streak-counting) window must open at the START of its first day.
+  // Fetching from `now - 7 days` would clip the earliest day at 11:00 and
+  // miss this row. Asserted directly on the query boundary rather than
+  // through `activity.days` — 07-25 is the rolling window's first day, but
+  // it is NOT part of the calendar week displayed for this NOW (07-27..08-02,
+  // see the block above), so it no longer appears in that array at all.
+  it('opens the underlying query at the START of the window, not clipped to "now"', async () => {
     freezeNow(NOW);
-    const { service } = buildHarness({
+    const { service, prisma } = buildHarness({
       // 00:30 local on the first day of the window.
       reviewActivity: [new Date('2026-07-24T17:30:00.000Z')],
     });
 
+    await service.getDashboardAnalytics('user-1', VN);
+
+    expect(whereOf(prisma.wordReviewLog.findMany).reviewedAt).toEqual({
+      gte: new Date('2026-07-24T17:00:00.000Z'), // 2026-07-25 00:00 VN
+    });
+  });
+
+  it('still counts that early-in-the-day activity toward the streak', async () => {
+    freezeNow(NOW);
+    const { service } = buildHarness({
+      // 00:30 local on the first day of the window, then every day after.
+      reviewActivity: [
+        new Date('2026-07-24T17:30:00.000Z'), // 07-25 00:30 VN
+        ...['2026-07-26', '2026-07-27', '2026-07-28', '2026-07-29', '2026-07-30', '2026-07-31'].map(
+          (day) => new Date(`${day}T04:00:00.000Z`),
+        ),
+      ],
+    });
+
     const { activity } = await service.getDashboardAnalytics('user-1', VN);
 
-    expect(activity.days[0]).toEqual({ date: '2026-07-25', active: true });
+    expect(activity.currentStreakDays).toBe(7);
+    expect(activity.streakCapped).toBe(true);
   });
 
   // The Streak Together listening extension: a day with ONLY a dictation or
@@ -437,7 +485,8 @@ describe('DashboardAnalyticsService — activity calendar and streak', () => {
 
     const { activity } = await service.getDashboardAnalytics('user-1', VN);
 
-    expect(activity.days.at(-1)).toEqual({ date: '2026-07-31', active: true });
+    const todayTile = activity.days.find((day) => day.date === '2026-07-31');
+    expect(todayTile).toEqual({ date: '2026-07-31', active: true, isFuture: false });
   });
 
   it('counts a shadowing-only day as active', async () => {
@@ -446,7 +495,8 @@ describe('DashboardAnalyticsService — activity calendar and streak', () => {
 
     const { activity } = await service.getDashboardAnalytics('user-1', VN);
 
-    expect(activity.days.at(-1)).toEqual({ date: '2026-07-31', active: true });
+    const todayTile = activity.days.find((day) => day.date === '2026-07-31');
+    expect(todayTile).toEqual({ date: '2026-07-31', active: true, isFuture: false });
   });
 });
 
