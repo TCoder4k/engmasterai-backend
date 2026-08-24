@@ -297,6 +297,12 @@ model User {
 
   communityMessages CommunityMessage[]
 
+  streakInvitationsSent     StreakInvitation[] @relation("StreakInvitationsSent")
+  streakInvitationsReceived StreakInvitation[] @relation("StreakInvitationsReceived")
+  streakPairsAsLow          StreakPair[]       @relation("StreakPairLow")
+  streakPairsAsHigh         StreakPair[]       @relation("StreakPairHigh")
+  notifications             Notification[]
+
   @@map("users") //users dùng cho query sql , còn User dùng cho code
 }
 
@@ -2033,4 +2039,141 @@ model CommunityMessage {
   // tie; id (a UUID) is only ever the tie-breaker, never the primary sort.
   @@index([createdAt, id])
   @@map("community_messages")
+}
+
+// Streak Together ("Chuỗi học cùng nhau") — two users keep a shared daily
+// streak alive. Entered from Community Chat. This is the first user-to-user
+// RELATIONSHIP modeled anywhere in this schema — Community Chat above is a
+// global broadcast, not a pairing.
+//
+// One-way, terminal transitions only: PENDING -> {ACCEPTED, DECLINED,
+// CANCELLED, EXPIRED}. Every transition is an atomic conditional UPDATE
+// (`WHERE status = 'PENDING'`) in StreakService, never a plain overwrite —
+// that is what makes a double-accept race return a clean 409/410 instead of
+// silently creating two StreakPair rows for the same invitation.
+enum StreakInvitationStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+  EXPIRED
+  CANCELLED
+}
+
+// A user can have any number of PENDING/terminal invitations, sent or
+// received, with different partners — anti-spam is enforced in the service
+// (no duplicate PENDING in either direction, 24h cooldown after a DECLINE,
+// self-invite rejected), not by a schema constraint, because none of those
+// rules reduce to a column uniqueness.
+model StreakInvitation {
+  id          String                 @id @default(uuid())
+  inviterId   String
+  inviteeId   String
+  status      StreakInvitationStatus @default(PENDING)
+  createdAt   DateTime               @default(now())
+  respondedAt DateTime?
+  // createdAt + 7 days. Checked lazily at read/accept time — there is no job
+  // scheduler anywhere in this codebase, so an EXPIRED invite is simply one
+  // whose expiresAt has passed, filtered out of "pending" listings and
+  // rejected at accept-time, never flipped by a background sweep.
+  expiresAt   DateTime
+
+  inviter User @relation("StreakInvitationsSent", fields: [inviterId], references: [id], onDelete: Cascade)
+  invitee User @relation("StreakInvitationsReceived", fields: [inviteeId], references: [id], onDelete: Cascade)
+
+  @@index([inviteeId, status])
+  @@index([inviterId, status])
+  @@map("streak_invitations")
+}
+
+// ONLY TWO STATES, deliberately fewer than a first draft might reach for.
+// PENDING/DECLINED/CANCELLED/EXPIRED belong to StreakInvitation above — a
+// pair does not exist yet during any of those. AT_RISK is NEVER persisted:
+// it is "today not yet mutually qualified, but today isn't over" and is
+// computed transiently per-request (see StreakService's detail DTO), so
+// nothing needs a scheduled transition into or out of it. There is no
+// ENDED (a voluntary manual stop) — no flow in this feature calls for one.
+enum StreakPairStatus {
+  ACTIVE
+  BROKEN
+}
+
+// One row per (user, user) pair, EVER — restartable in place after BROKEN
+// rather than re-inserted, which is what lets longestStreak and
+// publicShareId survive a restart. userLowId/userHighId is this schema's
+// first canonical-pair-ordering pattern (userLowId < userHighId, plain
+// string comparison over the UUIDs — arbitrary but stable): sort the two
+// ids before every read/write so A-inviting-B and B-inviting-A can never
+// create two rows for the same pair. No cap on how many ACTIVE rows one
+// user can appear in — multiple concurrent streaks are allowed by product
+// decision; only a generous service-layer abuse ceiling applies.
+model StreakPair {
+  id            String           @id @default(uuid())
+  userLowId     String
+  userHighId    String
+  status        StreakPairStatus @default(ACTIVE)
+  currentStreak Int              @default(0)
+  longestStreak Int              @default(0)
+  startedAt     DateTime         @default(now())
+
+  // 'YYYY-MM-DD' cache — the most recent calendar day BOTH sides qualified,
+  // compared as a plain label (see StreakService.onUserActivityDay): each
+  // partner's "today" is judged against their OWN local clock, and a day
+  // counts as mutually qualified once both sides have a UserDailyActivity
+  // row carrying the same date label — never a synchronized instant.
+  lastQualifiedDay String?
+
+  // Opaque, non-guessable token for the public share page. Generated
+  // LAZILY on the first POST /streaks/:id/share, not eagerly for every
+  // pair — eager generation would make every streak, including ones nobody
+  // ever chose to share, a guessable-enumeration target from day one.
+  publicShareId String? @unique
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  userLow  User @relation("StreakPairLow", fields: [userLowId], references: [id], onDelete: Cascade)
+  userHigh User @relation("StreakPairHigh", fields: [userHighId], references: [id], onDelete: Cascade)
+
+  @@unique([userLowId, userHighId])
+  @@index([userLowId, status])
+  @@index([userHighId, status])
+  @@map("streak_pairs")
+}
+
+// Streak Together's notification types — the FIRST real notification system
+// in this codebase (NotificationBell.tsx has been an explicit disabled
+// placeholder: "no notifications backend, so no unread badge is
+// fabricated"). A generic `type` + `payload` shape rather than one table per
+// event, so a future non-streak feature can reuse this table by adding an
+// enum value, not a migration.
+enum NotificationType {
+  STREAK_INVITATION_RECEIVED
+  STREAK_INVITATION_ACCEPTED
+  STREAK_MILESTONE
+  STREAK_BROKEN
+  // Fired the moment a partner qualifies for the day while the recipient
+  // has not yet — event-driven off the same onUserActivityDay hook that
+  // updates the streak itself, deliberately NOT a scheduled end-of-day
+  // reminder (that would need a job scheduler, which this codebase has
+  // none of; tracked as a Phase 2 addition, not built here).
+  STREAK_PARTNER_ACTIVE
+}
+
+// Delivery is REST/poll only — GET /notifications, GET
+// /notifications/unread-count, POST /notifications/:id/read — never pushed
+// over a socket. `payload` holds only pre-resolved, already-safe-to-see
+// display data (partner name/avatar, streak id, day count), never a raw DB
+// row, so the controller never needs its own per-type re-authorization pass.
+model Notification {
+  id        String           @id @default(uuid())
+  userId    String
+  type      NotificationType
+  payload   Json
+  readAt    DateTime?
+  createdAt DateTime         @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, readAt, createdAt])
+  @@map("notifications")
 }

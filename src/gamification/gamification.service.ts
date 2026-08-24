@@ -4,10 +4,12 @@ import { PrismaService } from '../prisma/prisma.service';
 import {
   countCurrentStreak,
   enumerateDaysInTimeZone,
+  formatDayInTimeZone,
 } from '../analytics/day-window';
 import { collectActiveDays } from '../shared/activity-window';
 import { publishedLesson, publishedTask } from '../shared/published-scope';
 import { startOfDayInTimeZone } from '../learning/timezone.util';
+import { StreakService } from '../streak/streak.service';
 import {
   AchievementKey,
   AchievementSnapshot,
@@ -58,6 +60,7 @@ const STREAK_MILESTONES = [3, 7] as const;
  *   1. the caller persists the learning action        (before calling in)
  *   2. record the activity day
  *   3. compute the streak — ONLY if step 2 created a NEW day row
+ *   3.5. Streak Together's onUserActivityDay hook — ONLY if step 2 created a NEW day row
  *   4. award the action's XP, then any newly earned achievements
  *
  * Step 1 must precede step 3. countCurrentStreak's rule is "if today has no
@@ -66,10 +69,20 @@ const STREAK_MILESTONES = [3, 7] as const;
  * empty, the streak comes back one short, and the 3-day badge arrives on day
  * four — for a student who did exactly what was asked. The scan sees step 1's
  * writes because both are inside the same transaction.
+ *
+ * STEP 3.5 (Streak Together) runs INSIDE this same transaction, not as a
+ * post-commit side effect — a shared-streak/notification write lands or
+ * rolls back together with the activity that triggered it, the same
+ * atomicity guarantee this method already gives XP. It is gated on
+ * `isNewDay` for the same cost reason as step 3: a mid-video progress tick
+ * must not pay for a StreakPair scan it cannot possibly affect.
  */
 @Injectable()
 export class GamificationService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly streakService: StreakService,
+  ) {}
 
   /**
    * The single entry point for every learning engine.
@@ -129,6 +142,11 @@ export class GamificationService {
     const streakDays = isNewDay
       ? await this.currentStreak(tx, userId, input.at, timeZone)
       : null;
+
+    // --- 3.5. Streak Together's hook, same gating as step 3 ------------------
+    if (isNewDay) {
+      await this.streakService.onUserActivityDay(tx, userId, formatDayInTimeZone(input.at, timeZone));
+    }
 
     // --- 4. the awards -------------------------------------------------------
     return this.award(tx, userId, {

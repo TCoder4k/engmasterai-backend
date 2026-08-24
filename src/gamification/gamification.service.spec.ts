@@ -105,8 +105,12 @@ const buildHarness = (options: HarnessOptions = {}) => {
     wordReviewLog: { findMany: jest.fn(() => resolve([])) },
   };
 
-  const service = new GamificationService({} as never);
-  return { service, tx, calls, userUpdate, activityUpdate, insertedRows };
+  // Streak Together's onUserActivityDay hook (step 3.5) is exercised by its
+  // own spec (streak.service.spec.ts); here it only needs to be callable and
+  // is asserted not to disturb this test's own XP/achievement arithmetic.
+  const streakServiceStub = { onUserActivityDay: jest.fn(() => Promise.resolve()) };
+  const service = new GamificationService({} as never, streakServiceStub as never);
+  return { service, tx, calls, userUpdate, activityUpdate, insertedRows, streakServiceStub };
 };
 
 const record = (

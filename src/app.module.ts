@@ -22,6 +22,8 @@ import { ChatModule } from './chat/chat.module';
 import { CommunityChatModule } from './community-chat/community-chat.module';
 import { SpeakingModule } from './speaking/speaking.module';
 import { HealthModule } from './health/health.module';
+import { NotificationModule } from './notification/notification.module';
+import { StreakModule } from './streak/streak.module';
 import { envValidationSchema } from './config/env.validation';
 
 @Module({
@@ -52,6 +54,8 @@ import { envValidationSchema } from './config/env.validation';
     CommunityChatModule,
     SpeakingModule,
     HealthModule,
+    NotificationModule,
+    StreakModule,
   ],
 })
 export class AppModule {}
