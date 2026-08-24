@@ -10,11 +10,12 @@ import { randomBytes } from 'crypto';
 import { Prisma, StreakInvitationStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationService } from '../notification/notification.service';
-import { enumerateDaysInTimeZone } from '../analytics/day-window';
+import { enumerateCalendarWeekInTimeZone, formatDayInTimeZone } from '../analytics/day-window';
 import { startOfDayInTimeZone } from '../learning/timezone.util';
 import { dayKeyToDate } from '../gamification/day-key';
 import { canonicalPair, daysBetweenLabels } from './streak-day.util';
 import {
+  LeaderboardEntryDto,
   PairRelationshipDto,
   PublicStreakDto,
   StreakActivityToday,
@@ -37,18 +38,31 @@ const DECLINE_COOLDOWN_MS = 24 * 60 * 60 * 1000;
 // single account from accumulating an unbounded number of rows.
 const MAX_ACTIVE_STREAKS_PER_USER = 100;
 // The streak lengths that trigger a STREAK_MILESTONE notification.
-const MILESTONES = [3, 7, 14, 30, 50, 100] as const;
-// The Streak Detail calendar window (§F of the plan: "a 7-day calendar row").
-const CALENDAR_WINDOW_DAYS = 7;
+const MILESTONES = [1, 3, 7, 30, 100] as const;
 // Below this many active pairs, "Top N%" is not a meaningful stat — the
 // whole userbase would trivially be "Top 100%".
 const MIN_PAIRS_FOR_PERCENTILE = 5;
+// GET /streaks/leaderboard row count. A fixed top-N read, not paginated —
+// nothing in the approved design calls for browsing past the front page.
+const LEADERBOARD_LIMIT = 20;
 
 const SAFE_PARTNER_SELECT = {
   id: true,
   name: true,
   avatarUrl: true,
   level: true,
+} as const;
+
+// SAFE_PARTNER_SELECT plus totalPoints, used ONLY by the leaderboard to
+// compute an honest per-pair XP total (both members' real totalPoints
+// summed) — kept separate rather than widening SAFE_PARTNER_SELECT
+// everywhere, since no other read needs a partner's XP.
+const LEADERBOARD_PARTNER_SELECT = {
+  id: true,
+  name: true,
+  avatarUrl: true,
+  level: true,
+  totalPoints: true,
 } as const;
 
 type PairWithUsers = Prisma.StreakPairGetPayload<{
@@ -251,7 +265,16 @@ export class StreakService {
       orderBy: [{ status: 'asc' }, { updatedAt: 'desc' }],
       include: { userLow: { select: SAFE_PARTNER_SELECT }, userHigh: { select: SAFE_PARTNER_SELECT } },
     });
-    return rows.map((row) => toStreakPairDto(row, userId));
+
+    const fresh = await this.prisma.$transaction(async (tx) => {
+      const result: PairWithUsers[] = [];
+      for (const row of rows) {
+        result.push(row.status === 'ACTIVE' ? await this.recomputePairState(tx, row) : row);
+      }
+      return result;
+    });
+
+    return fresh.map((row) => toStreakPairDto(row, userId));
   }
 
   async getPairStatus(userId: string, otherUserId: string): Promise<PairRelationshipDto> {
@@ -292,12 +315,25 @@ export class StreakService {
    * hot path.
    */
   async getStreakDetail(userId: string, pairId: string): Promise<StreakDetailDto> {
-    const pair = await this.prisma.streakPair.findUnique({
+    const found = await this.prisma.streakPair.findUnique({
       where: { id: pairId },
       include: { userLow: { select: SAFE_PARTNER_SELECT }, userHigh: { select: SAFE_PARTNER_SELECT } },
     });
-    if (!pair) throw new NotFoundException('Streak not found');
-    this.assertParticipant(pair, userId);
+    if (!found) throw new NotFoundException('Streak not found');
+    this.assertParticipant(found, userId);
+
+    // Self-healing recompute (§G of the plan) — the write-side
+    // onUserActivityDay hook only fires on the FIRST qualifying action of a
+    // user's day (GamificationService's isNewDay gate). A pair created (or
+    // restarted) after both partners already had today's activity recorded
+    // — e.g. accepting an invite later in the day — never sees that event,
+    // so currentStreak would stay stuck even though both sides truly
+    // qualified today. Re-derives from the real UserDailyActivity rows on
+    // every detail read instead of trusting the hook alone.
+    const pair =
+      found.status === 'ACTIVE'
+        ? await this.prisma.$transaction((tx) => this.recomputePairState(tx, found))
+        : found;
 
     const partner = pair.userLowId === userId ? pair.userHigh : pair.userLow;
 
@@ -308,14 +344,19 @@ export class StreakService {
     const meTimeZone = meUser.timezone ?? 'UTC';
     const partnerTimeZone = partnerUser.timezone ?? 'UTC';
 
-    // The calendar window is enumerated from the VIEWER's own timezone —
-    // it's their view of "the last 7 days". Each day's qualification is
-    // then compared as a plain calendar-label string against BOTH users'
-    // UserDailyActivity rows (each bucketed in ITS OWN owner's timezone at
-    // write time) — the same label-not-instant comparison
-    // onUserActivityDay uses, per the plan's timezone decision.
-    const dayLabels = enumerateDaysInTimeZone(new Date(), meTimeZone, CALENDAR_WINDOW_DAYS);
+    // The calendar window is the fixed Monday-Sunday week containing the
+    // VIEWER's own "today" — it's their view of "this week", read the way a
+    // week is normally read (Monday first), not a 7-day rolling window that
+    // strands today wherever in the row it happens to fall. Days after today
+    // are real future calendar dates with `isFuture: true`; each day's
+    // qualification for days up to and including today is compared as a
+    // plain calendar-label string against BOTH users' UserDailyActivity rows
+    // (each bucketed in ITS OWN owner's timezone at write time) — the same
+    // label-not-instant comparison onUserActivityDay uses, per the plan's
+    // timezone decision.
+    const dayLabels = enumerateCalendarWeekInTimeZone(new Date(), meTimeZone);
     const windowStart = dayKeyToDate(dayLabels[0]);
+    const todayLabel = formatDayInTimeZone(new Date(), meTimeZone);
 
     const [meDays, partnerDays, meActivityToday, partnerActivityToday, percentileRank] = await Promise.all([
       this.prisma.userDailyActivity.findMany({
@@ -337,9 +378,9 @@ export class StreakService {
       day,
       meQualified: meDaySet.has(day),
       partnerQualified: partnerDaySet.has(day),
+      isFuture: day > todayLabel,
     }));
 
-    const todayLabel = dayLabels[dayLabels.length - 1];
     const isAtRiskToday = !(meDaySet.has(todayLabel) && partnerDaySet.has(todayLabel));
 
     return {
@@ -354,15 +395,18 @@ export class StreakService {
 
   /**
    * What kind of qualifying activity (if any) this user did on their own
-   * "today". Only ever one of the three sources activity-window.ts already
+   * "today". Only ever one of the sources activity-window.ts already
    * defines as canonical — never a fabricated lesson/task title, which
-   * would need extra joins this MVP does not add.
+   * would need extra joins this MVP does not add. Dictation and Shadowing
+   * attempts both surface as the same 'listening' label — the qualifying
+   * event (a submitted attempt) is what matters here, not which of the two
+   * modes it was.
    */
   private async describeActivity(userId: string, timeZone: string): Promise<StreakActivityToday> {
     const dayStart = startOfDayInTimeZone(new Date(), timeZone);
     const dayEnd = new Date(dayStart.getTime() + 86_400_000);
 
-    const [step, attempt, review] = await Promise.all([
+    const [step, attempt, review, dictation, shadowing] = await Promise.all([
       this.prisma.lessonStepProgress.findFirst({
         where: { userId, lastActivityAt: { gte: dayStart, lt: dayEnd } },
         orderBy: { lastActivityAt: 'desc' },
@@ -378,12 +422,24 @@ export class StreakService {
         orderBy: { reviewedAt: 'desc' },
         select: { reviewedAt: true },
       }),
+      this.prisma.listeningDictationAttempt.findFirst({
+        where: { userId, submittedAt: { gte: dayStart, lt: dayEnd } },
+        orderBy: { submittedAt: 'desc' },
+        select: { submittedAt: true },
+      }),
+      this.prisma.listeningShadowingAttempt.findFirst({
+        where: { userId, submittedAt: { gte: dayStart, lt: dayEnd } },
+        orderBy: { submittedAt: 'desc' },
+        select: { submittedAt: true },
+      }),
     ]);
 
     const candidates: { at: Date; label: StreakActivityToday['label'] }[] = [];
     if (step) candidates.push({ at: step.lastActivityAt, label: 'lesson' });
     if (attempt) candidates.push({ at: attempt.submittedAt, label: 'practice' });
     if (review) candidates.push({ at: review.reviewedAt, label: 'vocab' });
+    if (dictation) candidates.push({ at: dictation.submittedAt, label: 'listening' });
+    if (shadowing) candidates.push({ at: shadowing.submittedAt, label: 'listening' });
     if (candidates.length === 0) return { qualified: false, label: null, at: null };
 
     candidates.sort((a, b) => b.at.getTime() - a.at.getTime());
@@ -399,6 +455,44 @@ export class StreakService {
       where: { status: 'ACTIVE', currentStreak: { gte: currentStreak } },
     });
     return Math.max(1, Math.round((betterOrEqual / total) * 100));
+  }
+
+  /**
+   * GET /streaks/leaderboard — top ACTIVE pairs by currentStreak (ties
+   * broken by longestStreak). Visible to any authenticated user, matching
+   * this module's existing privacy model: GET /streaks/pair/:userId already
+   * reveals a stranger's relationship status to anyone who asks, and
+   * Community Chat is a shared public room — a ranked list of names,
+   * avatars and streak counts is not a new disclosure on top of that.
+   *
+   * Deliberately does NOT include a "flame tier" name, a per-pair tagline,
+   * or a motto — none of that data exists anywhere (no field, no user-facing
+   * way to set it), and inventing display copy for it would be exactly the
+   * kind of fake data this feature was built to avoid. totalXp is the one
+   * derived stat here, and it is honest: both members' real User.totalPoints
+   * summed, nothing fabricated.
+   */
+  async getLeaderboard(userId: string): Promise<LeaderboardEntryDto[]> {
+    const pairs = await this.prisma.streakPair.findMany({
+      where: { status: 'ACTIVE', currentStreak: { gte: 1 } },
+      orderBy: [{ currentStreak: 'desc' }, { longestStreak: 'desc' }],
+      take: LEADERBOARD_LIMIT,
+      include: {
+        userLow: { select: LEADERBOARD_PARTNER_SELECT },
+        userHigh: { select: LEADERBOARD_PARTNER_SELECT },
+      },
+    });
+
+    return pairs.map((pair, index) => ({
+      rank: index + 1,
+      pairId: pair.id,
+      userA: toPartnerDto(pair.userLow),
+      userB: toPartnerDto(pair.userHigh),
+      currentStreak: pair.currentStreak,
+      longestStreak: pair.longestStreak,
+      totalXp: pair.userLow.totalPoints + pair.userHigh.totalPoints,
+      isCurrentUserPair: pair.userLowId === userId || pair.userHighId === userId,
+    }));
   }
 
   // ---- sharing ------------------------------------------------------------
@@ -468,6 +562,7 @@ export class StreakService {
     pair: PairWithUsers,
     userId: string,
     dayLabel: string,
+    options: { notifyPartnerPending: boolean } = { notifyPartnerPending: true },
   ): Promise<void> {
     const me = pair.userLowId === userId ? pair.userLow : pair.userHigh;
     const partner = pair.userLowId === userId ? pair.userHigh : pair.userLow;
@@ -508,12 +603,19 @@ export class StreakService {
     if (!partnerDay) {
       // Partner hasn't qualified today yet — event-driven nudge, no
       // scheduler involved (see NotificationType.STREAK_PARTNER_ACTIVE).
-      await this.notifications.create(tx, partner.id, 'STREAK_PARTNER_ACTIVE', {
-        partnerId: me.id,
-        partnerName: me.name,
-        partnerAvatarUrl: me.avatarUrl,
-        streakId: pair.id,
-      });
+      // Skipped when called from the lazy recompute below: unlike the other
+      // branches in this method, nothing here updates `lastQualifiedDay` (or
+      // any other state), so it has no natural guard against firing again on
+      // every single page view that triggers a recompute — only the
+      // one-shot live hook is allowed to send it.
+      if (options.notifyPartnerPending) {
+        await this.notifications.create(tx, partner.id, 'STREAK_PARTNER_ACTIVE', {
+          partnerId: me.id,
+          partnerName: me.name,
+          partnerAvatarUrl: me.avatarUrl,
+          streakId: pair.id,
+        });
+      }
       return;
     }
 
@@ -546,6 +648,53 @@ export class StreakService {
         }),
       ]);
     }
+  }
+
+  /**
+   * Self-healing lazy recompute (§G of the plan) — called from every
+   * authenticated read of an ACTIVE pair. Re-derives today's qualification
+   * from each side's real UserDailyActivity rows and reuses the exact same
+   * state machine the live onUserActivityDay hook uses (processPairActivity),
+   * so a missed hook trigger — most commonly a pair created/restarted after
+   * today's activity was already recorded for one or both sides — self-heals
+   * on the next view instead of leaving currentStreak stuck.
+   *
+   * Tries each side's own "today" (own timezone) in turn, refetching the
+   * pair between attempts since the first attempt may have mutated it
+   * (advanced the streak, or broken it). `notifyPartnerPending: false` is
+   * the one deliberate behavioural difference from the live hook — see the
+   * comment on that branch in processPairActivity for why.
+   */
+  private async recomputePairState(tx: Prisma.TransactionClient, pair: PairWithUsers): Promise<PairWithUsers> {
+    const [lowUser, highUser] = await Promise.all([
+      tx.user.findUniqueOrThrow({ where: { id: pair.userLowId }, select: { timezone: true } }),
+      tx.user.findUniqueOrThrow({ where: { id: pair.userHighId }, select: { timezone: true } }),
+    ]);
+    const attempts: { userId: string; dayLabel: string }[] = [
+      { userId: pair.userLowId, dayLabel: formatDayInTimeZone(new Date(), lowUser.timezone ?? 'UTC') },
+      { userId: pair.userHighId, dayLabel: formatDayInTimeZone(new Date(), highUser.timezone ?? 'UTC') },
+    ];
+
+    let current = pair;
+    for (const { userId, dayLabel } of attempts) {
+      if (current.status !== 'ACTIVE') break;
+      if (current.lastQualifiedDay === dayLabel) continue;
+
+      const ownDay = await tx.userDailyActivity.findUnique({
+        where: { userId_day: { userId, day: dayKeyToDate(dayLabel) } },
+      });
+      if (!ownDay) continue;
+
+      await this.processPairActivity(tx, current, userId, dayLabel, { notifyPartnerPending: false });
+
+      const refreshed = await tx.streakPair.findUnique({
+        where: { id: pair.id },
+        include: { userLow: { select: SAFE_PARTNER_SELECT }, userHigh: { select: SAFE_PARTNER_SELECT } },
+      });
+      if (!refreshed) break;
+      current = refreshed;
+    }
+    return current;
   }
 
   private assertParticipant(pair: { userLowId: string; userHighId: string }, userId: string): void {

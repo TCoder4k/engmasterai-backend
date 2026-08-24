@@ -26,13 +26,17 @@ export interface StreakDayStatus {
   day: string; // 'YYYY-MM-DD'
   meQualified: boolean;
   partnerQualified: boolean;
+  /** True for a day later than "today" in the viewer's own timezone — the
+   * remainder of the fixed Mon-Sun calendar week, which hasn't happened yet
+   * and must be rendered as "not yet", never as "missed". */
+  isFuture: boolean;
 }
 
 export interface StreakActivityToday {
   qualified: boolean;
   // A generic category, never a fabricated lesson/task title — see
   // StreakService.describeActivity for why only these three are possible.
-  label: 'lesson' | 'practice' | 'vocab' | null;
+  label: 'lesson' | 'practice' | 'vocab' | 'listening' | null;
   at: string | null;
 }
 
@@ -60,6 +64,22 @@ export interface PairRelationshipDto {
   relationship: PairRelationship;
   streak?: StreakPairDto;
   invitation?: StreakInvitationDto;
+}
+
+// GET /streaks/leaderboard — top active pairs by currentStreak. Deliberately
+// minimal: no invented "flame tier" name, no per-pair tagline/motto (no such
+// data exists anywhere — see StreakService.getLeaderboard). totalXp is a
+// real, honest derivation (both members' User.totalPoints summed), not a
+// fabricated stat.
+export interface LeaderboardEntryDto {
+  rank: number;
+  pairId: string;
+  userA: StreakPartnerDto;
+  userB: StreakPartnerDto;
+  currentStreak: number;
+  longestStreak: number;
+  totalXp: number;
+  isCurrentUserPair: boolean;
 }
 
 // The ONLY shape ever returned by GET /streaks/public/:shareId — built from

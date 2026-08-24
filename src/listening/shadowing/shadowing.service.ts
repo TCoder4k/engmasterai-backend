@@ -8,6 +8,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import { GamificationService } from '../../gamification/gamification.service';
 import { visibleContentWhere } from '../listening-visibility';
 import { normalizeReferenceText } from '../text-normalization';
 import { SubmitShadowingAttemptDto } from '../dto';
@@ -94,6 +95,7 @@ export class ShadowingService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
+    private readonly gamification: GamificationService,
     @Inject(SPEECH_TO_TEXT_PROVIDER)
     private readonly speechToText: SpeechToTextProvider,
     // A SECOND, SEPARATE provider — see pronunciation-feedback.provider.ts.
@@ -201,7 +203,7 @@ export class ShadowingService {
         select: { bestAccuracyPercent: true, completedAt: true },
       });
 
-      return tx.listeningShadowingSegmentProgress.upsert({
+      const progress = await tx.listeningShadowingSegmentProgress.upsert({
         where: { userId_segmentId: { userId, segmentId: segment.id } },
         create: {
           userId,
@@ -226,6 +228,18 @@ export class ShadowingService {
         },
         select: SEGMENT_PROGRESS_SELECT,
       });
+
+      // A submitted attempt is a qualifying activity day, same as a quiz
+      // submission — see activity-window.ts. No XP award: this only feeds
+      // the streak; awarding XP for listening is a separate product call
+      // nobody has made yet.
+      await this.gamification.recordProgress(tx, userId, {
+        at: now,
+        awards: [],
+        countsAsActivity: true,
+      });
+
+      return progress;
     });
 
     return {

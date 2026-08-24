@@ -24,6 +24,8 @@ interface HarnessOptions {
   stepActivity?: Date[];
   attemptActivity?: Date[];
   reviewActivity?: Date[];
+  dictationActivity?: Date[];
+  shadowingActivity?: Date[];
   studySecondsToday?: number | null;
   recentAccuracyAttempts?: number[];
 }
@@ -88,6 +90,20 @@ const buildHarness = (options: HarnessOptions = {}) => {
       findMany: jest.fn(() =>
         resolve(
           (options.reviewActivity ?? []).map((reviewedAt) => ({ reviewedAt })),
+        ),
+      ),
+    },
+    listeningDictationAttempt: {
+      findMany: jest.fn(() =>
+        resolve(
+          (options.dictationActivity ?? []).map((submittedAt) => ({ submittedAt })),
+        ),
+      ),
+    },
+    listeningShadowingAttempt: {
+      findMany: jest.fn(() =>
+        resolve(
+          (options.shadowingActivity ?? []).map((submittedAt) => ({ submittedAt })),
         ),
       ),
     },
@@ -410,6 +426,28 @@ describe('DashboardAnalyticsService — activity calendar and streak', () => {
 
     expect(activity.days[0]).toEqual({ date: '2026-07-25', active: true });
   });
+
+  // The Streak Together listening extension: a day with ONLY a dictation or
+  // shadowing attempt — no lesson step, no quiz, no SRS review — must still
+  // light up the individual streak calendar, since collectActiveDays now
+  // treats it as a qualifying activity day (see activity-window.ts).
+  it('counts a dictation-only day as active', async () => {
+    freezeNow(NOW);
+    const { service } = buildHarness({ dictationActivity: [NOW] });
+
+    const { activity } = await service.getDashboardAnalytics('user-1', VN);
+
+    expect(activity.days.at(-1)).toEqual({ date: '2026-07-31', active: true });
+  });
+
+  it('counts a shadowing-only day as active', async () => {
+    freezeNow(NOW);
+    const { service } = buildHarness({ shadowingActivity: [NOW] });
+
+    const { activity } = await service.getDashboardAnalytics('user-1', VN);
+
+    expect(activity.days.at(-1)).toEqual({ date: '2026-07-31', active: true });
+  });
 });
 
 describe('DashboardAnalyticsService — query cost', () => {
@@ -442,11 +480,14 @@ describe('DashboardAnalyticsService — query cost', () => {
     await busy.service.getDashboardAnalytics('user-1');
 
     expect(busy.calls.total).toBe(quiet.calls.total);
-    // 1 user read + 10 analytics reads. Update this number only alongside a
+    // 1 user read + 12 analytics reads. Update this number only alongside a
     // deliberate change to the query plan documented in the service.
-    // Sprint 10.5 raised it from 9 to 10 by adding the study-seconds SUM; this
-    // change raised it from 10 to 11 by adding the recent-accuracy read.
-    expect(quiet.calls.total).toBe(11);
+    // Sprint 10.5 raised it from 9 to 10 by adding the study-seconds SUM;
+    // a later change raised it from 10 to 11 by adding the recent-accuracy
+    // read; the Streak Together listening extension raised it from 11 to 13
+    // by adding the ListeningDictationAttempt and ListeningShadowingAttempt
+    // reads inside collectActiveDays (activity-window.ts).
+    expect(quiet.calls.total).toBe(13);
   });
 
   it('adds exactly one write when bootstrapping the timezone', async () => {
@@ -455,7 +496,7 @@ describe('DashboardAnalyticsService — query cost', () => {
 
     await service.getDashboardAnalytics('user-1', VN);
 
-    expect(calls.total).toBe(12);
+    expect(calls.total).toBe(14);
   });
 });
 

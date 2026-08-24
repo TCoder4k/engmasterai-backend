@@ -14,12 +14,17 @@ import { formatDayInTimeZone } from '../analytics/day-window';
 // same three queries with the same arguments and its spec, query counter
 // included, passes unedited. That was the acceptance condition for doing it.
 //
-// THE THREE SOURCES ARE THE CANONICAL DEFINITION OF AN ACTIVE DAY, and the
-// list is deliberately not longer:
+// THE CANONICAL DEFINITION OF AN ACTIVE DAY. Originally three sources;
+// Listening (Dictation + Shadowing) was added as a fourth once both submit
+// paths started calling GamificationService.recordProgress inside their own
+// write transaction (dictation.service.ts / shadowing.service.ts) — every
+// submitted attempt, pass or fail, counts, same as LessonTaskAttempt below:
 //
-//   LessonStepProgress.lastActivityAt  — video progress, theory opened/finished
-//   LessonTaskAttempt.submittedAt      — a quiz or practice attempt SUBMITTED
-//   WordReviewLog.reviewedAt           — an SRS review submitted
+//   LessonStepProgress.lastActivityAt        — video progress, theory opened/finished
+//   LessonTaskAttempt.submittedAt            — a quiz or practice attempt SUBMITTED
+//   WordReviewLog.reviewedAt                 — an SRS review submitted
+//   ListeningDictationAttempt.submittedAt    — a dictation attempt submitted
+//   ListeningShadowingAttempt.submittedAt    — a shadowing attempt submitted
 //
 // NOT INCLUDED, and this is a decision rather than an oversight:
 //   - Trap Hunter. TrapHunterService.answerTrap writes exactly one field,
@@ -30,6 +35,11 @@ import { formatDayInTimeZone } from '../analytics/day-window';
 //     activity day.
 //   - POST /quiz/answer and POST /quiz/start, for the same reason: they touch
 //     LessonTaskProgress columns this scan does not read.
+//   - Speaking Partner and Vocab Guess practice, and Free Talk (which has no
+//     Prisma model at all — Redis-only). Still genuinely deferred, unlike
+//     Listening above: neither calls recordProgress yet, so extending this
+//     scan to them would require the same wiring Listening just got, not
+//     just a query added here.
 //
 // NO PUBLICATION FILTER, matching Sprint 09. An activity DAY is a historical
 // fact: an admin unpublishing a course next month does not mean the student
@@ -48,13 +58,19 @@ interface ActivityScanClient {
   wordReviewLog: {
     findMany(args: unknown): Promise<{ reviewedAt: Date }[]>;
   };
+  listeningDictationAttempt: {
+    findMany(args: unknown): Promise<{ submittedAt: Date }[]>;
+  };
+  listeningShadowingAttempt: {
+    findMany(args: unknown): Promise<{ submittedAt: Date }[]>;
+  };
 }
 
 /**
  * The set of `'YYYY-MM-DD'` day keys, in `timeZone`, on which this student did
  * anything at or after `windowStart`.
  *
- * Three queries, run together. Each selects ONLY its timestamp column: the
+ * Five queries, run together. Each selects ONLY its timestamp column: the
  * answer wanted is a handful of booleans, so nothing else should cross the
  * wire — a heavy SRS user has thousands of review rows in a week.
  */
@@ -64,20 +80,29 @@ export const collectActiveDays = async (
   windowStart: Date,
   timeZone: string,
 ): Promise<Set<string>> => {
-  const [stepActivity, attemptActivity, reviewActivity] = await Promise.all([
-    prisma.lessonStepProgress.findMany({
-      where: { userId, lastActivityAt: { gte: windowStart } },
-      select: { lastActivityAt: true },
-    }),
-    prisma.lessonTaskAttempt.findMany({
-      where: { userId, submittedAt: { gte: windowStart } },
-      select: { submittedAt: true },
-    }),
-    prisma.wordReviewLog.findMany({
-      where: { userId, reviewedAt: { gte: windowStart } },
-      select: { reviewedAt: true },
-    }),
-  ]);
+  const [stepActivity, attemptActivity, reviewActivity, dictationActivity, shadowingActivity] =
+    await Promise.all([
+      prisma.lessonStepProgress.findMany({
+        where: { userId, lastActivityAt: { gte: windowStart } },
+        select: { lastActivityAt: true },
+      }),
+      prisma.lessonTaskAttempt.findMany({
+        where: { userId, submittedAt: { gte: windowStart } },
+        select: { submittedAt: true },
+      }),
+      prisma.wordReviewLog.findMany({
+        where: { userId, reviewedAt: { gte: windowStart } },
+        select: { reviewedAt: true },
+      }),
+      prisma.listeningDictationAttempt.findMany({
+        where: { userId, submittedAt: { gte: windowStart } },
+        select: { submittedAt: true },
+      }),
+      prisma.listeningShadowingAttempt.findMany({
+        where: { userId, submittedAt: { gte: windowStart } },
+        select: { submittedAt: true },
+      }),
+    ]);
 
   return new Set<string>([
     ...stepActivity.map((row) =>
@@ -88,6 +113,12 @@ export const collectActiveDays = async (
     ),
     ...reviewActivity.map((row) =>
       formatDayInTimeZone(row.reviewedAt, timeZone),
+    ),
+    ...dictationActivity.map((row) =>
+      formatDayInTimeZone(row.submittedAt, timeZone),
+    ),
+    ...shadowingActivity.map((row) =>
+      formatDayInTimeZone(row.submittedAt, timeZone),
     ),
   ]);
 };

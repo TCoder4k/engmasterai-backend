@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { PrismaModule } from '../prisma/prisma.module';
+import { GamificationModule } from '../gamification/gamification.module';
 import { QuizRateLimitGuard } from '../lesson/quiz/rate-limit/quiz-rate-limit.guard';
 import { ListeningAdminController } from './listening-admin.controller';
 import { ListeningCatalogController } from './listening-catalog.controller';
@@ -23,12 +24,19 @@ import { PRONUNCIATION_FEEDBACK_PROVIDER } from './shadowing/pronunciation-feedb
 // LessonModule would put listening content behind the lesson engine's
 // vocabulary for no shared code at all.
 //
-// It imports ONLY PrismaModule, like GamificationModule and for the same
-// reason: QuizRateLimitGuard needs nothing but Reflector and
-// RateLimiterService, and AuthModule is @Global() and exports the latter. So
-// the guard is declared as a PROVIDER here rather than obtained by importing
-// LessonModule — which would drag the whole lesson engine in to reuse a
-// forty-line guard.
+// It imports PrismaModule directly (not through another module), like
+// GamificationModule and for the same reason: QuizRateLimitGuard needs
+// nothing but Reflector and RateLimiterService, and AuthModule is @Global()
+// and exports the latter. So the guard is declared as a PROVIDER here rather
+// than obtained by importing LessonModule — which would drag the whole
+// lesson engine in to reuse a forty-line guard.
+//
+// GamificationModule is imported so Dictation/Shadowing submitAttempt can
+// call GamificationService.recordProgress() inside their own transaction —
+// a submitted attempt now counts as a qualifying activity day, same as a
+// quiz submission or an SRS review (see activity-window.ts). Safe in this
+// direction only: GamificationModule imports PrismaModule and StreakModule,
+// neither of which imports ListeningModule, so this stays a one-way edge.
 //
 // >>> KNOWN, PRE-EXISTING DEBT, DELIBERATELY NOT FIXED HERE <<<
 // That guard and its decorator live under `src/lesson/quiz/rate-limit/`, and
@@ -40,7 +48,7 @@ import { PRONUNCIATION_FEEDBACK_PROVIDER } from './shadowing/pronunciation-feedb
 // it touches six files in five modules and belongs in a change that is only
 // that, not smuggled into a feature sprint.
 @Module({
-  imports: [PrismaModule],
+  imports: [PrismaModule, GamificationModule],
   controllers: [
     ListeningCatalogController,
     ListeningAdminController,
