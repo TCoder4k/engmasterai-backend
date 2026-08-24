@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { PrismaModule } from '../prisma/prisma.module';
 import { QuizRateLimitGuard } from '../lesson/quiz/rate-limit/quiz-rate-limit.guard';
+import { StreakModule } from '../streak/streak.module';
 import { GamificationController } from './gamification.controller';
 import { GamificationService } from './gamification.service';
 
@@ -16,10 +17,14 @@ import { GamificationService } from './gamification.service';
 //
 //     LessonModule  ─┐
 //     LearningModule ┼──>  GamificationModule  ──>  PrismaModule
+//                                              └──>  StreakModule
 //
-// This module imports ONLY PrismaModule. It must never import LessonModule,
-// because LessonModule imports it — that would be a genuine circular module
-// dependency, not a stylistic concern.
+// StreakModule was added for Streak Together: recordProgress() calls
+// StreakService.onUserActivityDay() as its one additive step whenever a new
+// activity day just opened (see GamificationService's own header). This is
+// safe in this direction only because StreakModule imports nothing from
+// GamificationModule — a one-way edge, not a cycle. This module must still
+// never import LessonModule, because LessonModule imports it.
 //
 // QuizRateLimitGuard is therefore declared as a PROVIDER here rather than
 // obtained by importing LessonModule. That works because the guard needs only
@@ -30,7 +35,7 @@ import { GamificationService } from './gamification.service';
 //
 // Exported so the two engines can inject GamificationService.
 @Module({
-  imports: [PrismaModule],
+  imports: [PrismaModule, StreakModule],
   controllers: [GamificationController],
   providers: [GamificationService, QuizRateLimitGuard],
   exports: [GamificationService],
