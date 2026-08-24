@@ -1,4 +1,5 @@
 import { StreakService } from './streak.service';
+import { formatDayInTimeZone } from '../analytics/day-window';
 
 // Streak Together — StreakService against a small in-memory fake Prisma,
 // same "mock the datastore, not the framework" technique as
@@ -17,6 +18,7 @@ interface FakeUser {
   avatarUrl: string | null;
   level: number;
   timezone: string | null;
+  totalPoints: number;
 }
 
 interface FakeInvitation {
@@ -55,7 +57,13 @@ const toDayDate = (label: string): Date => {
   return new Date(Date.UTC(y, m - 1, d));
 };
 
-const userSelect = (u: FakeUser) => ({ id: u.id, name: u.name, avatarUrl: u.avatarUrl, level: u.level });
+const userSelect = (u: FakeUser) => ({
+  id: u.id,
+  name: u.name,
+  avatarUrl: u.avatarUrl,
+  level: u.level,
+  totalPoints: u.totalPoints,
+});
 
 class FakeStore {
   users: FakeUser[] = [];
@@ -71,6 +79,7 @@ class FakeStore {
       avatarUrl: null,
       level: 1,
       timezone: 'UTC',
+      totalPoints: 0,
       ...over,
     };
     this.users.push(user);
@@ -180,10 +189,32 @@ const buildPrismaClient = (store: FakeStore) => {
           return Promise.resolve(store.withPairInclude(row));
         },
       ),
-      findMany: jest.fn(({ where }: { where: Record<string, unknown> }) => {
-        const matches = store.pairs.filter((p) => matchPairWhere(p, where));
-        return Promise.resolve(matches.map((p) => store.withPairInclude(p)));
-      }),
+      findMany: jest.fn(
+        ({
+          where,
+          orderBy,
+          take,
+        }: {
+          where: Record<string, unknown>;
+          orderBy?: Record<string, 'asc' | 'desc'>[];
+          take?: number;
+        }) => {
+          let matches = store.pairs.filter((p) => matchPairWhere(p, where));
+          if (orderBy) {
+            matches = [...matches].sort((a, b) => {
+              for (const clause of orderBy) {
+                const [field, dir] = Object.entries(clause)[0] as [keyof FakePair, 'asc' | 'desc'];
+                const av = a[field] as number;
+                const bv = b[field] as number;
+                if (av !== bv) return dir === 'desc' ? bv - av : av - bv;
+              }
+              return 0;
+            });
+          }
+          if (typeof take === 'number') matches = matches.slice(0, take);
+          return Promise.resolve(matches.map((p) => store.withPairInclude(p)));
+        },
+      ),
       count: jest.fn(({ where }: { where: Record<string, unknown> }) =>
         Promise.resolve(store.pairs.filter((p) => matchPairWhere(p, where)).length),
       ),
@@ -245,6 +276,12 @@ const buildPrismaClient = (store: FakeStore) => {
     lessonStepProgress: { findFirst: jest.fn(() => Promise.resolve(null)) },
     lessonTaskAttempt: { findFirst: jest.fn(() => Promise.resolve(null)) },
     wordReviewLog: { findFirst: jest.fn(() => Promise.resolve(null)) },
+    listeningDictationAttempt: {
+      findFirst: jest.fn<Promise<{ submittedAt: Date } | null>, []>(() => Promise.resolve(null)),
+    },
+    listeningShadowingAttempt: {
+      findFirst: jest.fn<Promise<{ submittedAt: Date } | null>, []>(() => Promise.resolve(null)),
+    },
     $transaction: jest.fn((fn: (tx: unknown) => Promise<unknown>) => fn(client)),
   };
   return client;
@@ -461,6 +498,18 @@ describe('StreakService — onUserActivityDay', () => {
     expect(store.pairs[0].longestStreak).toBe(6);
   });
 
+  it('fires a milestone notification for the very first mutually qualified day', async () => {
+    const { service, store, prisma, notifications, a, b } = await activePair();
+    store.addQualifiedDay(b.id, '2026-08-24');
+    await service.onUserActivityDay(prisma as never, a.id, '2026-08-24');
+    expect(notifications.create).toHaveBeenCalledWith(
+      expect.anything(),
+      a.id,
+      'STREAK_MILESTONE',
+      expect.objectContaining({ days: 1 }),
+    );
+  });
+
   it('fires a milestone notification exactly at day 3', async () => {
     const { service, store, prisma, notifications, a, b } = await activePair();
     store.pairs[0].lastQualifiedDay = '2026-08-23';
@@ -503,6 +552,222 @@ describe('StreakService — onUserActivityDay', () => {
     store.pairs[0].lastQualifiedDay = '2026-08-01';
     await service.onUserActivityDay(prisma as never, a.id, '2026-08-24');
     expect(store.pairs[0].currentStreak).toBe(0);
+  });
+});
+
+describe('StreakService — getLeaderboard', () => {
+  const acceptedPairWithStreak = async (currentStreak: number, longestStreak = currentStreak, points = 0) => {
+    const { service, store } = buildHarness();
+    const a = store.addUser({ totalPoints: points });
+    const b = store.addUser({ totalPoints: points });
+    const invite = await service.sendInvitation(a.id, b.id);
+    await service.acceptInvitation(b.id, invite.id);
+    store.pairs[0].currentStreak = currentStreak;
+    store.pairs[0].longestStreak = longestStreak;
+    return { service, store, a, b };
+  };
+
+  it('ranks active pairs by currentStreak, highest first', async () => {
+    const { service, store, a } = await acceptedPairWithStreak(5);
+    // A second, unrelated pair with a higher streak.
+    const c = store.addUser();
+    const d = store.addUser();
+    const invite2 = await service.sendInvitation(c.id, d.id);
+    await service.acceptInvitation(d.id, invite2.id);
+    store.pairs[1].currentStreak = 12;
+
+    const board = await service.getLeaderboard(a.id);
+
+    expect(board.map((row) => row.currentStreak)).toEqual([12, 5]);
+    expect(board[0].rank).toBe(1);
+    expect(board[1].rank).toBe(2);
+  });
+
+  it('breaks a tie in currentStreak by longestStreak', async () => {
+    const { service, store, a } = await acceptedPairWithStreak(10, 10);
+    const c = store.addUser();
+    const d = store.addUser();
+    const invite2 = await service.sendInvitation(c.id, d.id);
+    await service.acceptInvitation(d.id, invite2.id);
+    store.pairs[1].currentStreak = 10;
+    store.pairs[1].longestStreak = 40;
+
+    const board = await service.getLeaderboard(a.id);
+
+    expect(board[0].longestStreak).toBe(40);
+    expect(board[1].longestStreak).toBe(10);
+  });
+
+  it('excludes a BROKEN pair even if it once had a long streak', async () => {
+    const { service, store, a } = await acceptedPairWithStreak(50);
+    store.pairs[0].status = 'BROKEN';
+
+    const board = await service.getLeaderboard(a.id);
+
+    expect(board).toHaveLength(0);
+  });
+
+  it('excludes a pair that has never had a qualifying day (currentStreak 0)', async () => {
+    const { service, a } = await acceptedPairWithStreak(0);
+
+    const board = await service.getLeaderboard(a.id);
+
+    expect(board).toHaveLength(0);
+  });
+
+  it('sums both members\' real totalPoints into totalXp — no fabricated stat', async () => {
+    const { service, a } = await acceptedPairWithStreak(5, 5, 300);
+
+    const board = await service.getLeaderboard(a.id);
+
+    expect(board[0].totalXp).toBe(600);
+  });
+
+  it('flags the viewer\'s own pair and no one else\'s', async () => {
+    const { service, a } = await acceptedPairWithStreak(5);
+    const stranger = 'not-a-participant';
+
+    const [mine] = await service.getLeaderboard(a.id);
+    const [asStranger] = await service.getLeaderboard(stranger);
+
+    expect(mine.isCurrentUserPair).toBe(true);
+    expect(asStranger.isCurrentUserPair).toBe(false);
+  });
+});
+
+describe('StreakService — getStreakDetail activity-today labeling', () => {
+  // Dictation/Shadowing attempts count as a qualifying activity day
+  // (activity-window.ts), but describeActivity() re-derives "today" from raw
+  // tables rather than reusing collectActiveDays — so it needs its own
+  // coverage to confirm a listening-only day is not silently missed.
+  const acceptedPair = async () => {
+    const { service, store, prisma } = buildHarness();
+    const a = store.addUser({ id: 'aaa' });
+    const b = store.addUser({ id: 'bbb' });
+    const invite = await service.sendInvitation(a.id, b.id);
+    await service.acceptInvitation(b.id, invite.id);
+    return { service, store, prisma, a, b };
+  };
+
+  it('labels a listening-only day as qualified, with the shared "listening" label', async () => {
+    const { service, store, prisma, a } = await acceptedPair();
+    prisma.listeningDictationAttempt.findFirst.mockResolvedValueOnce({ submittedAt: new Date() });
+
+    const detail = await service.getStreakDetail(a.id, store.pairs[0].id);
+
+    expect(detail.meActivityToday).toEqual({
+      qualified: true,
+      label: 'listening',
+      at: expect.any(String),
+    });
+  });
+
+  it('reports not-yet-qualified when neither lesson, practice, vocab nor listening happened today', async () => {
+    const { service, store, a } = await acceptedPair();
+
+    const detail = await service.getStreakDetail(a.id, store.pairs[0].id);
+
+    expect(detail.meActivityToday).toEqual({ qualified: false, label: null, at: null });
+  });
+});
+
+describe('StreakService — self-healing recompute on read', () => {
+  // Repro of a real reported bug: both partners had already completed a
+  // qualifying activity today BEFORE the pair was created (e.g. accepting
+  // the invite later in the day) — recordProgress's isNewDay gate only
+  // fires onUserActivityDay on a user's FIRST qualifying action of the day,
+  // so neither side's activity re-triggers it after the fact, and
+  // currentStreak was staying stuck at 0 forever despite both "Đã học hôm
+  // nay ✓". getStreakDetail/listMyStreaks must self-heal this on read.
+  const acceptedPair = async () => {
+    const { service, store, notifications } = buildHarness();
+    const a = store.addUser({ id: 'aaa' });
+    const b = store.addUser({ id: 'bbb' });
+    const invite = await service.sendInvitation(a.id, b.id);
+    await service.acceptInvitation(b.id, invite.id);
+    return { service, store, notifications, a, b };
+  };
+
+  it('self-heals currentStreak when both partners already qualified today before the write-side hook could fire', async () => {
+    const { service, store, a, b } = await acceptedPair();
+    const today = formatDayInTimeZone(new Date(), 'UTC');
+    store.addQualifiedDay(a.id, today);
+    store.addQualifiedDay(b.id, today);
+
+    const detail = await service.getStreakDetail(a.id, store.pairs[0].id);
+
+    expect(detail.currentStreak).toBe(1);
+    expect(detail.longestStreak).toBe(1);
+    expect(store.pairs[0].lastQualifiedDay).toBe(today);
+  });
+
+  it('does not double-increment when the detail page is viewed twice on the same qualified day', async () => {
+    const { service, store, a, b } = await acceptedPair();
+    const today = formatDayInTimeZone(new Date(), 'UTC');
+    store.addQualifiedDay(a.id, today);
+    store.addQualifiedDay(b.id, today);
+
+    await service.getStreakDetail(a.id, store.pairs[0].id);
+    const second = await service.getStreakDetail(a.id, store.pairs[0].id);
+
+    expect(second.currentStreak).toBe(1);
+  });
+
+  it('self-heals a break on read too, when a real gap exists and someone has since qualified again', async () => {
+    const { service, store, a } = await acceptedPair();
+    store.pairs[0].lastQualifiedDay = '2020-01-01';
+    store.pairs[0].currentStreak = 5;
+    store.pairs[0].longestStreak = 5;
+    const today = formatDayInTimeZone(new Date(), 'UTC');
+    store.addQualifiedDay(a.id, today);
+
+    const detail = await service.getStreakDetail(a.id, store.pairs[0].id);
+
+    expect(detail.status).toBe('BROKEN');
+    expect(detail.currentStreak).toBe(0);
+    expect(detail.longestStreak).toBe(5);
+  });
+
+  it('does not spam a "partner active" notification on repeated detail reads — only the live hook does that', async () => {
+    const { service, store, notifications, a, b } = await acceptedPair();
+    const today = formatDayInTimeZone(new Date(), 'UTC');
+    store.addQualifiedDay(a.id, today); // only "a" has gone today
+
+    await service.getStreakDetail(a.id, store.pairs[0].id);
+    await service.getStreakDetail(a.id, store.pairs[0].id);
+    await service.getStreakDetail(b.id, store.pairs[0].id);
+
+    expect(notifications.create).not.toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      'STREAK_PARTNER_ACTIVE',
+      expect.anything(),
+    );
+    expect(store.pairs[0].currentStreak).toBe(0);
+  });
+
+  it('listMyStreaks also self-heals currentStreak for an ACTIVE pair', async () => {
+    const { service, store, a, b } = await acceptedPair();
+    const today = formatDayInTimeZone(new Date(), 'UTC');
+    store.addQualifiedDay(a.id, today);
+    store.addQualifiedDay(b.id, today);
+
+    const rows = await service.listMyStreaks(a.id);
+
+    expect(rows[0].currentStreak).toBe(1);
+  });
+
+  it('leaves a BROKEN pair untouched by the recompute', async () => {
+    const { service, store, a } = await acceptedPair();
+    store.pairs[0].status = 'BROKEN';
+    store.pairs[0].currentStreak = 0;
+    const today = formatDayInTimeZone(new Date(), 'UTC');
+    store.addQualifiedDay(a.id, today);
+
+    const detail = await service.getStreakDetail(a.id, store.pairs[0].id);
+
+    expect(detail.status).toBe('BROKEN');
+    expect(detail.currentStreak).toBe(0);
   });
 });
 

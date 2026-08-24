@@ -73,6 +73,15 @@ export class StreakController {
     return this.streakService.listMyStreaks(req.user.userId);
   }
 
+  // Registered BEFORE ':id' below — 'leaderboard' as a literal path segment
+  // must be matched first, or Nest would treat it as a pair id.
+  @UseGuards(JwtAuthGuard, StreakRateLimitGuard)
+  @StreakRateLimit({ kind: 'read', max: 60, windowSeconds: 60 })
+  @Get('leaderboard')
+  async getLeaderboard(@Req() req: RequestWithUser) {
+    return this.streakService.getLeaderboard(req.user.userId);
+  }
+
   /** "What's my relationship with this user?" — powers the Community Chat entry point. */
   @UseGuards(JwtAuthGuard, StreakRateLimitGuard)
   @StreakRateLimit({ kind: 'read', max: 60, windowSeconds: 60 })

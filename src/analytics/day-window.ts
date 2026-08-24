@@ -72,6 +72,55 @@ export const enumerateDaysInTimeZone = (
 };
 
 /**
+ * The Monday-to-Sunday calendar week (7 labels, ASCENDING, Monday first)
+ * containing the local day of `instant` — unlike enumerateDaysInTimeZone
+ * above, this can include days AFTER `instant`'s own day (the remainder of
+ * the week), which callers must treat as "hasn't happened yet", not "day
+ * with no activity".
+ *
+ * Built for Streak Together's calendar row: a rolling 7-day window (this
+ * file's original design, still used by the dashboard's individual-streak
+ * widget) reads naturally there because it always ends on today, but a
+ * shared calendar that a partner also looks at reads oddly whenever today
+ * isn't the last day of a Mon-Sun week — e.g. on a Monday it would show
+ * Tue-through-last-Monday, with today's checkmark stranded on the far
+ * right. A fixed week matches how people actually read a week.
+ *
+ * DST-safe by construction: walks backward to Monday and forward to Sunday
+ * using the same "step by 36h (or 12h back), then re-anchor to the zone's
+ * own day start" technique enumerateDaysInTimeZone already relies on, rather
+ * than day-of-month arithmetic.
+ */
+export const enumerateCalendarWeekInTimeZone = (instant: Date, timeZone: string): string[] => {
+  const todayStart = startOfDayInTimeZone(instant, timeZone);
+  const todayLabel = formatDayInTimeZone(todayStart, timeZone);
+
+  // The label alone determines weekday position — parsed at UTC noon so this
+  // reads the CALENDAR date's weekday, not `instant`'s own (already-handled
+  // above by todayStart/timeZone).
+  const [y, m, d] = todayLabel.split('-').map(Number);
+  const jsWeekday = new Date(Date.UTC(y, m - 1, d, 12)).getUTCDay(); // 0=Sun..6=Sat
+  const daysSinceMonday = (jsWeekday + 6) % 7; // 0=Mon..6=Sun
+
+  let monday = todayStart;
+  for (let i = 0; i < daysSinceMonday; i += 1) {
+    monday = startOfDayInTimeZone(new Date(monday.getTime() - 12 * 60 * 60 * 1000), timeZone);
+  }
+
+  const days: string[] = [];
+  let cursor = monday;
+  for (let i = 0; i < 7; i += 1) {
+    days.push(formatDayInTimeZone(cursor, timeZone));
+    // Mirror image of enumerateDaysInTimeZone's backward -12h step: +36h from
+    // a day start always lands within the NEXT calendar day regardless of a
+    // ±1h DST shift (a 23h day's next day starts at +23h, so +36h is 13h
+    // into it; a 25h day's next day starts at +25h, so +36h is 11h into it).
+    cursor = startOfDayInTimeZone(new Date(cursor.getTime() + 36 * 60 * 60 * 1000), timeZone);
+  }
+  return days;
+};
+
+/**
  * How many consecutive days, counting back from the END of `days`, are present
  * in `activeDays`.
  *

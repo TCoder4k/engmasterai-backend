@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import { GamificationService } from '../../gamification/gamification.service';
 import { visibleContentWhere } from '../listening-visibility';
 import {
   DictationSegmentProgressDto,
@@ -39,7 +40,10 @@ const SEGMENT_PROGRESS_SELECT = {
 
 @Injectable()
 export class DictationService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly gamification: GamificationService,
+  ) {}
 
   /**
    * Submit one attempt.
@@ -151,7 +155,7 @@ export class DictationService {
         select: { bestAccuracyPercent: true, completedAt: true, assisted: true },
       });
 
-      return tx.listeningDictationSegmentProgress.upsert({
+      const progress = await tx.listeningDictationSegmentProgress.upsert({
         where: { userId_segmentId: { userId, segmentId: segment.id } },
         create: {
           userId,
@@ -182,6 +186,18 @@ export class DictationService {
         },
         select: SEGMENT_PROGRESS_SELECT,
       });
+
+      // A submitted attempt is a qualifying activity day, same as a quiz
+      // submission — see activity-window.ts. No XP award: this only feeds
+      // the streak; awarding XP for listening is a separate product call
+      // nobody has made yet.
+      await this.gamification.recordProgress(tx, userId, {
+        at: now,
+        awards: [],
+        countsAsActivity: true,
+      });
+
+      return progress;
     });
 
     return {

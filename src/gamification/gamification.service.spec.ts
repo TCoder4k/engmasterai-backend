@@ -103,6 +103,8 @@ const buildHarness = (options: HarnessOptions = {}) => {
     },
     lessonTaskAttempt: { findMany: jest.fn(() => resolve([])) },
     wordReviewLog: { findMany: jest.fn(() => resolve([])) },
+    listeningDictationAttempt: { findMany: jest.fn(() => resolve([])) },
+    listeningShadowingAttempt: { findMany: jest.fn(() => resolve([])) },
   };
 
   // Streak Together's onUserActivityDay hook (step 3.5) is exercised by its
