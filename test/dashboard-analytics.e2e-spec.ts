@@ -108,11 +108,17 @@ describe('Dashboard analytics (e2e) — Sprint 09', () => {
     };
     activity: {
       windowDays: number;
-      days: { date: string; active: boolean }[];
+      days: { date: string; active: boolean; isFuture: boolean }[];
       currentStreakDays: number;
       streakCapped: boolean;
     };
   }
+
+  // `activity.days` is a fixed Monday-Sunday calendar week (see the 'shape'
+  // describe block below) — today's tile must be found by date, never
+  // assumed to be the last element.
+  const findTodayTile = (body: DashboardBody) =>
+    body.activity.days.find((day) => day.date === body.today.date);
 
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -187,7 +193,14 @@ describe('Dashboard analytics (e2e) — Sprint 09', () => {
   });
 
   describe('shape', () => {
-    it('returns a seven-day ascending window ending today', async () => {
+    // `activity.days` is the fixed Monday-Sunday calendar week containing
+    // today (enumerateCalendarWeekInTimeZone), NOT a rolling 7-day window
+    // ending today — today can land anywhere in the week, not just the last
+    // slot (see docs/memory.md's 2026-08-24 analytics fix). This test
+    // predates that fix and asserted the old, now-incorrect shape until
+    // updated alongside the Turnstile CAPTCHA work, which is what surfaced
+    // it failing in CI.
+    it('returns a seven-day ascending calendar week that contains today', async () => {
       const { token } = await registerAndLogin('shape');
 
       const res = await getDashboard(token, 'Asia/Ho_Chi_Minh').expect(200);
@@ -196,7 +209,9 @@ describe('Dashboard analytics (e2e) — Sprint 09', () => {
       expect(body.effectiveTimeZone).toBe('Asia/Ho_Chi_Minh');
       expect(body.activity.windowDays).toBe(7);
       expect(body.activity.days).toHaveLength(7);
-      expect(body.activity.days.at(-1)?.date).toBe(body.today.date);
+      const todayTile = findTodayTile(body);
+      expect(todayTile).toBeDefined();
+      expect(todayTile?.isFuture).toBe(false);
 
       const dates = body.activity.days.map((day) => day.date);
       expect([...dates].sort()).toEqual(dates);
@@ -233,7 +248,7 @@ describe('Dashboard analytics (e2e) — Sprint 09', () => {
       const body = res.body as DashboardBody;
 
       expect(body.today.stagesCompleted).toBe(1);
-      expect(body.activity.days.at(-1)?.active).toBe(true);
+      expect(findTodayTile(body)?.active).toBe(true);
       expect(body.activity.currentStreakDays).toBe(1);
     });
 
@@ -293,7 +308,7 @@ describe('Dashboard analytics (e2e) — Sprint 09', () => {
       expect(body.today.stagesCompleted).toBe(0);
       // The student still studied that day. An admin's edit must not rewrite
       // their history.
-      expect(body.activity.days.at(-1)?.active).toBe(true);
+      expect(findTodayTile(body)?.active).toBe(true);
       expect(body.activity.currentStreakDays).toBe(1);
     });
 
@@ -312,7 +327,7 @@ describe('Dashboard analytics (e2e) — Sprint 09', () => {
       const body = res.body as DashboardBody;
 
       expect(body.today.stagesCompleted).toBe(0);
-      expect(body.activity.days.at(-1)?.active).toBe(true);
+      expect(findTodayTile(body)?.active).toBe(true);
     });
   });
 
