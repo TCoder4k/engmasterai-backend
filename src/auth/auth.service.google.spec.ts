@@ -21,6 +21,7 @@ import { GoogleTokenInvalidError } from './google/google-token-invalid.error';
 import { AccountLinkRequiredException } from './exceptions/account-link-required.exception';
 import { RateLimitExceededException } from './exceptions/rate-limit-exceeded.exception';
 import { TransactionalMailService } from '../mail/transactional-mail.service';
+import { TurnstileVerifierService } from './turnstile/turnstile-verifier.service';
 
 const testLogContext: AuthLogContext = {
   requestId: 'test-request-id',
@@ -145,6 +146,7 @@ describe('AuthService — google() / linkGoogle()', () => {
       googleTokenVerifier,
       rateLimiterService,
       transactionalMailService,
+      {} as unknown as TurnstileVerifierService,
     );
   });
 

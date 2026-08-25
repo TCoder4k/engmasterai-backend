@@ -19,6 +19,7 @@ import { RateLimiterService } from './rate-limit/rate-limiter.service';
 import { TransactionalMailService } from '../mail/transactional-mail.service';
 import { PasswordReuseException } from './exceptions/password-reuse.exception';
 import { sha256Hex } from './utils/hash.util';
+import { TurnstileVerifierService } from './turnstile/turnstile-verifier.service';
 
 const testLogContext: AuthLogContext = {
   requestId: 'test-request-id',
@@ -118,6 +119,7 @@ describe('AuthService — password reset (Sprint 02C)', () => {
       {} as unknown as GoogleTokenVerifierService,
       rateLimiterService,
       transactionalMailService,
+      {} as unknown as TurnstileVerifierService,
     );
   });
 

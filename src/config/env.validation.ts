@@ -121,6 +121,22 @@ export const envValidationSchema = Joi.object({
     .max(100000)
     .default(5),
 
+  // Cloudflare Turnstile on /auth/register (2026-08-25) — off by default,
+  // same conditional pattern as GOOGLE_AUTH_ENABLED. The per-IP rate limits
+  // above are keyed per-IP and were bypassed by a bot rotating source IPs;
+  // this is a complementary human-verification layer, not a replacement.
+  TURNSTILE_ENABLED: Joi.boolean().default(false),
+  TURNSTILE_SECRET_KEY: Joi.string().min(1).when('TURNSTILE_ENABLED', {
+    is: true,
+    then: Joi.required(),
+    otherwise: Joi.optional(),
+  }),
+  TURNSTILE_VERIFY_TIMEOUT_MS: Joi.number()
+    .integer()
+    .min(1000)
+    .max(30000)
+    .default(5000),
+
   AUTH_REFRESH_RATE_LIMIT_MAX: Joi.number()
     .integer()
     .min(1)

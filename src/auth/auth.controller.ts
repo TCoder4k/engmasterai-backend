@@ -20,7 +20,7 @@ import { AuthRateLimitGuard } from './guards/auth-rate-limit.guard';
 import { JwtAuthGuard } from './guards';
 import { TrustedOriginGuard } from './guards/trusted-origin.guard';
 import { RateLimits } from './decorators/rate-limits.decorator';
-import { hashClientIp } from './utils/client-ip.util';
+import { getClientIp, hashClientIp } from './utils/client-ip.util';
 import type { RequestWithId } from './logging/request-id.middleware';
 import type { AuthLogContext } from './logging/auth-event-logger.service';
 
@@ -95,6 +95,7 @@ export class AuthController {
       dto,
       req.headers['user-agent'] ?? null,
       this.logContext(req),
+      getClientIp(req),
     );
     this.setRefreshCookie(res, refreshCookieValue);
     return body;
