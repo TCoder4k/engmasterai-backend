@@ -13,6 +13,7 @@ import {
 import { GoogleTokenVerifierService } from './google/google-token-verifier.service';
 import { RateLimiterService } from './rate-limit/rate-limiter.service';
 import { TransactionalMailService } from '../mail/transactional-mail.service';
+import { TurnstileVerifierService } from './turnstile/turnstile-verifier.service';
 
 const testLogContext: AuthLogContext = {
   requestId: 'test-request-id',
@@ -89,6 +90,7 @@ describe('AuthService — logout', () => {
       googleTokenVerifier,
       rateLimiterService,
       transactionalMailService,
+      {} as unknown as TurnstileVerifierService,
     );
   });
 

@@ -16,6 +16,8 @@ import { RateLimiterService } from './rate-limit/rate-limiter.service';
 import { RateLimitExceededException } from './exceptions/rate-limit-exceeded.exception';
 import { TransactionalMailService } from '../mail/transactional-mail.service';
 import { sha256Hex } from './utils/hash.util';
+import { TurnstileVerifierService } from './turnstile/turnstile-verifier.service';
+import { CaptchaVerificationFailedException } from './exceptions/captcha-verification-failed.exception';
 
 const testLogContext: AuthLogContext = {
   requestId: 'test-request-id',
@@ -33,6 +35,7 @@ describe('AuthService — email verification (Sprint 02B)', () => {
   let refreshTokenService: jest.Mocked<RefreshTokenService>;
   let rateLimiterService: jest.Mocked<RateLimiterService>;
   let transactionalMailService: jest.Mocked<TransactionalMailService>;
+  let turnstileVerifier: jest.Mocked<TurnstileVerifierService>;
   let prisma: {
     user: {
       create: jest.Mock;
@@ -87,6 +90,14 @@ describe('AuthService — email verification (Sprint 02B)', () => {
       }),
     } as unknown as jest.Mocked<TransactionalMailService>;
 
+    // Passes through by default, same as TurnstileVerifierService.verify()
+    // when TURNSTILE_ENABLED is false — every pre-existing test in this file
+    // exercises that unconfigured-in-prod-until-rollout state unless it
+    // explicitly overrides this mock.
+    turnstileVerifier = {
+      verify: jest.fn().mockResolvedValue(undefined),
+    } as unknown as jest.Mocked<TurnstileVerifierService>;
+
     prisma = {
       user: {
         create: jest.fn(),
@@ -113,6 +124,7 @@ describe('AuthService — email verification (Sprint 02B)', () => {
       {} as unknown as GoogleTokenVerifierService,
       rateLimiterService,
       transactionalMailService,
+      turnstileVerifier,
     );
   });
 
@@ -137,7 +149,7 @@ describe('AuthService — email verification (Sprint 02B)', () => {
     });
 
     it('normalizes the submitted email before writing it', async () => {
-      await service.register(dto, null, testLogContext);
+      await service.register(dto, null, testLogContext, '203.0.113.42');
 
       const createCall = firstCallArg<{ data: { email: string } }>(
         prisma.user.create,
@@ -146,7 +158,7 @@ describe('AuthService — email verification (Sprint 02B)', () => {
     });
 
     it('leaves emailVerifiedAt null for a newly registered local user', async () => {
-      const result = await service.register(dto, null, testLogContext);
+      const result = await service.register(dto, null, testLogContext, '203.0.113.42');
 
       const createCall = firstCallArg<{ data: Record<string, unknown> }>(
         prisma.user.create,
@@ -156,7 +168,7 @@ describe('AuthService — email verification (Sprint 02B)', () => {
     });
 
     it('stores only the token hash — never the raw token', async () => {
-      await service.register(dto, null, testLogContext);
+      await service.register(dto, null, testLogContext, '203.0.113.42');
 
       const tokenCreateCall = firstCallArg<{
         data: { userId: string; tokenHash: string; expiresAt: Date };
@@ -171,7 +183,7 @@ describe('AuthService — email verification (Sprint 02B)', () => {
     });
 
     it('invalidates any prior outstanding tokens for the user before issuing a new one, in the same transaction', async () => {
-      await service.register(dto, null, testLogContext);
+      await service.register(dto, null, testLogContext, '203.0.113.42');
 
       expect(prisma.emailVerificationToken.updateMany).toHaveBeenCalledWith({
         where: { userId: 'user-1', consumedAt: null },
@@ -184,7 +196,7 @@ describe('AuthService — email verification (Sprint 02B)', () => {
     });
 
     it('awaits TransactionalMailService and reports emailDeliveryStatus: "sent" on success', async () => {
-      const result = await service.register(dto, null, testLogContext);
+      const result = await service.register(dto, null, testLogContext, '203.0.113.42');
 
       expect(
         transactionalMailService.sendVerificationEmail,
@@ -202,7 +214,7 @@ describe('AuthService — email verification (Sprint 02B)', () => {
         durationMs: 5000,
       });
 
-      const result = await service.register(dto, null, testLogContext);
+      const result = await service.register(dto, null, testLogContext, '203.0.113.42');
 
       expect(result.emailDeliveryStatus).toBe('failed');
       expect(result.message).toBe('Registration successful');
@@ -217,7 +229,7 @@ describe('AuthService — email verification (Sprint 02B)', () => {
       });
 
       await expect(
-        service.register(dto, null, testLogContext),
+        service.register(dto, null, testLogContext, '203.0.113.42'),
       ).resolves.toMatchObject({ emailDeliveryStatus: 'failed' });
       expect(prisma.user.create).toHaveBeenCalledTimes(1);
     });
@@ -227,20 +239,120 @@ describe('AuthService — email verification (Sprint 02B)', () => {
         new Error('unexpected mail-path crash'),
       );
 
-      const result = await service.register(dto, null, testLogContext);
+      const result = await service.register(dto, null, testLogContext, '203.0.113.42');
 
       expect(result.emailDeliveryStatus).toBe('failed');
       expect(result.accessToken).toBeTruthy();
     });
 
     it('never includes the raw token, raw email, or provider error detail in any logged payload', async () => {
-      await service.register(dto, null, testLogContext);
+      await service.register(dto, null, testLogContext, '203.0.113.42');
 
       const sentTo = transactionalMailService.sendVerificationEmail.mock
         .calls[0][1] as { rawToken: string };
       const serialized = JSON.stringify(authEventLogger.log.mock.calls);
       expect(serialized).not.toContain(sentTo.rawToken);
       expect(serialized).not.toContain('jane@example.com');
+    });
+  });
+
+  describe('register() — Turnstile CAPTCHA gate (2026-08-25)', () => {
+    const dto = {
+      name: 'Jane',
+      email: '  Jane@Example.COM ',
+      password: 'password123',
+      captchaToken: 'a-solved-token',
+    };
+
+    beforeEach(() => {
+      prisma.user.create.mockResolvedValue({
+        id: 'user-1',
+        name: dto.name,
+        email: 'jane@example.com',
+        role: UserRole.USER,
+        emailVerifiedAt: null,
+        createdAt: new Date(),
+      });
+      prisma.emailVerificationToken.updateMany.mockResolvedValue({ count: 0 });
+      prisma.emailVerificationToken.create.mockResolvedValue({});
+    });
+
+    it('proceeds end-to-end (no captchaToken needed) when TurnstileVerifierService is a no-op — the current, unconfigured-in-prod-until-rollout state', async () => {
+      // Real default from turnstileVerifier's own beforeEach mock above:
+      // resolves with no captchaToken, mirroring TURNSTILE_ENABLED=false.
+      const { captchaToken: _unused, ...dtoWithoutToken } = dto;
+
+      const result = await service.register(
+        dtoWithoutToken,
+        null,
+        testLogContext,
+        '203.0.113.42',
+      );
+
+      expect(turnstileVerifier.verify).toHaveBeenCalledWith(
+        undefined,
+        '203.0.113.42',
+      );
+      expect(prisma.user.create).toHaveBeenCalledTimes(1);
+      expect(result.accessToken).toBeTruthy();
+    });
+
+    it('rejects and never creates a user row when TurnstileVerifierService.verify rejects — the core requirement of this feature', async () => {
+      turnstileVerifier.verify.mockRejectedValue(
+        new CaptchaVerificationFailedException(),
+      );
+
+      await expect(
+        service.register(dto, null, testLogContext, '203.0.113.42'),
+      ).rejects.toBeInstanceOf(CaptchaVerificationFailedException);
+      expect(prisma.user.create).not.toHaveBeenCalled();
+    });
+
+    it('logs a distinct captcha_failed structured event on rejection, without the token, and never a generic "Registration failed"', async () => {
+      turnstileVerifier.verify.mockRejectedValue(
+        new CaptchaVerificationFailedException(),
+      );
+
+      await expect(
+        service.register(dto, null, testLogContext, '203.0.113.42'),
+      ).rejects.toBeInstanceOf(CaptchaVerificationFailedException);
+
+      expect(authEventLogger.log).toHaveBeenCalledWith(
+        'auth.register.failed',
+        expect.objectContaining({ failureCategory: 'captcha_failed' }),
+      );
+      const serialized = JSON.stringify(authEventLogger.log.mock.calls);
+      expect(serialized).not.toContain(dto.captchaToken);
+    });
+
+    it('passes the exact remoteIp given to register() straight through to TurnstileVerifierService.verify — the controller→service IP hop', async () => {
+      await service.register(dto, null, testLogContext, '198.51.100.7');
+
+      expect(turnstileVerifier.verify).toHaveBeenCalledWith(
+        'a-solved-token',
+        '198.51.100.7',
+      );
+    });
+
+    it('never resolves the IP to undefined or the literal "unknown" when a real remoteIp is provided', async () => {
+      await service.register(dto, null, testLogContext, '198.51.100.7');
+
+      const [, calledIp] = turnstileVerifier.verify.mock.calls[0];
+      expect(calledIp).not.toBeUndefined();
+      expect(calledIp).not.toBe('unknown');
+      expect(calledIp).toBe('198.51.100.7');
+    });
+
+    it('proceeds normally end-to-end when the token is valid — user row created, session issued', async () => {
+      const result = await service.register(
+        dto,
+        null,
+        testLogContext,
+        '203.0.113.42',
+      );
+
+      expect(prisma.user.create).toHaveBeenCalledTimes(1);
+      expect(result.accessToken).toBeTruthy();
     });
   });
 

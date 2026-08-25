@@ -43,6 +43,7 @@ import { RateLimiterService } from './rate-limit/rate-limiter.service';
 import { RateLimitExceededException } from './exceptions/rate-limit-exceeded.exception';
 import { AccountLinkRequiredException } from './exceptions/account-link-required.exception';
 import { PasswordReuseException } from './exceptions/password-reuse.exception';
+import { TurnstileVerifierService } from './turnstile/turnstile-verifier.service';
 import { generateSecureToken } from './tokens/secure-token.util';
 import { TransactionalMailService } from '../mail/transactional-mail.service';
 import { MailSendResult } from '../mail/mail.types';
@@ -97,17 +98,39 @@ export class AuthService {
     private googleTokenVerifier: GoogleTokenVerifierService,
     private rateLimiterService: RateLimiterService,
     private transactionalMailService: TransactionalMailService,
+    private turnstileVerifier: TurnstileVerifierService,
   ) {}
 
   async register(
     dto: RegisterDTO,
     userAgent: string | null,
     logContext: AuthLogContext,
+    remoteIp: string | null,
   ): Promise<AuthResult> {
     const startedAt = Date.now();
     const route = 'POST /auth/register';
 
     const normalizedEmail = normalizeEmail(dto.email);
+
+    try {
+      await this.turnstileVerifier.verify(dto.captchaToken, remoteIp);
+    } catch (error) {
+      // Reuses the exact structured-event shape below (failureCategory
+      // distinguishes it) — one queryable log line per rejected attempt,
+      // never the token itself. Thrown BEFORE the main try block below so a
+      // CAPTCHA rejection is never caught and rewritten into the generic
+      // "Registration failed" message, and prisma.user.create is never
+      // reached.
+      this.authEventLogger.log('auth.register.failed', {
+        requestId: logContext.requestId,
+        route,
+        durationMs: Date.now() - startedAt,
+        emailHash: emailHashPrefix(dto.email),
+        ipHash: logContext.ipHash,
+        failureCategory: 'captcha_failed',
+      });
+      throw error;
+    }
 
     try {
       // Hash password securely

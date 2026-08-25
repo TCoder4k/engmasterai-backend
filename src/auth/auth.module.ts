@@ -12,6 +12,7 @@ import { RateLimiterService } from './rate-limit/rate-limiter.service';
 import { AuthEventLogger } from './logging/auth-event-logger.service';
 import { RequestIdMiddleware } from './logging/request-id.middleware';
 import { GoogleTokenVerifierService } from './google/google-token-verifier.service';
+import { TurnstileVerifierService } from './turnstile/turnstile-verifier.service';
 import { MailModule } from '../mail/mail.module';
 
 // Note: this module deliberately does NOT import/register the Redis
@@ -49,6 +50,7 @@ import { MailModule } from '../mail/mail.module';
     AuthRateLimitGuard,
     AuthEventLogger,
     GoogleTokenVerifierService,
+    TurnstileVerifierService,
   ],
   // RateLimiterService: exported for Sprint 04 (Learning Engine) —
   // LearningRateLimitGuard reuses this exact generic Redis-Lua counter
