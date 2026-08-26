@@ -10,12 +10,26 @@ const buildHarness = () => {
   const create = jest.fn();
   const findUnique = jest.fn();
   const findMany = jest.fn();
+  const count = jest.fn();
+  const readStateUpsert = jest.fn();
+  const readStateUpdateMany = jest.fn();
   const prisma = {
-    communityMessage: { create, findUnique, findMany },
+    communityMessage: { create, findUnique, findMany, count },
+    communityReadState: { upsert: readStateUpsert, updateMany: readStateUpdateMany },
   };
   const gateway = { broadcast: jest.fn() } as unknown as CommunityChatGateway;
   const service = new CommunityChatService(prisma as never, gateway);
-  return { service, prisma, gateway, create, findUnique, findMany };
+  return {
+    service,
+    prisma,
+    gateway,
+    create,
+    findUnique,
+    findMany,
+    count,
+    readStateUpsert,
+    readStateUpdateMany,
+  };
 };
 
 const row = (id: string, createdAt: string, overrides: Record<string, unknown> = {}) => ({
@@ -167,5 +181,82 @@ describe('CommunityChatService.listMessages', () => {
     const result = await service.listMessages(undefined, 10);
 
     expect(result).toEqual({ data: [], meta: { hasMore: false, oldestId: null } });
+  });
+});
+
+describe('CommunityChatService.unreadCount', () => {
+  it('lazily upserts a read-state row, then counts messages from OTHER users strictly after lastReadAt', async () => {
+    const { service, readStateUpsert, count } = buildHarness();
+    const lastReadAt = new Date('2026-01-01T00:00:00.000Z');
+    readStateUpsert.mockResolvedValue({ userId: 'user-1', lastReadAt });
+    count.mockResolvedValue(2);
+
+    const result = await service.unreadCount('user-1');
+
+    expect(result).toBe(2);
+    expect(readStateUpsert).toHaveBeenCalledWith({
+      where: { userId: 'user-1' },
+      update: {},
+      create: { userId: 'user-1' },
+    });
+    expect(count).toHaveBeenCalledWith({
+      where: { userId: { not: 'user-1' }, createdAt: { gt: lastReadAt } },
+    });
+  });
+
+  it('a brand-new user (no prior row) is not charged for pre-existing history — the upsert create branch starts the cursor at "now"', async () => {
+    const { service, readStateUpsert, count } = buildHarness();
+    // Simulates the create branch firing (no row existed): upsert resolves
+    // with whatever lastReadAt Prisma's own @default(now()) produced.
+    const justNow = new Date();
+    readStateUpsert.mockResolvedValue({ userId: 'user-2', lastReadAt: justNow });
+    count.mockResolvedValue(0);
+
+    const result = await service.unreadCount('user-2');
+
+    expect(result).toBe(0);
+  });
+});
+
+describe('CommunityChatService.markRead', () => {
+  it('advances the cursor via the conditional updateMany and does NOT also call upsert when it succeeds', async () => {
+    const { service, readStateUpdateMany, readStateUpsert } = buildHarness();
+    readStateUpdateMany.mockResolvedValue({ count: 1 });
+
+    await service.markRead('user-1');
+
+    expect(readStateUpdateMany).toHaveBeenCalledWith({
+      where: { userId: 'user-1', lastReadAt: { lt: expect.any(Date) as Date } },
+      data: { lastReadAt: expect.any(Date) as Date },
+    });
+    expect(readStateUpsert).not.toHaveBeenCalled();
+  });
+
+  it('falls back to upsert (create) when updateMany matches nothing because no row exists yet', async () => {
+    const { service, readStateUpdateMany, readStateUpsert } = buildHarness();
+    readStateUpdateMany.mockResolvedValue({ count: 0 });
+    readStateUpsert.mockResolvedValue({ userId: 'user-1', lastReadAt: new Date() });
+
+    await service.markRead('user-1');
+
+    expect(readStateUpsert).toHaveBeenCalledWith({
+      where: { userId: 'user-1' },
+      update: {},
+      create: { userId: 'user-1', lastReadAt: expect.any(Date) as Date },
+    });
+  });
+
+  it('monotonic cursor: when updateMany matches nothing because a later call already advanced past this call\'s timestamp, the upsert fallback is a true no-op (update: {}), never regressing lastReadAt', async () => {
+    const { service, readStateUpdateMany, readStateUpsert } = buildHarness();
+    // count:0 here represents BOTH possible reasons (no row yet, or the row
+    // is already >= now) — the fix is that the fallback's `update: {}`
+    // never writes a stale timestamp over a newer one in either case.
+    readStateUpdateMany.mockResolvedValue({ count: 0 });
+    readStateUpsert.mockResolvedValue({ userId: 'user-1', lastReadAt: new Date('2099-01-01') });
+
+    await service.markRead('user-1');
+
+    const upsertCall = readStateUpsert.mock.calls[0][0] as { update: unknown };
+    expect(upsertCall.update).toEqual({});
   });
 });

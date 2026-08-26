@@ -10,7 +10,7 @@ import { SetMetadata } from '@nestjs/common';
 // @CommunityChatRateLimit/CommunityChatRateLimitGuard, because a gateway's
 // handleConnection is a lifecycle hook, not a route handler NestJS guards
 // can wrap.
-export type CommunityChatRateLimitKind = 'send' | 'read' | 'live-connect';
+export type CommunityChatRateLimitKind = 'send' | 'read' | 'live-connect' | 'markRead';
 
 export interface CommunityChatRateLimitPolicy {
   kind: CommunityChatRateLimitKind;

@@ -127,4 +127,53 @@ export class CommunityChatService {
       meta: { hasMore, oldestId },
     };
   }
+
+  /**
+   * Lazily upserted, same idiom as StreakService.getOrCreateInviteLink — a
+   * brand-new user's cursor starts at "now", so pre-existing chat history
+   * never counts as unread for them.
+   */
+  private async getOrCreateReadState(userId: string) {
+    return this.prisma.communityReadState.upsert({
+      where: { userId },
+      update: {},
+      create: { userId },
+    });
+  }
+
+  /** Excludes the caller's own messages — never counts your own posts as unread. */
+  async unreadCount(userId: string): Promise<number> {
+    const state = await this.getOrCreateReadState(userId);
+    return this.prisma.communityMessage.count({
+      where: { userId: { not: userId }, createdAt: { gt: state.lastReadAt } },
+    });
+  }
+
+  /**
+   * Monotonic cursor: lastReadAt only ever moves forward, never backward.
+   * The frontend can fire several markRead() calls close together (see
+   * CommunityChatPanel.tsx), and nothing guarantees their commits land in
+   * the order they were sent — a naive unconditional upsert could let an
+   * earlier, slow-to-commit call overwrite a later call's more-advanced
+   * cursor with an older timestamp. The conditional updateMany's WHERE
+   * clause is evaluated atomically per-row by Postgres, so this holds even
+   * under real concurrency.
+   */
+  async markRead(userId: string): Promise<void> {
+    const now = new Date();
+    const advanced = await this.prisma.communityReadState.updateMany({
+      where: { userId, lastReadAt: { lt: now } },
+      data: { lastReadAt: now },
+    });
+    if (advanced.count === 0) {
+      // Either no row exists yet (first-ever mark-read for this user), or
+      // one exists and is already >= now (a later call already won) — the
+      // upsert creates in the first case and is a true no-op in the second.
+      await this.prisma.communityReadState.upsert({
+        where: { userId },
+        update: {},
+        create: { userId, lastReadAt: now },
+      });
+    }
+  }
 }
