@@ -46,6 +46,28 @@ export class CommunityChatController {
     return this.communityChatService.sendMessage(req.user.userId, dto.clientMessageId, dto.content);
   }
 
+  /** No rate-limit-worthy cost beyond the `read` bucket — a cheap count query. */
+  @UseGuards(JwtAuthGuard, CommunityChatRateLimitGuard)
+  @CommunityChatRateLimit({ kind: 'read', max: 60, windowSeconds: 60 })
+  @Get('messages/unread-count')
+  async unreadCount(@Req() req: RequestWithUser) {
+    return { count: await this.communityChatService.unreadCount(req.user.userId) };
+  }
+
+  /**
+   * Own `markRead` kind, separate from `read` — the frontend fires this more
+   * often than a plain read (on tab activation and, debounced, on every live
+   * incoming message while the tab is open), and it must not compete with
+   * GET /community/messages's own budget.
+   */
+  @UseGuards(JwtAuthGuard, CommunityChatRateLimitGuard)
+  @CommunityChatRateLimit({ kind: 'markRead', max: 60, windowSeconds: 60 })
+  @Post('messages/read')
+  async markRead(@Req() req: RequestWithUser) {
+    await this.communityChatService.markRead(req.user.userId);
+    return { success: true };
+  }
+
   /**
    * Issues a short-lived, single-use ticket for the /community/live
    * WebSocket handshake (see live/community-chat-ticket.store.ts). No

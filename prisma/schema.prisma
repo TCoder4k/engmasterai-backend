@@ -296,6 +296,7 @@ model User {
   speakingAttempts SpeakingAttempt[]
 
   communityMessages CommunityMessage[]
+  communityReadState CommunityReadState?
 
   streakInvitationsSent     StreakInvitation[] @relation("StreakInvitationsSent")
   streakInvitationsReceived StreakInvitation[] @relation("StreakInvitationsReceived")
@@ -2046,6 +2047,22 @@ model CommunityMessage {
   // tie; id (a UUID) is only ever the tie-breaker, never the primary sort.
   @@index([createdAt, id])
   @@map("community_messages")
+}
+
+// One row per user — a monotonic read cursor for the global Community Chat
+// room above, NOT a per-message readAt (a global room's message has no
+// single "read" state; it's read by some users and not others at once, so
+// only a User×cursor shape can represent that). Lazily upserted on first
+// use (CommunityChatService.getOrCreateReadState), same idiom as
+// User.streakInviteToken's lazy generation. onDelete: Cascade — same as
+// every other User relation in this schema.
+model CommunityReadState {
+  userId     String   @id
+  lastReadAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("community_read_states")
 }
 
 // Streak Together ("Chuỗi học cùng nhau") — two users keep a shared daily
