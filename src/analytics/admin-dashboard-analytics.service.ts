@@ -4,6 +4,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { publishedLesson, publishedTask } from '../shared/published-scope';
 import { startOfDayInTimeZone } from '../learning/timezone.util';
 import { enumerateDaysInTimeZone, formatDayInTimeZone } from './day-window';
+import { rankTopStudents, TOP_STUDENTS_LIMIT } from './top-students-ranking';
 import {
   AdminDashboardAnalyticsDto,
   AdminEngagementPointDto,
@@ -49,7 +50,6 @@ import {
 const UTC = 'UTC';
 const ENGAGEMENT_WINDOW_DAYS = 7;
 const GROWTH_WINDOW_DAYS = 30;
-const TOP_STUDENTS_LIMIT = 5;
 
 // Everything StudyTimeEvent can see that is not Listening. Grammar-lesson
 // stages (VIDEO/THEORY/QUIZ/PRACTICE/TRAP_HUNTER) and vocabulary
@@ -371,60 +371,13 @@ export class AdminDashboardAnalyticsService {
     };
   }
 
-  // All-time SUM(creditedSeconds) per user, ranked. Tie-broken by userId asc
-  // so the top 5 is deterministic across loads even when totals are equal
-  // (small data sets like the current dev DB hit this often).
+  // All-time SUM(creditedSeconds) per user, ranked, tie-broken by userId asc
+  // so the top N is deterministic across loads. The ranking query itself
+  // lives in top-students-ranking.ts, shared with DashboardAnalyticsService's
+  // student-facing GET /analytics/top-students — that route strips `email`
+  // before returning; this admin route keeps it, since AdminTopStudentDto
+  // already matches RankedStudent's shape exactly.
   private async getTopStudents(): Promise<AdminTopStudentDto[]> {
-    const grouped = await this.prisma.studyTimeEvent.groupBy({
-      by: ['userId'],
-      _sum: { creditedSeconds: true },
-    });
-
-    const ranked = grouped
-      .map((group) => ({
-        userId: group.userId,
-        totalSeconds: group._sum.creditedSeconds ?? 0,
-      }))
-      .sort((a, b) => b.totalSeconds - a.totalSeconds || a.userId.localeCompare(b.userId))
-      .slice(0, TOP_STUDENTS_LIMIT);
-
-    if (ranked.length === 0) return [];
-
-    const topIds = ranked.map((entry) => entry.userId);
-
-    const [users, taskCompletions] = await Promise.all([
-      this.prisma.user.findMany({
-        where: { id: { in: topIds } },
-        select: { id: true, name: true, email: true, level: true },
-      }),
-      this.prisma.lessonTaskProgress.groupBy({
-        by: ['userId'],
-        where: { userId: { in: topIds }, completedAt: { not: null } },
-        _count: true,
-      }),
-    ]);
-
-    const usersById = new Map(users.map((user) => [user.id, user]));
-    const completedById = new Map(
-      taskCompletions.map((group) => [group.userId, group._count]),
-    );
-
-    const result: AdminTopStudentDto[] = [];
-    for (const entry of ranked) {
-      const user = usersById.get(entry.userId);
-      // Defensive only: a user deleted between the two queries above. Skipped
-      // rather than thrown, same "a stale id must not fail the whole read"
-      // reasoning as filterAccessibleCourses elsewhere in this codebase.
-      if (!user) continue;
-      result.push({
-        id: user.id,
-        name: user.name,
-        email: user.email,
-        level: user.level,
-        totalStudySeconds: entry.totalSeconds,
-        completedTasks: completedById.get(entry.userId) ?? 0,
-      });
-    }
-    return result;
+    return rankTopStudents(this.prisma, TOP_STUDENTS_LIMIT);
   }
 }

@@ -119,3 +119,20 @@ export interface DashboardAnalyticsDto {
    */
   recentAccuracyPercent: number | null;
 }
+
+// GET /analytics/top-students — the student-facing sibling of the admin
+// dashboard's AdminTopStudentDto (dto/admin-dashboard-analytics.types.ts),
+// sharing the same ranking query (top-students-ranking.ts) but with `email`
+// structurally absent rather than merely omitted at render time: a fellow
+// student must never receive another student's email address in the
+// response body, not just never display it.
+export interface PublicTopStudentDto {
+  id: string;
+  name: string;
+  level: number;
+  /** SUM(StudyTimeEvent.creditedSeconds), all time. */
+  totalStudySeconds: number;
+  /** COUNT(LessonTaskProgress WHERE completedAt IS NOT NULL) — task-level,
+   *  same definition as AdminTopStudentDto.completedTasks. */
+  completedTasks: number;
+}
