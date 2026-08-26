@@ -425,4 +425,69 @@ describe('Dashboard analytics (e2e) — Sprint 09', () => {
         .expect(200);
     });
   });
+
+  // GET /analytics/top-students — the student-facing sibling of the
+  // admin-only GET /analytics/admin-dashboard's topStudents ranking. The
+  // ranking arithmetic itself is covered by the unit specs (both services
+  // share rankTopStudents); what only a real, DB-backed, real-DI-graph test
+  // can prove is the actual point of this endpoint: a PLAIN student (no
+  // ADMIN role) can call it, and its real wired response — not a mock — never
+  // contains an email anywhere in the payload.
+  describe('GET /analytics/top-students', () => {
+    const getTopStudents = (token: string) =>
+      request(app.getHttpServer())
+        .get('/analytics/top-students')
+        .set('Authorization', `Bearer ${token}`);
+
+    const sendHeartbeat = (token: string, activeSeconds: number) =>
+      request(app.getHttpServer())
+        .post('/study-time/heartbeat')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          clientSessionId: randomUUID(),
+          sequence: 0,
+          activityType: 'VIDEO',
+          activeSeconds,
+        })
+        .expect(201);
+
+    it('rejects an unauthenticated request', async () => {
+      await request(app.getHttpServer()).get('/analytics/top-students').expect(401);
+    });
+
+    it('a regular non-admin student can call it, and the real response never contains an email', async () => {
+      const studious = await registerAndLogin('topstudents-a');
+      const viewer = await registerAndLogin('topstudents-b');
+
+      // Real credited seconds, through the real heartbeat endpoint — not
+      // seeded directly — so this exercises the actual write path the
+      // ranking reads from. MAX_FLUSH_SECONDS (the largest a single
+      // heartbeat may request) rather than a small number: this suite shares
+      // its test DB with every other e2e file, several of which also write
+      // StudyTimeEvent rows for their own fresh users, so this needs a
+      // comfortable margin to stay in the ranked top 5 regardless of run
+      // order.
+      await sendHeartbeat(studious.token, 75);
+
+      // `viewer` is a plain USER role (registerAndLogin never grants ADMIN),
+      // proving this route is not role-gated the way admin-dashboard is.
+      const res = await getTopStudents(viewer.token).expect(200);
+
+      expect(Array.isArray(res.body)).toBe(true);
+      const entry = (res.body as Array<Record<string, unknown>>).find(
+        (row) => row.id === studious.userId,
+      );
+      expect(entry).toBeDefined();
+      expect(entry).not.toHaveProperty('email');
+      expect(entry).toMatchObject({ id: studious.userId });
+      expect(typeof entry?.totalStudySeconds).toBe('number');
+      expect(typeof entry?.completedTasks).toBe('number');
+
+      // Belt-and-suspenders on the whole payload, not just one row — a leak
+      // anywhere in the response is the failure this test exists to catch.
+      const raw = JSON.stringify(res.body);
+      expect(raw).not.toContain('@example.test');
+      expect(raw).not.toContain('email');
+    });
+  });
 });

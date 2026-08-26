@@ -11,9 +11,11 @@ import {
   enumerateDaysInTimeZone,
   formatDayInTimeZone,
 } from './day-window';
+import { rankTopStudents, TOP_STUDENTS_LIMIT } from './top-students-ranking';
 import {
   ActivityAnalyticsDto,
   DashboardAnalyticsDto,
+  PublicTopStudentDto,
   TodayAnalyticsDto,
 } from './dashboard-analytics.types';
 
@@ -254,6 +256,17 @@ export class DashboardAnalyticsService {
         : null;
 
     return { effectiveTimeZone, today, activity, recentAccuracyPercent };
+  }
+
+  // GET /analytics/top-students — every authenticated student's own view of
+  // the same all-time study-time leaderboard the admin dashboard shows.
+  // Reuses rankTopStudents (top-students-ranking.ts) rather than
+  // reimplementing the query; the destructure below is a deliberate, visible
+  // strip of `email` rather than a DTO that merely happens not to be told
+  // about it — a fellow student's email must never leave this method.
+  async getTopStudents(): Promise<PublicTopStudentDto[]> {
+    const ranked = await rankTopStudents(this.prisma, TOP_STUDENTS_LIMIT);
+    return ranked.map(({ email: _email, ...rest }) => rest);
   }
 
   // THE REQUEST'S TIMEZONE WINS, and this deliberately differs from

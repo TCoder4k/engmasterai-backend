@@ -31,4 +31,17 @@ export class DashboardAnalyticsController {
   async getDashboard(@Query() query: DashboardAnalyticsQueryDto, @Req() req: AuthenticatedRequest) {
     return this.analytics.getDashboardAnalytics(req.user.userId, query.tz);
   }
+
+  // Every authenticated student's own view of the same all-time study-time
+  // leaderboard the admin dashboard shows (GET /analytics/admin-dashboard) —
+  // deliberately NOT role-gated, and the response has no email field at all
+  // (see DashboardAnalyticsService.getTopStudents). Shares the 'stats'
+  // rate-limit bucket with GET /dashboard, same low-frequency dashboard-load
+  // reasoning.
+  @UseGuards(JwtAuthGuard, QuizRateLimitGuard)
+  @QuizRateLimit({ kind: 'stats', max: 30, windowSeconds: 60 })
+  @Get('top-students')
+  async getTopStudents() {
+    return this.analytics.getTopStudents();
+  }
 }

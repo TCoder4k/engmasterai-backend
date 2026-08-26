@@ -28,6 +28,9 @@ interface HarnessOptions {
   shadowingActivity?: Date[];
   studySecondsToday?: number | null;
   recentAccuracyAttempts?: number[];
+  topStudentGroups?: { userId: string; _sum: { creditedSeconds: number | null } }[];
+  topStudentUsers?: { id: string; name: string; email: string; level: number }[];
+  topStudentCompletions?: { userId: string; _count: number }[];
 }
 
 const buildHarness = (options: HarnessOptions = {}) => {
@@ -45,6 +48,7 @@ const buildHarness = (options: HarnessOptions = {}) => {
         resolve({ timezone: options.storedTimeZone ?? null }),
       ),
       update: userUpdate,
+      findMany: jest.fn(() => resolve(options.topStudentUsers ?? [])),
     },
     lessonStepProgress: {
       count: jest.fn(() => resolve(options.stepCompletionsToday ?? 0)),
@@ -58,6 +62,7 @@ const buildHarness = (options: HarnessOptions = {}) => {
     },
     lessonTaskProgress: {
       count: jest.fn(() => resolve(options.taskCompletionsToday ?? 0)),
+      groupBy: jest.fn(() => resolve(options.topStudentCompletions ?? [])),
     },
     lessonTaskAttempt: {
       findMany: jest.fn(
@@ -119,6 +124,7 @@ const buildHarness = (options: HarnessOptions = {}) => {
           _sum: { creditedSeconds: options.studySecondsToday ?? null },
         }),
       ),
+      groupBy: jest.fn(() => resolve(options.topStudentGroups ?? [])),
     },
   };
 
@@ -654,5 +660,61 @@ describe('DashboardAnalyticsService — recent accuracy', () => {
     });
     expect(accuracyCall.take).toBe(20);
     expect(accuracyCall.orderBy).toEqual({ submittedAt: 'desc' });
+  });
+});
+
+// GET /analytics/top-students — the student-facing sibling of
+// AdminDashboardAnalyticsService's own topStudents ranking (see that
+// service's spec for the shared ranking/tie-break behavior itself, exercised
+// there against the same rankTopStudents helper this method calls). These
+// tests cover only what's specific to this method: the empty case and,
+// critically, that `email` never survives into the returned rows.
+describe('DashboardAnalyticsService — getTopStudents', () => {
+  it('returns an empty list rather than throwing when no StudyTimeEvent rows exist', async () => {
+    const { service } = buildHarness({});
+
+    const result = await service.getTopStudents();
+
+    expect(result).toEqual([]);
+  });
+
+  it('ranks by total study seconds and maps completedTasks per student', async () => {
+    const { service } = buildHarness({
+      topStudentGroups: [
+        { userId: 'top', _sum: { creditedSeconds: 6000 } },
+        { userId: 'runner-up', _sum: { creditedSeconds: 3000 } },
+      ],
+      topStudentUsers: [
+        { id: 'top', name: 'Top Student', email: 'top@example.com', level: 6 },
+        { id: 'runner-up', name: 'Runner Up', email: 'runner-up@example.com', level: 2 },
+      ],
+      topStudentCompletions: [{ userId: 'top', _count: 10 }],
+    });
+
+    const result = await service.getTopStudents();
+
+    expect(result.map((s) => s.id)).toEqual(['top', 'runner-up']);
+    expect(result[0]).toMatchObject({
+      name: 'Top Student',
+      level: 6,
+      totalStudySeconds: 6000,
+      completedTasks: 10,
+    });
+    // No row in topStudentCompletions for 'runner-up' — must default to 0,
+    // not be dropped or left undefined.
+    expect(result[1].completedTasks).toBe(0);
+  });
+
+  it('never includes an email field — the entire point of this method existing separately from the admin one', async () => {
+    const { service } = buildHarness({
+      topStudentGroups: [{ userId: 'top', _sum: { creditedSeconds: 100 } }],
+      topStudentUsers: [{ id: 'top', name: 'Top Student', email: 'top@example.com', level: 1 }],
+      topStudentCompletions: [],
+    });
+
+    const result = await service.getTopStudents();
+
+    expect(result[0]).not.toHaveProperty('email');
+    expect(JSON.stringify(result)).not.toContain('top@example.com');
   });
 });
