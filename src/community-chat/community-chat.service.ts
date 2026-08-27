@@ -9,15 +9,18 @@ import {
 } from './dto/query-community-messages.dto';
 
 // Deliberately narrower than user.service.ts's own SAFE_USER_SELECT (no
-// email/role/totalPoints) — this projection is broadcast to every other
+// email/totalPoints) — this projection is broadcast to every other
 // connected user, not returned to the profile owner. Module-local, not
 // exported/shared, same "each module owns its own" spirit as the rate-limit
-// guards.
+// guards. `role` IS included (unlike email/totalPoints) — see
+// CommunityMessageDto.author.isAdmin's own comment for why that one's safe
+// to expose.
 const SAFE_AUTHOR_SELECT = {
   id: true,
   name: true,
   avatarUrl: true,
   level: true,
+  role: true,
 } as const;
 
 type CommunityMessageRow = Prisma.CommunityMessageGetPayload<{
@@ -34,6 +37,7 @@ const toCommunityMessageDto = (row: CommunityMessageRow): CommunityMessageDto =>
     name: row.user.name,
     avatarUrl: row.user.avatarUrl,
     level: row.user.level,
+    isAdmin: row.user.role === 'ADMIN',
   },
 });
 
