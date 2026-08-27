@@ -311,6 +311,9 @@ model User {
   // MVP — the same link can be sent to many different friends.
   streakInviteToken String? @unique
 
+  personalVocabWords     PersonalVocabWord[]
+  personalWordReviewLogs PersonalWordReviewLog[]
+
   @@map("users") //users dùng cho query sql , còn User dùng cho code
 }
 
@@ -2200,4 +2203,86 @@ model Notification {
 
   @@index([userId, readAt, createdAt])
   @@map("notifications")
+}
+
+// "Từ vựng của tôi" (My Vocabulary) — a personal word list a student builds
+// themselves (typed one at a time, or pasted as a list and auto-looked-up via
+// the existing /dictionary/lookup), as opposed to VocabWord's admin-curated
+// Library -> Deck -> Word chain. Deliberately ONE table, not VocabWord's
+// two-table word-content/UserWordProgress split: a personal word is already
+// per-user by construction, so there is no separate "many users share this
+// row" case to normalize away, and its own SRS-state columns below live
+// directly on it.
+//
+// Deliberately its OWN review queue, never joined into
+// LearningService.getDueReviews or gated by VocabWordService's visibility
+// check — those exist to pace/gate an admin-curated deck, which does not
+// describe a list a student assembled themselves. Reuses the scheduling
+// ALGORITHM (src/learning/srs/scheduler.ts's next(), unchanged) but none of
+// the surrounding admin-deck machinery.
+model PersonalVocabWord {
+  id             String @id @default(uuid())
+  userId         String
+  text           String
+  // lowercase + trimmed, computed at write time. The sole dedup key
+  // (@@unique below) and the sole case-insensitive search key — never
+  // recomputed from `text` at query time.
+  textNormalized String
+
+  ipa                String?
+  meaningVi          String
+  meaningEn          String?
+  audioUrl           String?
+  exampleSentence    String?
+  exampleTranslation String?
+  tags               String[] @default([])
+
+  // Same shape as UserWordProgress, same algorithm (scheduler.ts's next()),
+  // an entirely independent queue — see the model comment above.
+  state          LearningState @default(NEW)
+  easeFactor     Float         @default(2.5)
+  intervalDays   Int           @default(0)
+  repetitions    Int           @default(0)
+  lapses         Int           @default(0)
+  lastReviewedAt DateTime?
+  nextReviewAt   DateTime?
+  firstLearnedAt DateTime?
+  masteredAt     DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  // Optimistic-concurrency guard, identical role to UserWordProgress.version
+  // — see VocabPersonalService for the retry-once-then-409 usage.
+  version   Int      @default(0)
+
+  user       User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reviewLogs PersonalWordReviewLog[]
+
+  @@unique([userId, textNormalized])
+  @@index([userId, nextReviewAt])
+  @@index([userId, state])
+  @@map("personal_vocab_words")
+}
+
+// Append-only review history for PersonalVocabWord, same role and shape as
+// WordReviewLog: the clientReviewId unique constraint is what makes a
+// retried POST .../review return the original outcome instead of scheduling
+// twice. Kept deliberately thin (no before/after snapshot columns) — nothing
+// in this feature replays a review's exact prior scheduling state today,
+// unlike WordReviewLog's curated-deck audit trail.
+model PersonalWordReviewLog {
+  id             String       @id @default(uuid())
+  userId         String
+  personalWordId String
+  rating         ReviewRating
+  clientReviewId String
+  reviewedAt     DateTime     @default(now())
+
+  user         User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  personalWord PersonalVocabWord @relation(fields: [personalWordId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, clientReviewId])
+  @@index([userId, reviewedAt])
+  @@index([personalWordId])
+  @@map("personal_word_review_logs")
 }
