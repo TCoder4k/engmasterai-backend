@@ -11,6 +11,13 @@ export interface CommunityMessageDto {
     name: string;
     avatarUrl: string | null;
     level: number;
+    // Computed from User.role — never the raw UserRole enum, so the public
+    // shape stays closed/stable even if that enum grows a third value later.
+    // Non-sensitive (unlike email, deliberately stripped by
+    // SAFE_AUTHOR_SELECT): role is already exposed to the frontend today via
+    // authService's own stored user, used for role-based routing — labeling
+    // an admin's broadcast message is exactly the point of exposing it here.
+    isAdmin: boolean;
   };
 }
 

@@ -4,7 +4,7 @@ import { CommunityChatGateway } from './live/community-chat.gateway';
 
 const resolve = <T>(value: T) => Promise.resolve(value);
 
-const AUTHOR = { id: 'author-1', name: 'Alice', avatarUrl: null, level: 5 };
+const AUTHOR = { id: 'author-1', name: 'Alice', avatarUrl: null, level: 5, role: 'USER' };
 
 const buildHarness = () => {
   const create = jest.fn();
@@ -42,15 +42,16 @@ const row = (id: string, createdAt: string, overrides: Record<string, unknown> =
 });
 
 describe('CommunityChatService.sendMessage', () => {
-  it('persists a message via the safe author projection and never leaks fields beyond id/name/avatarUrl/level', async () => {
+  it('persists a message via the safe author projection and never leaks fields beyond id/name/avatarUrl/level/role', async () => {
     const { service, create } = buildHarness();
     create.mockResolvedValue(
       row('msg-1', '2026-01-01T00:00:00.000Z', {
         content: 'hello',
         clientMessageId: 'c1',
         // Simulates a future accidental widening of the Prisma `select` —
-        // the DTO mapper must still only ever copy through the four safe
-        // fields, never whatever else the row happens to carry.
+        // the DTO mapper must still only ever copy through the safe fields
+        // (role included, now that it's used to compute isAdmin), never
+        // whatever else the row happens to carry.
         user: { ...AUTHOR, email: 'leaked@test.com', role: 'ADMIN', totalPoints: 999 },
       }),
     );
@@ -62,12 +63,27 @@ describe('CommunityChatService.sendMessage', () => {
       content: 'hello',
       clientMessageId: 'c1',
       createdAt: '2026-01-01T00:00:00.000Z',
-      author: { id: 'author-1', name: 'Alice', avatarUrl: null, level: 5 },
+      // role itself never appears on the DTO — only the computed isAdmin
+      // boolean does (see community-chat.types.ts's comment on why).
+      author: { id: 'author-1', name: 'Alice', avatarUrl: null, level: 5, isAdmin: true },
     });
     expect(create).toHaveBeenCalledWith({
       data: { userId: 'user-1', clientMessageId: 'c1', content: 'hello' },
-      include: { user: { select: { id: true, name: true, avatarUrl: true, level: true } } },
+      include: {
+        user: { select: { id: true, name: true, avatarUrl: true, level: true, role: true } },
+      },
     });
+  });
+
+  it('a USER-role sender maps to isAdmin: false', async () => {
+    const { service, create } = buildHarness();
+    create.mockResolvedValue(
+      row('msg-2', '2026-01-01T00:00:00.000Z', { content: 'hi', clientMessageId: 'c2' }),
+    );
+
+    const result = await service.sendMessage('user-1', 'c2', 'hi');
+
+    expect(result.author.isAdmin).toBe(false);
   });
 
   it('broadcasts exactly once on a first-time send', async () => {
@@ -94,7 +110,9 @@ describe('CommunityChatService.sendMessage', () => {
     expect(result.id).toBe('msg-1');
     expect(findUnique).toHaveBeenCalledWith({
       where: { userId_clientMessageId: { userId: 'user-1', clientMessageId: 'c1' } },
-      include: { user: { select: { id: true, name: true, avatarUrl: true, level: true } } },
+      include: {
+        user: { select: { id: true, name: true, avatarUrl: true, level: true, role: true } },
+      },
     });
     expect(gateway.broadcast).not.toHaveBeenCalled();
   });
