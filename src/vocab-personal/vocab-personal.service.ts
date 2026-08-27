@@ -120,16 +120,31 @@ export class VocabPersonalService {
     const page = query.page ?? 1;
     const skip = (page - 1) * take;
 
-    const where: Prisma.PersonalVocabWordWhereInput = {
-      userId,
-      ...statusFilterWhere(query.status),
-      ...(query.tag && { tags: { has: query.tag } }),
-      ...(query.q && {
+    // Each optional filter that itself needs an OR (search, dueOnly) is its
+    // own entry in `AND`, never a second top-level `OR` key spread onto the
+    // same object — two `...(cond && { OR: [...] })` spreads on one object
+    // literal would silently let the second overwrite the first's `OR`.
+    const andConditions: Prisma.PersonalVocabWordWhereInput[] = [];
+    if (query.q) {
+      andConditions.push({
         OR: [
           { textNormalized: { contains: normalizeText(query.q) } },
           { meaningVi: { contains: query.q, mode: 'insensitive' as const } },
         ],
-      }),
+      });
+    }
+    if (query.dueOnly) {
+      const tomorrowStart = await this.resolveTomorrowStart(userId, query.tz);
+      andConditions.push({
+        OR: [{ nextReviewAt: null }, { nextReviewAt: { lt: tomorrowStart } }],
+      });
+    }
+
+    const where: Prisma.PersonalVocabWordWhereInput = {
+      userId,
+      ...statusFilterWhere(query.status),
+      ...(query.tag && { tags: { has: query.tag } }),
+      ...(andConditions.length > 0 && { AND: andConditions }),
     };
 
     const [words, total] = await Promise.all([
@@ -388,6 +403,21 @@ export class VocabPersonalService {
     });
   }
 
+  // The exclusive upper bound of "today" in the user's own zone — shared by
+  // getStats' dueTodayCount and list()'s dueOnly filter so the sidebar's
+  // count and its actual session list can never disagree. Reuses
+  // startOfDayInTimeZone rather than inventing new timezone math (owner
+  // review point on dueTodayCount): the local midnight of the day AFTER
+  // `now` is exactly that boundary.
+  private async resolveTomorrowStart(userId: string, tz: string | undefined): Promise<Date> {
+    const user = await this.prisma.user.findUniqueOrThrow({
+      where: { id: userId },
+      select: { timezone: true },
+    });
+    const effectiveTz = tz ?? user.timezone ?? 'UTC';
+    return startOfDayInTimeZone(new Date(Date.now() + 24 * 60 * 60 * 1000), effectiveTz);
+  }
+
   async getStats(userId: string, tz: string | undefined): Promise<PersonalVocabStatsDto> {
     const user = await this.prisma.user.findUniqueOrThrow({
       where: { id: userId },
@@ -395,10 +425,6 @@ export class VocabPersonalService {
     });
     const effectiveTz = tz ?? user.timezone ?? 'UTC';
     const now = new Date();
-    // The exclusive upper bound of "today" in the user's own zone — reuses
-    // startOfDayInTimeZone rather than inventing new timezone math (owner
-    // review point on dueTodayCount): the local midnight of the day AFTER
-    // `now` is exactly that boundary.
     const tomorrowStart = startOfDayInTimeZone(
       new Date(now.getTime() + 24 * 60 * 60 * 1000),
       effectiveTz,

@@ -1,5 +1,5 @@
-import { Type } from 'class-transformer';
-import { IsIn, IsInt, IsOptional, IsString, Min } from 'class-validator';
+import { Transform, Type } from 'class-transformer';
+import { IsBoolean, IsIn, IsInt, IsOptional, IsString, IsTimeZone, Min } from 'class-validator';
 
 // The mockup's 4 stat-card buckets collapse LearningState's 5 real values
 // into 3 presentation buckets (`new` = NEW, `mastered` = MASTERED,
@@ -53,4 +53,21 @@ export class QueryPersonalVocabWordsDto {
   @IsIn(PERSONAL_WORD_SORTS)
   @IsOptional()
   sort?: PersonalWordSort;
+
+  // Powers the sidebar's "Ôn tập hôm nay" -> "Bắt đầu ôn tập" action: the
+  // SAME due-today definition GET /vocab-personal/stats' dueTodayCount
+  // uses (nextReviewAt IS NULL OR < tomorrow's local midnight), so the
+  // count and the actual session list can never disagree. `@Type(() =>
+  // Boolean)` is deliberately NOT used — see QueryDueReviewsDto's identical
+  // comment: it would make `?dueOnly=false` behave like `true`.
+  @Transform(({ value }) => value === 'true' || value === true)
+  @IsBoolean()
+  @IsOptional()
+  dueOnly?: boolean;
+
+  // Read-only, same role as GET /vocab-personal/stats' own `tz` — buckets
+  // "due today" in the caller's zone without ever writing User.timezone.
+  @IsTimeZone()
+  @IsOptional()
+  tz?: string;
 }
