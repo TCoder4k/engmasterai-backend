@@ -282,6 +282,35 @@ describe('VocabPersonalService (integration — real Postgres)', () => {
     });
   });
 
+  describe('list — dueOnly', () => {
+    it('matches getStats\' dueTodayCount exactly: includes never-reviewed words, excludes a word due tomorrow', async () => {
+      const userId = await createUser();
+      const dueNow = await service.create(userId, baseWord()); // NEW — due immediately
+      const dueLater = await service.create(userId, baseWord());
+      await service.submitReview(userId, dueLater.id, {
+        rating: 'EASY', // graduates far enough out to land after tomorrow
+        clientReviewId: randomUUID(),
+      });
+
+      const stats = await service.getStats(userId, 'UTC');
+      const dueOnlyList = await service.list(userId, { dueOnly: true, tz: 'UTC' });
+
+      expect(dueOnlyList.meta.total).toBe(stats.dueTodayCount);
+      expect(dueOnlyList.data.map((w) => w.id)).toContain(dueNow.id);
+      expect(dueOnlyList.data.map((w) => w.id)).not.toContain(dueLater.id);
+    });
+
+    it('composes correctly with a search query (AND, not a clobbered OR)', async () => {
+      const userId = await createUser();
+      const match = await service.create(userId, baseWord({ text: 'duesearchmatch' }));
+      await service.create(userId, baseWord({ text: 'nomatch' }));
+
+      const result = await service.list(userId, { dueOnly: true, q: 'duesearch', tz: 'UTC' });
+
+      expect(result.data.map((w) => w.id)).toEqual([match.id]);
+    });
+  });
+
   describe('getStats', () => {
     it('buckets NEW/LEARNING+REVIEW+RELEARNING/MASTERED correctly and counts struggled words (lapses > 0)', async () => {
       const userId = await createUser();
