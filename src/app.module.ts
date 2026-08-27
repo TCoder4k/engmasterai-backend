@@ -24,6 +24,7 @@ import { SpeakingModule } from './speaking/speaking.module';
 import { HealthModule } from './health/health.module';
 import { NotificationModule } from './notification/notification.module';
 import { StreakModule } from './streak/streak.module';
+import { VocabPersonalModule } from './vocab-personal/vocab-personal.module';
 import { envValidationSchema } from './config/env.validation';
 
 @Module({
@@ -56,6 +57,7 @@ import { envValidationSchema } from './config/env.validation';
     HealthModule,
     NotificationModule,
     StreakModule,
+    VocabPersonalModule,
   ],
 })
 export class AppModule {}
