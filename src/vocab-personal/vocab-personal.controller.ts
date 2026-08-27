@@ -20,6 +20,7 @@ import { CreatePersonalVocabWordDto } from './dto/create-personal-vocab-word.dto
 import { UpdatePersonalVocabWordDto } from './dto/update-personal-vocab-word.dto';
 import { BulkCreatePersonalVocabWordsDto } from './dto/bulk-create-personal-vocab-words.dto';
 import { QueryPersonalVocabWordsDto } from './dto/query-personal-vocab-words.dto';
+import { QueryPersonalVocabWordsStatusDto } from './dto/query-personal-vocab-words-status.dto';
 import { QueryPersonalVocabStatsDto } from './dto/query-personal-vocab-stats.dto';
 import { SubmitPersonalWordReviewDto } from './dto/submit-personal-word-review.dto';
 import type { AuthenticatedRequest } from '../auth/types/authenticated-request.type';
@@ -41,6 +42,20 @@ export class VocabPersonalController {
     @Req() req: AuthenticatedRequest,
   ) {
     return this.vocabPersonal.list(req.user.userId, query);
+  }
+
+  // No path collision with `words/:id`-shaped routes below — this module has
+  // none (PATCH/DELETE/review all take a UUID via ParseUUIDPipe, which
+  // 'status' would fail anyway), but registered here, right after `list()`,
+  // so the grouping stays obvious regardless.
+  @UseGuards(JwtAuthGuard, VocabPersonalRateLimitGuard)
+  @VocabPersonalRateLimit({ kind: 'read', max: 60, windowSeconds: 60 })
+  @Get('words/status')
+  async getSavedStatus(
+    @Query(queryPipe) query: QueryPersonalVocabWordsStatusDto,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    return this.vocabPersonal.getSavedStatus(req.user.userId, query.texts);
   }
 
   @UseGuards(JwtAuthGuard, VocabPersonalRateLimitGuard)

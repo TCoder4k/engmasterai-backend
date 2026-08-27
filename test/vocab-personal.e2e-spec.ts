@@ -162,6 +162,57 @@ describe('Vocab Personal (e2e)', () => {
     });
   });
 
+  describe('GET words/status — batch saved-status check', () => {
+    it('reports saved:true with the real id for a saved word and saved:false for an unsaved one', async () => {
+      const { token } = await registerAndLogin('status');
+      const created = await createWord(token, 'status-check-word').expect(201);
+      const id = (created.body as { id: string }).id;
+
+      const res = await request(app.getHttpServer())
+        .get('/vocab-personal/words/status')
+        .query({ texts: 'status-check-word,never-saved-word' })
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      expect(res.body).toEqual({
+        'status-check-word': { saved: true, id },
+        'never-saved-word': { saved: false },
+      });
+    });
+
+    it('rejects an unauthenticated request', async () => {
+      await request(app.getHttpServer())
+        .get('/vocab-personal/words/status')
+        .query({ texts: 'anything' })
+        .expect(401);
+    });
+
+    it('rejects a payload over the 100-text cap with 400', async () => {
+      const { token } = await registerAndLogin('statuscap');
+      const texts = Array.from({ length: 101 }, (_, i) => `cap-${i}`).join(',');
+
+      await request(app.getHttpServer())
+        .get('/vocab-personal/words/status')
+        .query({ texts })
+        .set('Authorization', `Bearer ${token}`)
+        .expect(400);
+    });
+
+    it('never reports another user\'s word as saved, even with an identical text', async () => {
+      const owner = await registerAndLogin('status-own-a');
+      const viewer = await registerAndLogin('status-own-b');
+      await createWord(owner.token, 'owner-status-word').expect(201);
+
+      const res = await request(app.getHttpServer())
+        .get('/vocab-personal/words/status')
+        .query({ texts: 'owner-status-word' })
+        .set('Authorization', `Bearer ${viewer.token}`)
+        .expect(200);
+
+      expect(res.body).toEqual({ 'owner-status-word': { saved: false } });
+    });
+  });
+
   describe('review', () => {
     it('submits a rating and the word advances via the real scheduler', async () => {
       const { token } = await registerAndLogin('review');

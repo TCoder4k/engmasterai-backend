@@ -23,6 +23,7 @@ import {
   PersonalVocabStatsDto,
   PersonalVocabWordDto,
   PersonalVocabWordListResponseDto,
+  PersonalVocabWordSavedStatusDto,
   PersonalWordReviewResponseDto,
 } from './vocab-personal.types';
 
@@ -161,6 +162,32 @@ export class VocabPersonalService {
       data: words.map(toDto),
       meta: { total, page, limit: take, totalPages: Math.ceil(total / take) },
     };
+  }
+
+  // Batch "is this word already saved" check — the universal save-star's
+  // read path (see DictionaryPanel/DeckDetailPage/WordDetailPage/
+  // FlashcardSession on the frontend). One indexed query regardless of how
+  // many texts are asked about; ownership is automatic since the WHERE is
+  // scoped to `userId` from the start, same shape as `list()`.
+  async getSavedStatus(
+    userId: string,
+    texts: string[],
+  ): Promise<PersonalVocabWordSavedStatusDto> {
+    const normalizedTexts = [...new Set(texts.map(normalizeText))];
+    if (normalizedTexts.length === 0) return {};
+
+    const rows = await this.prisma.personalVocabWord.findMany({
+      where: { userId, textNormalized: { in: normalizedTexts } },
+      select: { id: true, textNormalized: true },
+    });
+    const idByNormalized = new Map(rows.map((row) => [row.textNormalized, row.id]));
+
+    const result: PersonalVocabWordSavedStatusDto = {};
+    for (const normalized of normalizedTexts) {
+      const id = idByNormalized.get(normalized);
+      result[normalized] = id ? { saved: true, id } : { saved: false };
+    }
+    return result;
   }
 
   async create(

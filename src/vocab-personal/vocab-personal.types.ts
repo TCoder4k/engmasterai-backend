@@ -60,6 +60,15 @@ export interface BulkCreatePersonalVocabWordsResponseDto {
   skippedWords: string[];
 }
 
+// GET /vocab-personal/words/status's response — every requested text (keyed
+// by its normalized form, same as `textNormalized`) gets an entry, including
+// unsaved ones, so a caller never has to special-case "missing from the map"
+// vs "checked and not saved".
+export type PersonalVocabWordSavedStatusDto = Record<
+  string,
+  { saved: true; id: string } | { saved: false }
+>;
+
 export interface PersonalVocabStatsDto {
   total: number;
   mastered: number;

@@ -282,6 +282,51 @@ describe('VocabPersonalService (integration — real Postgres)', () => {
     });
   });
 
+  describe('getSavedStatus — the universal save-star\'s read path', () => {
+    it('returns an empty object for an empty input, no query issued', async () => {
+      const userId = await createUser();
+      await expect(service.getSavedStatus(userId, [])).resolves.toEqual({});
+    });
+
+    it('reports saved:true with the real id for a saved word, saved:false for an unsaved one', async () => {
+      const userId = await createUser();
+      const saved = await service.create(userId, baseWord({ text: 'Persisted' }));
+
+      const status = await service.getSavedStatus(userId, ['Persisted', 'never-saved']);
+
+      expect(status['persisted']).toEqual({ saved: true, id: saved.id });
+      expect(status['never-saved']).toEqual({ saved: false });
+    });
+
+    it('matches case/whitespace-insensitively, same normalization as create()', async () => {
+      const userId = await createUser();
+      const saved = await service.create(userId, baseWord({ text: 'apple' }));
+
+      const status = await service.getSavedStatus(userId, ['  APPLE  ']);
+
+      expect(status['apple']).toEqual({ saved: true, id: saved.id });
+    });
+
+    it('dedups repeated texts in the input into one key', async () => {
+      const userId = await createUser();
+      await service.create(userId, baseWord({ text: 'dupe-check' }));
+
+      const status = await service.getSavedStatus(userId, ['dupe-check', 'Dupe-Check', ' dupe-check ']);
+
+      expect(Object.keys(status)).toEqual(['dupe-check']);
+    });
+
+    it('never reports another user\'s word as saved, even with an identical text', async () => {
+      const userA = await createUser();
+      const userB = await createUser();
+      await service.create(userA, baseWord({ text: 'shared-status-word' }));
+
+      const status = await service.getSavedStatus(userB, ['shared-status-word']);
+
+      expect(status['shared-status-word']).toEqual({ saved: false });
+    });
+  });
+
   describe('list — dueOnly', () => {
     it('matches getStats\' dueTodayCount exactly: includes never-reviewed words, excludes a word due tomorrow', async () => {
       const userId = await createUser();
