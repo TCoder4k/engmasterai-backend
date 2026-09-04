@@ -74,7 +74,10 @@ export class GeminiSpeechToTextProvider implements SpeechToTextProvider {
       );
     }
 
-    const model = this.config.get<string>('GEMINI_STT_MODEL', 'gemini-2.5-flash');
+    // gemini-3.6-flash — see env.validation.ts's GEMINI_STT_MODEL comment
+    // (2026-09-04: gemini-2.5-flash was fully retired by Google; verified
+    // 3.6-flash still accepts audio inline_data before switching).
+    const model = this.config.get<string>('GEMINI_STT_MODEL', 'gemini-3.6-flash');
     const timeoutMs = this.config.get<number>('SHADOWING_STT_TIMEOUT_MS', 20000);
 
     // A bounded wait, always. Without it a hung provider holds the request, the

@@ -79,7 +79,10 @@ export class GeminiPronunciationFeedbackProvider
   constructor(private readonly config: ConfigService) {}
 
   get model(): string {
-    return this.config.get<string>('GEMINI_FEEDBACK_MODEL', 'gemini-2.5-flash');
+    // gemini-3.6-flash — see env.validation.ts's GEMINI_FEEDBACK_MODEL
+    // comment (2026-09-04: gemini-2.5-flash was fully retired by Google;
+    // verified 3.6-flash still accepts audio inline_data before switching).
+    return this.config.get<string>('GEMINI_FEEDBACK_MODEL', 'gemini-3.6-flash');
   }
 
   async generate(

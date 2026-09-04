@@ -83,9 +83,16 @@ export class GeminiRoadmapPlannerProvider implements RoadmapPlannerProvider {
   constructor(private readonly config: ConfigService) {}
 
   get model(): string {
+    // gemini-3.6-flash, not gemini-2.5-flash (2026-09-04): the same Gemini
+    // outage that broke Engy Chat in production (see
+    // env.validation.ts's GEMINI_ENGY_MODEL comment) — this provider's
+    // live .env override was ALSO pinned to a now-503ing model
+    // (gemini-3.5-flash-lite), fixed alongside this code default. Text-only
+    // structured-output call (see file header), so no further
+    // compatibility check was needed.
     return this.config.get<string>(
       'GEMINI_ROADMAP_PLANNER_MODEL',
-      'gemini-2.5-flash',
+      'gemini-3.6-flash',
     );
   }
 
