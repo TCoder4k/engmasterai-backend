@@ -356,7 +356,13 @@ export const envValidationSchema = Joi.object({
   // hard dependency of the login page.
   GEMINI_API_KEY: Joi.string().allow('').optional(),
 
-  GEMINI_STT_MODEL: Joi.string().default('gemini-2.5-flash'),
+  // gemini-3.6-flash, not gemini-2.5-flash (2026-09-04 incident — see
+  // GEMINI_ENGY_MODEL's comment below for the root cause). Verified this
+  // model still accepts audio inline_data the same way before switching:
+  // a real WAV sample sent with this exact request shape came back
+  // correctly transcribed, with usageMetadata reporting an AUDIO-modality
+  // token count — not silently ignored as text.
+  GEMINI_STT_MODEL: Joi.string().default('gemini-3.6-flash'),
 
   // Bounded, always. Without a ceiling a hung provider holds the student's
   // request, their browser and a server connection until something else gives
@@ -384,7 +390,9 @@ export const envValidationSchema = Joi.object({
   // calls have different jobs: transcription wants the cheapest model that
   // hears accurately, coaching wants the one that writes usefully, and pinning
   // both to one name would force an operator to trade one against the other.
-  GEMINI_FEEDBACK_MODEL: Joi.string().default('gemini-2.5-flash'),
+  // gemini-3.6-flash, not gemini-2.5-flash — same 2026-09-04 audio
+  // compatibility verification as GEMINI_STT_MODEL above.
+  GEMINI_FEEDBACK_MODEL: Joi.string().default('gemini-3.6-flash'),
 
   SHADOWING_FEEDBACK_TIMEOUT_MS: Joi.number()
     .integer()
