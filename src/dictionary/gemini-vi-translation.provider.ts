@@ -46,9 +46,12 @@ export class GeminiViTranslationProvider implements ViTranslationProvider {
   constructor(private readonly config: ConfigService) {}
 
   get model(): string {
+    // gemini-3.6-flash — see env.validation.ts's
+    // GEMINI_DICTIONARY_TRANSLATION_MODEL comment for why (2026-09-04:
+    // Google's 3.5 line started returning 503 "high demand").
     return this.config.get<string>(
       'GEMINI_DICTIONARY_TRANSLATION_MODEL',
-      'gemini-3.5-flash-lite',
+      'gemini-3.6-flash',
     );
   }
 

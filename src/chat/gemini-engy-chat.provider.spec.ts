@@ -104,9 +104,9 @@ describe('GeminiEngyChatProvider', () => {
     expect((init as RequestInit).headers).toMatchObject({ 'x-goog-api-key': 'secret-key' });
   });
 
-  it('uses gemini-3.5-flash-lite by default', () => {
+  it('uses gemini-3.6-flash by default', () => {
     const provider = new GeminiEngyChatProvider(config());
-    expect(provider.model).toBe('gemini-3.5-flash-lite');
+    expect(provider.model).toBe('gemini-3.6-flash');
   });
 
   it('honours GEMINI_ENGY_MODEL when set', () => {

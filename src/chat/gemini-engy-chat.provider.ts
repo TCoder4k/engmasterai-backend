@@ -84,13 +84,13 @@ export class GeminiEngyChatProvider implements EngyChatProvider {
   constructor(private readonly config: ConfigService) {}
 
   get model(): string {
-    // gemini-3.5-flash-lite, not the older gemini-2.5-flash default other
-    // providers still carry — verified against this deployment's actual
-    // .env (GEMINI_FEEDBACK_MODEL/GEMINI_ROADMAP_PLANNER_MODEL already run
-    // on gemini-3.5-flash-lite) and matches the Dictionary VI-translation
-    // provider's own model, chosen the same way (see
-    // gemini-vi-translation.provider.ts).
-    return this.config.get<string>('GEMINI_ENGY_MODEL', 'gemini-3.5-flash-lite');
+    // gemini-3.6-flash, not gemini-3.5-flash-lite (2026-09-04 incident): a
+    // student reported "Couldn't send this message" in production; Google's
+    // 3.5 line was returning 503 "high demand" for every model this
+    // provider could plausibly use, confirmed by curling generateContent
+    // directly, while 3.6-flash answered 200 every time — see
+    // env.validation.ts's GEMINI_ENGY_MODEL comment for the full writeup.
+    return this.config.get<string>('GEMINI_ENGY_MODEL', 'gemini-3.6-flash');
   }
 
   async reply(request: EngyChatRequest): Promise<EngyChatResult> {
