@@ -99,7 +99,15 @@ export class GeminiRoadmapAnalysisProvider implements RoadmapAnalysisProvider {
   constructor(private readonly config: ConfigService) {}
 
   get model(): string {
-    return this.config.get<string>('GEMINI_ROADMAP_MODEL', 'gemini-2.5-flash');
+    // gemini-3.6-flash, not gemini-2.5-flash (2026-09-04): Google fully
+    // retired gemini-2.5-flash — it now 404s with "no longer available to
+    // new users... use models/gemini-3.6-flash" — discovered while
+    // investigating a production Engy Chat outage that turned out to share
+    // a root cause across several Gemini-backed features (see
+    // env.validation.ts's GEMINI_ENGY_MODEL comment). Text-only call (no
+    // inline_data/audio part — see file header), so this swap needed no
+    // further compatibility check.
+    return this.config.get<string>('GEMINI_ROADMAP_MODEL', 'gemini-3.6-flash');
   }
 
   async generate(

@@ -55,9 +55,9 @@ describe('GeminiViTranslationProvider', () => {
     expect((init as RequestInit).headers).toMatchObject({ 'x-goog-api-key': 'secret-key' });
   });
 
-  it('uses gemini-3.5-flash-lite by default, distinct from the other providers', () => {
+  it('uses gemini-3.6-flash by default, distinct from the other providers', () => {
     const provider = new GeminiViTranslationProvider(config());
-    expect(provider.model).toBe('gemini-3.5-flash-lite');
+    expect(provider.model).toBe('gemini-3.6-flash');
   });
 
   it('honours GEMINI_DICTIONARY_TRANSLATION_MODEL when set', () => {

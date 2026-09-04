@@ -37,7 +37,11 @@ export class GeminiSpeakingTranslateProvider implements SpeakingTranslateProvide
   constructor(private readonly config: ConfigService) {}
 
   get model(): string {
-    return this.config.get<string>('GEMINI_SPEAKING_TRANSLATE_MODEL', 'gemini-3.5-flash-lite');
+    // gemini-3.6-flash — see env.validation.ts's
+    // GEMINI_SPEAKING_TRANSLATE_MODEL comment for why (2026-09-04: Google's
+    // 3.5 line started returning 503 "high demand", surfacing to students
+    // as "Không dịch được" on subtitles).
+    return this.config.get<string>('GEMINI_SPEAKING_TRANSLATE_MODEL', 'gemini-3.6-flash');
   }
 
   async translate(request: SpeakingTranslateRequest): Promise<SpeakingTranslateResult> {

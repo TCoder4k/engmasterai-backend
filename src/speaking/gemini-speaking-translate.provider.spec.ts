@@ -59,8 +59,8 @@ describe('GeminiSpeakingTranslateProvider', () => {
     expect((init as RequestInit).headers).toMatchObject({ 'x-goog-api-key': 'secret-key' });
   });
 
-  it('uses gemini-3.5-flash-lite by default and honours GEMINI_SPEAKING_TRANSLATE_MODEL when set', () => {
-    expect(new GeminiSpeakingTranslateProvider(config()).model).toBe('gemini-3.5-flash-lite');
+  it('uses gemini-3.6-flash by default and honours GEMINI_SPEAKING_TRANSLATE_MODEL when set', () => {
+    expect(new GeminiSpeakingTranslateProvider(config()).model).toBe('gemini-3.6-flash');
     expect(
       new GeminiSpeakingTranslateProvider(
         config({ GEMINI_SPEAKING_TRANSLATE_MODEL: 'custom-model' }),

@@ -396,8 +396,16 @@ export const envValidationSchema = Joi.object({
   // model is deliberately its own variable (not reusing GEMINI_STT_MODEL/
   // GEMINI_FEEDBACK_MODEL) for the same reason those two are separate from
   // each other — different jobs should stay independently tunable.
+  // gemini-3.6-flash, not gemini-3.5-flash-lite (2026-09-04 incident):
+  // Google's 3.5 line started returning 503 "high demand" for this key —
+  // confirmed by curling generateContent directly for every model this
+  // provider could plausibly use — while 3.6-flash answered 200 every
+  // time; Google's own 404 body for the now-fully-retired gemini-2.5-flash
+  // explicitly names gemini-3.6-flash as the replacement. Text-only call
+  // (no inline_data/audio part here), so this swap needed no further
+  // compatibility check.
   GEMINI_DICTIONARY_TRANSLATION_MODEL: Joi.string().default(
-    'gemini-3.5-flash-lite',
+    'gemini-3.6-flash',
   ),
   DICTIONARY_TRANSLATION_TIMEOUT_MS: Joi.number()
     .integer()
@@ -421,11 +429,12 @@ export const envValidationSchema = Joi.object({
   // Engy Chat, Phase B. Shares GEMINI_API_KEY; its own model variable for
   // the same reason Dictionary's translation model is its own — a
   // conversational-prose job should stay independently tunable from
-  // translation/feedback/roadmap jobs. gemini-3.5-flash-lite, not the older
-  // gemini-2.5-flash default other providers still carry — matches what
-  // this deployment's real .env already runs for GEMINI_FEEDBACK_MODEL/
-  // GEMINI_ROADMAP_PLANNER_MODEL/GEMINI_DICTIONARY_TRANSLATION_MODEL today.
-  GEMINI_ENGY_MODEL: Joi.string().default('gemini-3.5-flash-lite'),
+  // translation/feedback/roadmap jobs. gemini-3.6-flash, not
+  // gemini-3.5-flash-lite (2026-09-04 incident — see
+  // GEMINI_DICTIONARY_TRANSLATION_MODEL's comment above for the full
+  // root-cause writeup: this is the SAME outage, reported live by a
+  // student unable to send an Engy message in production).
+  GEMINI_ENGY_MODEL: Joi.string().default('gemini-3.6-flash'),
   CHAT_REPLY_TIMEOUT_MS: Joi.number().integer().min(1000).max(60000).default(20000),
   // Sliding TTL for a user's bounded Redis chat history (chat:session:<userId>)
   // — the plan's approved "~30 minutes" default. Also the TTL a committed
@@ -472,8 +481,11 @@ export const envValidationSchema = Joi.object({
   SPEAKING_SESSION_TTL_SECONDS: Joi.number().integer().min(60).max(7200).default(1800),
   // A THIRD, independent Speaking Gemini job — on-demand subtitle
   // translation (POST /speaking/translate), own token/provider/env vars,
-  // never folded into GEMINI_SPEAKING_MODEL's own call.
-  GEMINI_SPEAKING_TRANSLATE_MODEL: Joi.string().default('gemini-3.5-flash-lite'),
+  // never folded into GEMINI_SPEAKING_MODEL's own call. gemini-3.6-flash,
+  // not gemini-3.5-flash-lite — same 2026-09-04 outage as
+  // GEMINI_ENGY_MODEL/GEMINI_DICTIONARY_TRANSLATION_MODEL above (see
+  // GEMINI_DICTIONARY_TRANSLATION_MODEL's comment for the root cause).
+  GEMINI_SPEAKING_TRANSLATE_MODEL: Joi.string().default('gemini-3.6-flash'),
   SPEAKING_TRANSLATE_TIMEOUT_MS: Joi.number().integer().min(1000).max(60000).default(20000),
 })
   // Cloudinary/other unrelated vars are intentionally out of this sprint's
