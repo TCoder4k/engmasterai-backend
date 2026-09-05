@@ -81,7 +81,15 @@ export class GeminiSpeakingTranslateProvider implements SpeakingTranslateProvide
               // Zero — a translation has one correct-enough answer, unlike
               // the AI reply's conversational prose.
               temperature: 0,
-              maxOutputTokens: 200,
+              // Generous, not tight (2026-09-05 incident): the 3.x model
+              // chain "thinks" before answering, and thinking tokens are
+              // billed against this SAME cap — a real prod bug had a one-
+              // sentence translation come back cut to a couple of words
+              // because ~190 of a 200-token budget went to invisible
+              // reasoning. A short spoken subtitle never needs anywhere
+              // near 1024 tokens of actual output; this is headroom for
+              // the reasoning step, not an expectation of long replies.
+              maxOutputTokens: 1024,
             },
           }),
         }),
@@ -121,6 +129,17 @@ export class GeminiSpeakingTranslateProvider implements SpeakingTranslateProvide
         `Gemini blocked a speaking translate request: ${payload.promptFeedback.blockReason}`,
       );
       throw new SpeakingTranslateError('BLOCKED', 'The text could not be translated');
+    }
+
+    // A truncated answer is worse than no answer — half a sentence reads as
+    // a garbled/wrong translation, not as an outage. Reported as UNAVAILABLE
+    // so the standard retry copy applies, same as an empty reply below.
+    if (payload.candidates?.[0]?.finishReason === 'MAX_TOKENS') {
+      this.logger.warn('Speaking translate was cut off at the token limit');
+      throw new SpeakingTranslateError(
+        'UNAVAILABLE',
+        'Subtitle translation was cut off',
+      );
     }
 
     const text = payload.candidates?.[0]?.content?.parts

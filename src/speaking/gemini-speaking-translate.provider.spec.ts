@@ -117,6 +117,21 @@ describe('GeminiSpeakingTranslateProvider', () => {
     await expect(provider.translate(request)).rejects.toMatchObject({ kind: 'UNAVAILABLE' });
   });
 
+  // 2026-09-05 production bug: the 3.x model chain spends part of
+  // maxOutputTokens on invisible "thinking" before answering, and a tight
+  // cap cut a real subtitle translation down to a couple of words. A
+  // truncated translation must fail loudly, never be shown as if correct.
+  it('reports a translation cut off at the token limit as UNAVAILABLE, never a truncated translation', async () => {
+    jest.spyOn(global, 'fetch').mockResolvedValue(
+      okResponse({
+        candidates: [{ content: { parts: [{ text: 'Ý bạn là' }] }, finishReason: 'MAX_TOKENS' }],
+      }),
+    );
+    const provider = new GeminiSpeakingTranslateProvider(config({ GEMINI_API_KEY: 'k' }));
+
+    await expect(provider.translate(request)).rejects.toMatchObject({ kind: 'UNAVAILABLE' });
+  });
+
   it('reports a safety block as BLOCKED', async () => {
     jest
       .spyOn(global, 'fetch')

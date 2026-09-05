@@ -162,7 +162,14 @@ export class GeminiRoadmapAnalysisProvider implements RoadmapAnalysisProvider {
             generationConfig: {
               // Low, not zero — see the file header.
               temperature: 0.4,
-              maxOutputTokens: 400,
+              // Generous, not tight (2026-09-05 incident): the 3.x model
+              // chain "thinks" before answering, and thinking tokens are
+              // billed against this SAME cap — a tight cap can silently
+              // truncate mid-sentence well before truncateSummary's own
+              // 700-char ceiling ever gets a chance to apply. This is
+              // headroom for the reasoning step, not a raised summary-
+              // length target.
+              maxOutputTokens: 2048,
             },
           }),
         }),
@@ -209,6 +216,17 @@ export class GeminiRoadmapAnalysisProvider implements RoadmapAnalysisProvider {
       throw new RoadmapAnalysisError(
         'UNAVAILABLE',
         'AI roadmap analysis could not be generated',
+      );
+    }
+
+    // A summary cut off mid-sentence reads as broken, not as a shorter
+    // narrative — reported as UNAVAILABLE so the standard retry copy
+    // applies, same as an empty answer below.
+    if (payload.candidates?.[0]?.finishReason === 'MAX_TOKENS') {
+      this.logger.warn('Gemini roadmap analysis was cut off at the token limit');
+      throw new RoadmapAnalysisError(
+        'UNAVAILABLE',
+        'AI roadmap analysis was cut off',
       );
     }
 
