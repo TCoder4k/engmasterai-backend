@@ -312,7 +312,10 @@ export class ShadowingService {
       return {
         feedback: attempt.aiFeedback,
         generatedAt: attempt.aiFeedbackAt,
-        model: attempt.aiFeedbackModel ?? this.pronunciationFeedback.model,
+        // A pre-chain row may have no aiFeedbackModel of its own; there is no
+        // single "the model" to fall back to anymore now that this is a
+        // chain, so the fallback names the chain's own config key instead.
+        model: attempt.aiFeedbackModel ?? 'unknown',
         cached: true,
       };
     }
@@ -326,7 +329,6 @@ export class ShadowingService {
       transcript: attempt.rawTranscript,
     });
 
-    const model = this.pronunciationFeedback.model;
     const now = new Date();
 
     // A plain update, no transaction: this row already exists and nothing else
@@ -335,13 +337,13 @@ export class ShadowingService {
     await this.prisma.listeningShadowingAttempt.update({
       where: { id: attempt.id },
       data: {
-        aiFeedback: generated,
+        aiFeedback: generated.feedback,
         aiFeedbackAt: now,
-        aiFeedbackModel: model,
+        aiFeedbackModel: generated.model,
       },
     });
 
-    return { feedback: generated, generatedAt: now, model, cached: false };
+    return { feedback: generated.feedback, generatedAt: now, model: generated.model, cached: false };
   }
 
   /**
@@ -575,7 +577,7 @@ export class ShadowingService {
     audio: { buffer: Buffer; mimetype: string };
     referenceText: string;
     transcript: string;
-  }): Promise<string> {
+  }): Promise<{ feedback: string; model: string }> {
     try {
       const result = await this.pronunciationFeedback.generate({
         audio: input.audio.buffer,
@@ -584,7 +586,7 @@ export class ShadowingService {
         transcript: input.transcript,
         languageCode: 'en-US',
       });
-      return result.feedback;
+      return result;
     } catch (caught) {
       if (caught instanceof PronunciationFeedbackError) {
         if (caught.kind === 'UNSUPPORTED_AUDIO') {

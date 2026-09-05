@@ -188,6 +188,35 @@ describe('GeminiRoadmapPlannerProvider', () => {
     );
   });
 
+  it('targets the default chain\'s first model when GEMINI_ROADMAP_PLANNER_MODEL is unset', async () => {
+    const fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValue(
+      okPlan([{ resourceType: 'COURSE', resourceId: 'foundation-grammar', reason: 'x' }]),
+    );
+    const provider = new GeminiRoadmapPlannerProvider(config({ GEMINI_API_KEY: 'k' }));
+
+    await provider.plan(planningRequest);
+
+    expect(String(fetchSpy.mock.calls[0][0])).toContain('gemini-3.8-flash');
+  });
+
+  it('falls through to the second configured model when the first returns 503', async () => {
+    const fetchSpy = jest
+      .spyOn(global, 'fetch')
+      .mockResolvedValueOnce({ ok: false, status: 503 } as unknown as Response)
+      .mockResolvedValueOnce(
+        okPlan([{ resourceType: 'COURSE', resourceId: 'foundation-grammar', reason: 'x' }]),
+      );
+    const provider = new GeminiRoadmapPlannerProvider(
+      config({ GEMINI_API_KEY: 'k', GEMINI_ROADMAP_PLANNER_MODEL: 'model-a,model-b' }),
+    );
+
+    await provider.plan(planningRequest);
+
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    expect(String(fetchSpy.mock.calls[0][0])).toContain('model-a');
+    expect(String(fetchSpy.mock.calls[1][0])).toContain('model-b');
+  });
+
   it('reports a missing key as NOT_CONFIGURED without calling out', async () => {
     const fetchSpy = jest.spyOn(global, 'fetch');
     const provider = new GeminiRoadmapPlannerProvider(config({}));

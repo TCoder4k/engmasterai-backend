@@ -55,7 +55,5 @@ export interface EngyChatResult {
 }
 
 export interface EngyChatProvider {
-  /** Which model produced it — logged for operational metadata, never the prompt/reply. */
-  readonly model: string;
   reply(request: EngyChatRequest): Promise<EngyChatResult>;
 }

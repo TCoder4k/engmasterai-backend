@@ -6,6 +6,8 @@ import {
   SpeechToTextRequest,
   SpeechToTextResult,
 } from './speech-to-text.provider';
+import { DEFAULT_GEMINI_MODEL_CHAIN, parseGeminiModelList } from '../../shared/gemini-models';
+import { fetchGeminiWithFallback, isGeminiTimeout } from '../../shared/gemini-fetch-with-fallback';
 
 // Sprint 11 Phase 4B — transcription via the Gemini REST API.
 //
@@ -58,8 +60,18 @@ interface GeminiResponseShape {
 export class GeminiSpeechToTextProvider implements SpeechToTextProvider {
   readonly source = 'GEMINI' as const;
   private readonly logger = new Logger(GeminiSpeechToTextProvider.name);
+  private readonly models: string[];
 
-  constructor(private readonly config: ConfigService) {}
+  constructor(private readonly config: ConfigService) {
+    // A chain, not a single model — see env.validation.ts's GEMINI_STT_MODEL
+    // comment for the 2026-09-04 outage that motivated this. Falls through
+    // to the next model on 429/503 — see gemini-fetch-with-fallback.ts.
+    // Every model in the chain was verified to accept audio inline_data.
+    this.models = parseGeminiModelList(
+      this.config.get<string>('GEMINI_STT_MODEL', DEFAULT_GEMINI_MODEL_CHAIN),
+      'GEMINI_STT_MODEL',
+    );
+  }
 
   async transcribe(request: SpeechToTextRequest): Promise<SpeechToTextResult> {
     const apiKey = this.config.get<string>('GEMINI_API_KEY');
@@ -74,24 +86,17 @@ export class GeminiSpeechToTextProvider implements SpeechToTextProvider {
       );
     }
 
-    // gemini-3.6-flash — see env.validation.ts's GEMINI_STT_MODEL comment
-    // (2026-09-04: gemini-2.5-flash was fully retired by Google; verified
-    // 3.6-flash still accepts audio inline_data before switching).
-    const model = this.config.get<string>('GEMINI_STT_MODEL', 'gemini-3.6-flash');
     const timeoutMs = this.config.get<number>('SHADOWING_STT_TIMEOUT_MS', 20000);
-
-    // A bounded wait, always. Without it a hung provider holds the request, the
-    // student's browser and a connection until something else gives up first.
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
 
     let response: Response;
     try {
-      response = await fetch(
-        `${GEMINI_ENDPOINT}/${encodeURIComponent(model)}:generateContent`,
-        {
+      ({ response } = await fetchGeminiWithFallback(
+        this.models,
+        timeoutMs,
+        (m) => `${GEMINI_ENDPOINT}/${encodeURIComponent(m)}:generateContent`,
+        (_m, signal) => ({
           method: 'POST',
-          signal: controller.signal,
+          signal,
           headers: {
             'Content-Type': 'application/json',
             // Header, not a query parameter: a key in a URL ends up in access
@@ -124,10 +129,12 @@ export class GeminiSpeechToTextProvider implements SpeechToTextProvider {
               },
             },
           }),
-        },
-      );
+        }),
+        this.logger,
+        'shadowing-stt',
+      ));
     } catch (caught) {
-      const aborted = caught instanceof Error && caught.name === 'AbortError';
+      const aborted = isGeminiTimeout(caught);
       // The audio is NOT logged, here or anywhere. Only the shape of the
       // failure is, because a student's voice must not end up in a log file.
       this.logger.warn(
@@ -137,8 +144,6 @@ export class GeminiSpeechToTextProvider implements SpeechToTextProvider {
         aborted ? 'TIMEOUT' : 'UNAVAILABLE',
         aborted ? 'Speech recognition timed out' : 'Speech recognition is unavailable',
       );
-    } finally {
-      clearTimeout(timer);
     }
 
     if (!response.ok) {

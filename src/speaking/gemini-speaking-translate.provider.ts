@@ -6,6 +6,8 @@ import {
   SpeakingTranslateRequest,
   SpeakingTranslateResult,
 } from './speaking-translate.provider';
+import { DEFAULT_GEMINI_MODEL_CHAIN, parseGeminiModelList } from '../shared/gemini-models';
+import { fetchGeminiWithFallback, isGeminiTimeout } from '../shared/gemini-fetch-with-fallback';
 
 // Speaking Partner — on-demand subtitle translation via the Gemini REST API.
 //
@@ -33,15 +35,17 @@ interface GeminiResponseShape {
 @Injectable()
 export class GeminiSpeakingTranslateProvider implements SpeakingTranslateProvider {
   private readonly logger = new Logger(GeminiSpeakingTranslateProvider.name);
+  private readonly models: string[];
 
-  constructor(private readonly config: ConfigService) {}
-
-  get model(): string {
-    // gemini-3.6-flash — see env.validation.ts's
-    // GEMINI_SPEAKING_TRANSLATE_MODEL comment for why (2026-09-04: Google's
-    // 3.5 line started returning 503 "high demand", surfacing to students
-    // as "Không dịch được" on subtitles).
-    return this.config.get<string>('GEMINI_SPEAKING_TRANSLATE_MODEL', 'gemini-3.6-flash');
+  constructor(private readonly config: ConfigService) {
+    // A chain, not a single model — see env.validation.ts's
+    // GEMINI_SPEAKING_TRANSLATE_MODEL comment for the 2026-09-04 outage
+    // that motivated this. Falls through to the next model on 429/503 —
+    // see gemini-fetch-with-fallback.ts.
+    this.models = parseGeminiModelList(
+      this.config.get<string>('GEMINI_SPEAKING_TRANSLATE_MODEL', DEFAULT_GEMINI_MODEL_CHAIN),
+      'GEMINI_SPEAKING_TRANSLATE_MODEL',
+    );
   }
 
   async translate(request: SpeakingTranslateRequest): Promise<SpeakingTranslateResult> {
@@ -53,19 +57,17 @@ export class GeminiSpeakingTranslateProvider implements SpeakingTranslateProvide
       );
     }
 
-    const model = this.model;
     const timeoutMs = this.config.get<number>('SPEAKING_TRANSLATE_TIMEOUT_MS', 20000);
-
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
 
     let response: Response;
     try {
-      response = await fetch(
-        `${GEMINI_ENDPOINT}/${encodeURIComponent(model)}:generateContent`,
-        {
+      ({ response } = await fetchGeminiWithFallback(
+        this.models,
+        timeoutMs,
+        (m) => `${GEMINI_ENDPOINT}/${encodeURIComponent(m)}:generateContent`,
+        (_m, signal) => ({
           method: 'POST',
-          signal: controller.signal,
+          signal,
           headers: {
             'Content-Type': 'application/json',
             // Header, not a query parameter — a key in a URL ends up in
@@ -82,25 +84,25 @@ export class GeminiSpeakingTranslateProvider implements SpeakingTranslateProvide
               maxOutputTokens: 200,
             },
           }),
-        },
-      );
+        }),
+        this.logger,
+        'speaking-translate',
+      ));
     } catch (caught) {
-      const aborted = caught instanceof Error && caught.name === 'AbortError';
+      const aborted = isGeminiTimeout(caught);
       // The text being translated is NEVER logged, here or anywhere — only
       // the shape of the failure is.
       this.logger.warn(
-        `Speaking translate ${aborted ? 'timed out' : 'failed'} after ${timeoutMs}ms (model=${model})`,
+        `Speaking translate ${aborted ? 'timed out' : 'failed'} after ${timeoutMs}ms`,
       );
       throw new SpeakingTranslateError(
         aborted ? 'TIMEOUT' : 'UNAVAILABLE',
         aborted ? 'Subtitle translation timed out' : 'Subtitle translation is unavailable',
       );
-    } finally {
-      clearTimeout(timer);
     }
 
     if (!response.ok) {
-      this.logger.warn(`Speaking translate returned HTTP ${response.status} (model=${model})`);
+      this.logger.warn(`Speaking translate returned HTTP ${response.status}`);
       throw new SpeakingTranslateError(
         'UNAVAILABLE',
         `Subtitle translation failed with status ${response.status}`,

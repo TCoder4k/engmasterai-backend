@@ -28,6 +28,5 @@ export class ViTranslationError extends Error {
 }
 
 export interface ViTranslationProvider {
-  readonly model: string;
   translate(request: ViTranslationRequest): Promise<ViTranslationResult>;
 }

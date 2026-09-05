@@ -8,6 +8,11 @@ import {
   RoadmapPlanningRequest,
   RoadmapPlanningResult,
 } from './roadmap-planner.provider';
+import { DEFAULT_GEMINI_MODEL_CHAIN, parseGeminiModelList } from '../../shared/gemini-models';
+import {
+  fetchGeminiWithFallback,
+  isGeminiTimeout,
+} from '../../shared/gemini-fetch-with-fallback';
 
 // POST /placement/roadmap/plan — multi-pillar resource SELECTION via the
 // Gemini REST API, constrained to a closed candidate set (see
@@ -79,20 +84,17 @@ interface RawPlanShape {
 @Injectable()
 export class GeminiRoadmapPlannerProvider implements RoadmapPlannerProvider {
   private readonly logger = new Logger(GeminiRoadmapPlannerProvider.name);
+  private readonly models: string[];
 
-  constructor(private readonly config: ConfigService) {}
-
-  get model(): string {
-    // gemini-3.6-flash, not gemini-2.5-flash (2026-09-04): the same Gemini
-    // outage that broke Engy Chat in production (see
-    // env.validation.ts's GEMINI_ENGY_MODEL comment) — this provider's
-    // live .env override was ALSO pinned to a now-503ing model
-    // (gemini-3.5-flash-lite), fixed alongside this code default. Text-only
-    // structured-output call (see file header), so no further
-    // compatibility check was needed.
-    return this.config.get<string>(
+  constructor(private readonly config: ConfigService) {
+    // A chain, not a single model — see env.validation.ts's
+    // GEMINI_ENGY_MODEL comment for the 2026-09-04 outage that motivated
+    // this. No Joi entry for this key, so the chain constant IS the live
+    // default unless .env overrides it. Falls through to the next model on
+    // 429/503 — see gemini-fetch-with-fallback.ts.
+    this.models = parseGeminiModelList(
+      this.config.get<string>('GEMINI_ROADMAP_PLANNER_MODEL', DEFAULT_GEMINI_MODEL_CHAIN),
       'GEMINI_ROADMAP_PLANNER_MODEL',
-      'gemini-3.6-flash',
     );
   }
 
@@ -105,24 +107,21 @@ export class GeminiRoadmapPlannerProvider implements RoadmapPlannerProvider {
       );
     }
 
-    const model = this.model;
     const timeoutMs = this.config.get<number>(
       'PLACEMENT_PLANNING_TIMEOUT_MS',
       20000,
     );
 
-    // A bounded wait, always — see gemini-roadmap-analysis.provider.ts's
-    // identical comment.
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
-
     let response: Response;
+    let model: string;
     try {
-      response = await fetch(
-        `${GEMINI_ENDPOINT}/${encodeURIComponent(model)}:generateContent`,
-        {
+      ({ response, model } = await fetchGeminiWithFallback(
+        this.models,
+        timeoutMs,
+        (m) => `${GEMINI_ENDPOINT}/${encodeURIComponent(m)}:generateContent`,
+        (_m, signal) => ({
           method: 'POST',
-          signal: controller.signal,
+          signal,
           headers: {
             'Content-Type': 'application/json',
             'x-goog-api-key': apiKey,
@@ -160,10 +159,12 @@ export class GeminiRoadmapPlannerProvider implements RoadmapPlannerProvider {
               },
             },
           }),
-        },
-      );
+        }),
+        this.logger,
+        'roadmap-planner',
+      ));
     } catch (caught) {
-      const aborted = caught instanceof Error && caught.name === 'AbortError';
+      const aborted = isGeminiTimeout(caught);
       this.logger.warn(
         `Gemini roadmap planning ${aborted ? 'timed out' : 'failed'} after ${timeoutMs}ms`,
       );
@@ -173,8 +174,6 @@ export class GeminiRoadmapPlannerProvider implements RoadmapPlannerProvider {
           ? 'AI roadmap planning timed out'
           : 'AI roadmap planning is unavailable',
       );
-    } finally {
-      clearTimeout(timer);
     }
 
     if (!response.ok) {
@@ -219,7 +218,7 @@ export class GeminiRoadmapPlannerProvider implements RoadmapPlannerProvider {
       );
     }
 
-    return extractPlan(text);
+    return { ...extractPlan(text), model };
   }
 }
 
@@ -273,7 +272,7 @@ export const describeRequest = (request: RoadmapPlanningRequest): string => {
  *
  * Exported for tests.
  */
-export const extractPlan = (raw: string): RoadmapPlanningResult => {
+export const extractPlan = (raw: string): Omit<RoadmapPlanningResult, 'model'> => {
   let parsed: RawPlanShape;
   try {
     parsed = JSON.parse(raw) as RawPlanShape;

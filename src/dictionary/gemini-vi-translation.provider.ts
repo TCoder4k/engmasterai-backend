@@ -6,6 +6,8 @@ import {
   ViTranslationRequest,
   ViTranslationResult,
 } from './vi-translation.provider';
+import { DEFAULT_GEMINI_MODEL_CHAIN, parseGeminiModelList } from '../shared/gemini-models';
+import { fetchGeminiWithFallback, isGeminiTimeout } from '../shared/gemini-fetch-with-fallback';
 
 // Dictionary Phase A — translates an ALREADY-DETERMINISTIC English
 // definition into Vietnamese. This is the one place in the Dictionary
@@ -42,16 +44,16 @@ interface RawTranslationShape {
 @Injectable()
 export class GeminiViTranslationProvider implements ViTranslationProvider {
   private readonly logger = new Logger(GeminiViTranslationProvider.name);
+  private readonly models: string[];
 
-  constructor(private readonly config: ConfigService) {}
-
-  get model(): string {
-    // gemini-3.6-flash — see env.validation.ts's
-    // GEMINI_DICTIONARY_TRANSLATION_MODEL comment for why (2026-09-04:
-    // Google's 3.5 line started returning 503 "high demand").
-    return this.config.get<string>(
+  constructor(private readonly config: ConfigService) {
+    // A chain, not a single model — see env.validation.ts's
+    // GEMINI_DICTIONARY_TRANSLATION_MODEL comment for the 2026-09-04
+    // outage that motivated this. Falls through to the next model on
+    // 429/503 — see gemini-fetch-with-fallback.ts.
+    this.models = parseGeminiModelList(
+      this.config.get<string>('GEMINI_DICTIONARY_TRANSLATION_MODEL', DEFAULT_GEMINI_MODEL_CHAIN),
       'GEMINI_DICTIONARY_TRANSLATION_MODEL',
-      'gemini-3.6-flash',
     );
   }
 
@@ -64,22 +66,20 @@ export class GeminiViTranslationProvider implements ViTranslationProvider {
       );
     }
 
-    const model = this.model;
     const timeoutMs = this.config.get<number>(
       'DICTIONARY_TRANSLATION_TIMEOUT_MS',
       10000,
     );
 
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
-
     let response: Response;
     try {
-      response = await fetch(
-        `${GEMINI_ENDPOINT}/${encodeURIComponent(model)}:generateContent`,
-        {
+      ({ response } = await fetchGeminiWithFallback(
+        this.models,
+        timeoutMs,
+        (m) => `${GEMINI_ENDPOINT}/${encodeURIComponent(m)}:generateContent`,
+        (_m, signal) => ({
           method: 'POST',
-          signal: controller.signal,
+          signal,
           headers: {
             'Content-Type': 'application/json',
             'x-goog-api-key': apiKey,
@@ -104,10 +104,12 @@ export class GeminiViTranslationProvider implements ViTranslationProvider {
               },
             },
           }),
-        },
-      );
+        }),
+        this.logger,
+        'dictionary-translation',
+      ));
     } catch (caught) {
-      const aborted = caught instanceof Error && caught.name === 'AbortError';
+      const aborted = isGeminiTimeout(caught);
       this.logger.warn(
         `Gemini VI translation ${aborted ? 'timed out' : 'failed'} after ${timeoutMs}ms`,
       );
@@ -115,8 +117,6 @@ export class GeminiViTranslationProvider implements ViTranslationProvider {
         aborted ? 'TIMEOUT' : 'UNAVAILABLE',
         aborted ? 'VI translation timed out' : 'VI translation is unavailable',
       );
-    } finally {
-      clearTimeout(timer);
     }
 
     if (!response.ok) {

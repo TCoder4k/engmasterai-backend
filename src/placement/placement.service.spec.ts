@@ -171,10 +171,12 @@ const buildHarness = (
   // GeminiRoadmapAnalysisProvider sits behind in production (see
   // placement.module.ts). Directly controllable, unlike a real Gemini call.
   const roadmapAnalysisGenerate = jest.fn(() =>
-    Promise.resolve({ summary: 'A generated orientation paragraph.' }),
+    Promise.resolve({
+      summary: 'A generated orientation paragraph.',
+      model: 'fake-roadmap-model',
+    }),
   );
   const roadmapAnalysis = {
-    model: 'fake-roadmap-model',
     generate: roadmapAnalysisGenerate,
   };
 
@@ -187,10 +189,10 @@ const buildHarness = (
     Promise.resolve({
       phases: [] as { resourceType: string; resourceId: string; reason: string }[],
       overallReason: '',
+      model: 'fake-planner-model',
     }),
   );
   const roadmapPlanner = {
-    model: 'fake-planner-model',
     plan: roadmapPlannerPlan,
   };
 
@@ -1185,6 +1187,7 @@ describe('PlacementService.requestRoadmapPlan', () => {
     roadmapPlannerPlan.mockResolvedValueOnce({
       phases: [{ resourceType: 'COURSE', resourceId: 'foundation-grammar', reason: 'Fits your level.' }],
       overallReason: 'Ưu tiên ngữ pháp trước vì phù hợp trình độ hiện tại.',
+      model: 'fake-planner-model',
     });
 
     const result = await service.requestRoadmapPlan('user-1');

@@ -53,6 +53,13 @@ export interface PronunciationFeedbackRequest {
 export interface PronunciationFeedbackResult {
   /** Plain prose for the student. Never a score, never JSON the client parses. */
   feedback: string;
+  /**
+   * Which model actually produced this answer — a per-call fact, not a
+   * provider-wide constant, now that the underlying Gemini call falls
+   * through a model chain on 429/503. Stored per attempt so old advice
+   * stays attributable.
+   */
+  model: string;
 }
 
 /**
@@ -79,8 +86,6 @@ export class PronunciationFeedbackError extends Error {
 }
 
 export interface PronunciationFeedbackProvider {
-  /** Which engine produced it. Stored per attempt so old advice stays attributable. */
-  readonly model: string;
   generate(
     request: PronunciationFeedbackRequest,
   ): Promise<PronunciationFeedbackResult>;

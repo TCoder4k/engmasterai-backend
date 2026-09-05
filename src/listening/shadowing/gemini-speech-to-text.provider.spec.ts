@@ -108,6 +108,36 @@ describe('GeminiSpeechToTextProvider', () => {
     expect(inline?.inline_data?.mime_type).toBe('audio/webm');
   });
 
+  it('targets the default chain\'s first model when GEMINI_STT_MODEL is unset', async () => {
+    const fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValue(
+      okResponse({ candidates: [{ content: { parts: [{ text: '{"transcript":"hi"}' }] } }] }),
+    );
+    const provider = new GeminiSpeechToTextProvider(config({ GEMINI_API_KEY: 'k' }));
+
+    await provider.transcribe(audioRequest);
+
+    expect(String(fetchSpy.mock.calls[0][0])).toContain('gemini-3.8-flash');
+  });
+
+  it('falls through to the second configured model when the first returns 503', async () => {
+    const fetchSpy = jest
+      .spyOn(global, 'fetch')
+      .mockResolvedValueOnce({ ok: false, status: 503 } as unknown as Response)
+      .mockResolvedValueOnce(
+        okResponse({ candidates: [{ content: { parts: [{ text: '{"transcript":"hi"}' }] } }] }),
+      );
+    const provider = new GeminiSpeechToTextProvider(
+      config({ GEMINI_API_KEY: 'k', GEMINI_STT_MODEL: 'model-a,model-b' }),
+    );
+
+    const result = await provider.transcribe(audioRequest);
+
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    expect(String(fetchSpy.mock.calls[0][0])).toContain('model-a');
+    expect(String(fetchSpy.mock.calls[1][0])).toContain('model-b');
+    expect(result.transcript).toBe('hi');
+  });
+
   // Distinct from an outage: nothing is broken, the deployment has no key.
   // Reporting this as "the speech service is unavailable" sends an operator to
   // look at the wrong thing.

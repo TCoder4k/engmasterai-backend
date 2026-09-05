@@ -484,7 +484,10 @@ export class PlacementService {
       return {
         summary: roadmap.aiSummary,
         generatedAt: roadmap.aiSummaryAt.toISOString(),
-        model: roadmap.aiSummaryModel ?? this.roadmapAnalysis.model,
+        // A pre-chain row may have no aiSummaryModel of its own; there is no
+        // single "the model" to fall back to anymore now that this is a
+        // chain.
+        model: roadmap.aiSummaryModel ?? 'unknown',
         cached: true,
       };
     }
@@ -494,14 +497,13 @@ export class PlacementService {
       this.loadSectionScores(roadmap.placementAttemptId),
     ]);
 
-    const summary = await this.generateAnalysis({
+    const { summary, model } = await this.generateAnalysis({
       goal: roadmap.goal,
       estimatedLevel: roadmap.estimatedLevel,
       sectionScores,
       phases,
     });
 
-    const model = this.roadmapAnalysis.model;
     const now = new Date();
     await this.prisma.roadmap.update({
       where: { id: roadmap.id },
@@ -628,8 +630,8 @@ export class PlacementService {
             // the analysis provider's own model name.
             aiSummary: validated.overallReason,
             aiSummaryAt: new Date(),
-            aiSummaryModel: this.roadmapPlanner.model,
-            aiPlanningModel: this.roadmapPlanner.model,
+            aiSummaryModel: planResult.model,
+            aiPlanningModel: planResult.model,
             aiPlanningUsedAt: new Date(),
           },
         });
@@ -1115,10 +1117,10 @@ export class PlacementService {
     estimatedLevel: CefrLevel | null;
     sectionScores: RoadmapAnalysisSectionScores | null;
     phases: RoadmapAnalysisPhase[];
-  }): Promise<string> {
+  }): Promise<{ summary: string; model: string }> {
     try {
       const result = await this.roadmapAnalysis.generate(input);
-      return result.summary;
+      return { summary: result.summary, model: result.model };
     } catch (caught) {
       if (caught instanceof RoadmapAnalysisError) {
         throw new ServiceUnavailableException(

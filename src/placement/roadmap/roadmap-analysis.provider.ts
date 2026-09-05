@@ -57,6 +57,13 @@ export interface RoadmapAnalysisRequest {
 export interface RoadmapAnalysisResult {
   /** Plain prose for the student. Never a score, never JSON the client parses. */
   summary: string;
+  /**
+   * Which model actually produced this answer — a per-call fact, not a
+   * provider-wide constant, now that the underlying Gemini call falls
+   * through a model chain on 429/503. Stored on Roadmap.aiSummaryModel so
+   * old narratives stay attributable.
+   */
+  model: string;
 }
 
 /**
@@ -81,7 +88,5 @@ export class RoadmapAnalysisError extends Error {
 }
 
 export interface RoadmapAnalysisProvider {
-  /** Which engine produced it. Stored on Roadmap.aiSummaryModel so old narratives stay attributable. */
-  readonly model: string;
   generate(request: RoadmapAnalysisRequest): Promise<RoadmapAnalysisResult>;
 }

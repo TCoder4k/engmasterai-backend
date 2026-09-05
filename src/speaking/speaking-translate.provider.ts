@@ -42,7 +42,5 @@ export interface SpeakingTranslateResult {
 }
 
 export interface SpeakingTranslateProvider {
-  /** Which model produced it — logged for operational metadata, never the text itself. */
-  readonly model: string;
   translate(request: SpeakingTranslateRequest): Promise<SpeakingTranslateResult>;
 }
