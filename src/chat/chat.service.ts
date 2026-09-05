@@ -70,8 +70,12 @@ export class ChatService {
       // clientMessageId is not stuck behind its own abandoned claim.
       await this.idempotency.release(userId, clientMessageId);
       if (error instanceof EngyChatError) {
+        // Which model failed is already logged, per attempt, inside the
+        // provider itself (see gemini-fetch-with-fallback.ts) — a chain can
+        // try several models per request, so there is no single "the model"
+        // to name here.
         this.logger.warn(
-          `Engy reply failed (kind=${error.kind}, model=${this.provider.model}, userId=${userId})`,
+          `Engy reply failed (kind=${error.kind}, userId=${userId})`,
         );
         throw new ServiceUnavailableException('Engy is temporarily unavailable');
       }

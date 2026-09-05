@@ -103,7 +103,10 @@ class FakePronunciationFeedback implements PronunciationFeedbackProvider {
     if (FakePronunciationFeedback.failWith) {
       return Promise.reject(FakePronunciationFeedback.failWith);
     }
-    return Promise.resolve({ feedback: FakePronunciationFeedback.feedback });
+    return Promise.resolve({
+      feedback: FakePronunciationFeedback.feedback,
+      model: this.model,
+    });
   }
 }
 

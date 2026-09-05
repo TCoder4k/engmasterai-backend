@@ -55,16 +55,35 @@ describe('GeminiViTranslationProvider', () => {
     expect((init as RequestInit).headers).toMatchObject({ 'x-goog-api-key': 'secret-key' });
   });
 
-  it('uses gemini-3.6-flash by default, distinct from the other providers', () => {
-    const provider = new GeminiViTranslationProvider(config());
-    expect(provider.model).toBe('gemini-3.6-flash');
+  it('targets the default chain\'s first model when GEMINI_DICTIONARY_TRANSLATION_MODEL is unset', async () => {
+    const fetchSpy = jest
+      .spyOn(global, 'fetch')
+      .mockResolvedValue(answer({ translation: 'ok' }));
+    const provider = new GeminiViTranslationProvider(config({ GEMINI_API_KEY: 'k' }));
+
+    await provider.translate(request);
+
+    expect(String(fetchSpy.mock.calls[0][0])).toContain('gemini-3.8-flash');
   });
 
-  it('honours GEMINI_DICTIONARY_TRANSLATION_MODEL when set', () => {
+  it('falls through to the second configured model when the first returns 503', async () => {
+    const fetchSpy = jest
+      .spyOn(global, 'fetch')
+      .mockResolvedValueOnce({ ok: false, status: 503 } as unknown as Response)
+      .mockResolvedValueOnce(answer({ translation: 'Xin chào' }));
     const provider = new GeminiViTranslationProvider(
-      config({ GEMINI_DICTIONARY_TRANSLATION_MODEL: 'custom-model' }),
+      config({
+        GEMINI_API_KEY: 'k',
+        GEMINI_DICTIONARY_TRANSLATION_MODEL: 'model-a,model-b',
+      }),
     );
-    expect(provider.model).toBe('custom-model');
+
+    const result = await provider.translate(request);
+
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    expect(String(fetchSpy.mock.calls[0][0])).toContain('model-a');
+    expect(String(fetchSpy.mock.calls[1][0])).toContain('model-b');
+    expect(result.translation).toBe('Xin chào');
   });
 
   it('reports a missing key as NOT_CONFIGURED without calling anything', async () => {

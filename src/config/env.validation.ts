@@ -2,6 +2,7 @@ import * as Joi from 'joi';
 import { DEFAULT_REFRESH_TOKEN_TTL_SECONDS } from '../auth/refresh-token.constants';
 import { parseAllowedOrigins } from './cors-origins.util';
 import { isValidTrustProxyValue } from './trust-proxy.util';
+import { DEFAULT_GEMINI_MODEL_CHAIN } from '../shared/gemini-models';
 
 // Single source of truth for security-relevant environment variables
 // (Sprint 01C). Wired into `ConfigModule.forRoot({ validationSchema })` in
@@ -356,13 +357,18 @@ export const envValidationSchema = Joi.object({
   // hard dependency of the login page.
   GEMINI_API_KEY: Joi.string().allow('').optional(),
 
-  // gemini-3.6-flash, not gemini-2.5-flash (2026-09-04 incident — see
-  // GEMINI_ENGY_MODEL's comment below for the root cause). Verified this
-  // model still accepts audio inline_data the same way before switching:
-  // a real WAV sample sent with this exact request shape came back
-  // correctly transcribed, with usageMetadata reporting an AUDIO-modality
+  // A comma-separated fallback CHAIN, not a single model (2026-09-05): after
+  // the 2026-09-04 incident (gemini-2.5-flash fully retired, gemini-3.5's
+  // line intermittently 503ing under "high demand"), a single hardcoded
+  // model is still fragile to the next transient per-model capacity blip.
+  // Parsed and validated by each provider's constructor (parseGeminiModelList
+  // in shared/gemini-models.ts) — falls through to the next model on
+  // 429/503 only (shared/gemini-fetch-with-fallback.ts). Every model in the
+  // default chain was verified to accept audio inline_data the same way: a
+  // real WAV sample sent with this exact request shape came back correctly
+  // transcribed on each one, with usageMetadata reporting an AUDIO-modality
   // token count — not silently ignored as text.
-  GEMINI_STT_MODEL: Joi.string().default('gemini-3.6-flash'),
+  GEMINI_STT_MODEL: Joi.string().default(DEFAULT_GEMINI_MODEL_CHAIN),
 
   // Bounded, always. Without a ceiling a hung provider holds the student's
   // request, their browser and a server connection until something else gives
@@ -386,13 +392,13 @@ export const envValidationSchema = Joi.object({
 
   // Sprint 11 Phase 4C — AI pronunciation feedback.
   //
-  // Its own model variable, sharing GEMINI_API_KEY. Separate because the two
+  // Its own model chain, sharing GEMINI_API_KEY. Separate because the two
   // calls have different jobs: transcription wants the cheapest model that
   // hears accurately, coaching wants the one that writes usefully, and pinning
   // both to one name would force an operator to trade one against the other.
-  // gemini-3.6-flash, not gemini-2.5-flash — same 2026-09-04 audio
-  // compatibility verification as GEMINI_STT_MODEL above.
-  GEMINI_FEEDBACK_MODEL: Joi.string().default('gemini-3.6-flash'),
+  // Same fallback-chain mechanism and audio-compatibility verification as
+  // GEMINI_STT_MODEL above.
+  GEMINI_FEEDBACK_MODEL: Joi.string().default(DEFAULT_GEMINI_MODEL_CHAIN),
 
   SHADOWING_FEEDBACK_TIMEOUT_MS: Joi.number()
     .integer()
@@ -401,19 +407,13 @@ export const envValidationSchema = Joi.object({
     .default(25000),
 
   // Floating Dictionary, Phase A. Shares GEMINI_API_KEY; the translation
-  // model is deliberately its own variable (not reusing GEMINI_STT_MODEL/
-  // GEMINI_FEEDBACK_MODEL) for the same reason those two are separate from
-  // each other — different jobs should stay independently tunable.
-  // gemini-3.6-flash, not gemini-3.5-flash-lite (2026-09-04 incident):
-  // Google's 3.5 line started returning 503 "high demand" for this key —
-  // confirmed by curling generateContent directly for every model this
-  // provider could plausibly use — while 3.6-flash answered 200 every
-  // time; Google's own 404 body for the now-fully-retired gemini-2.5-flash
-  // explicitly names gemini-3.6-flash as the replacement. Text-only call
-  // (no inline_data/audio part here), so this swap needed no further
-  // compatibility check.
+  // model chain is deliberately its own variable (not reusing
+  // GEMINI_STT_MODEL/GEMINI_FEEDBACK_MODEL) for the same reason those two
+  // are separate from each other — different jobs should stay independently
+  // tunable. Same fallback-chain mechanism as GEMINI_STT_MODEL above; text-only
+  // call (no inline_data/audio part here).
   GEMINI_DICTIONARY_TRANSLATION_MODEL: Joi.string().default(
-    'gemini-3.6-flash',
+    DEFAULT_GEMINI_MODEL_CHAIN,
   ),
   DICTIONARY_TRANSLATION_TIMEOUT_MS: Joi.number()
     .integer()
@@ -434,15 +434,15 @@ export const envValidationSchema = Joi.object({
     .max(7776000)
     .default(2592000),
 
-  // Engy Chat, Phase B. Shares GEMINI_API_KEY; its own model variable for
+  // Engy Chat, Phase B. Shares GEMINI_API_KEY; its own model chain for
   // the same reason Dictionary's translation model is its own — a
   // conversational-prose job should stay independently tunable from
-  // translation/feedback/roadmap jobs. gemini-3.6-flash, not
-  // gemini-3.5-flash-lite (2026-09-04 incident — see
-  // GEMINI_DICTIONARY_TRANSLATION_MODEL's comment above for the full
-  // root-cause writeup: this is the SAME outage, reported live by a
-  // student unable to send an Engy message in production).
-  GEMINI_ENGY_MODEL: Joi.string().default('gemini-3.6-flash'),
+  // translation/feedback/roadmap jobs. See
+  // GEMINI_DICTIONARY_TRANSLATION_MODEL's comment above for the 2026-09-04
+  // outage that motivated the fallback-chain mechanism (this is the SAME
+  // outage, reported live by a student unable to send an Engy message in
+  // production).
+  GEMINI_ENGY_MODEL: Joi.string().default(DEFAULT_GEMINI_MODEL_CHAIN),
   CHAT_REPLY_TIMEOUT_MS: Joi.number().integer().min(1000).max(60000).default(20000),
   // Sliding TTL for a user's bounded Redis chat history (chat:session:<userId>)
   // — the plan's approved "~30 minutes" default. Also the TTL a committed
@@ -489,11 +489,10 @@ export const envValidationSchema = Joi.object({
   SPEAKING_SESSION_TTL_SECONDS: Joi.number().integer().min(60).max(7200).default(1800),
   // A THIRD, independent Speaking Gemini job — on-demand subtitle
   // translation (POST /speaking/translate), own token/provider/env vars,
-  // never folded into GEMINI_SPEAKING_MODEL's own call. gemini-3.6-flash,
-  // not gemini-3.5-flash-lite — same 2026-09-04 outage as
-  // GEMINI_ENGY_MODEL/GEMINI_DICTIONARY_TRANSLATION_MODEL above (see
-  // GEMINI_DICTIONARY_TRANSLATION_MODEL's comment for the root cause).
-  GEMINI_SPEAKING_TRANSLATE_MODEL: Joi.string().default('gemini-3.6-flash'),
+  // never folded into GEMINI_SPEAKING_MODEL's own call. Same fallback-chain
+  // mechanism as GEMINI_ENGY_MODEL/GEMINI_DICTIONARY_TRANSLATION_MODEL above
+  // (see GEMINI_DICTIONARY_TRANSLATION_MODEL's comment for the root cause).
+  GEMINI_SPEAKING_TRANSLATE_MODEL: Joi.string().default(DEFAULT_GEMINI_MODEL_CHAIN),
   SPEAKING_TRANSLATE_TIMEOUT_MS: Joi.number().integer().min(1000).max(60000).default(20000),
 })
   // Cloudinary/other unrelated vars are intentionally out of this sprint's

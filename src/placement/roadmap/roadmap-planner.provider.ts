@@ -60,6 +60,13 @@ export interface RoadmapPlanningResult {
   phases: RoadmapPlanningPhase[];
   /** Short, whole-plan rationale — see the file header. Persisted as Roadmap.aiSummary. */
   overallReason: string;
+  /**
+   * Which model actually produced this answer — a per-call fact, not a
+   * provider-wide constant, now that the underlying Gemini call falls
+   * through a model chain on 429/503. Stored on Roadmap.aiPlanningModel so
+   * old plans stay attributable.
+   */
+  model: string;
 }
 
 /**
@@ -83,7 +90,5 @@ export class RoadmapPlanningError extends Error {
 }
 
 export interface RoadmapPlannerProvider {
-  /** Which engine produced it. Stored on Roadmap.aiPlanningModel so old plans stay attributable. */
-  readonly model: string;
   plan(request: RoadmapPlanningRequest): Promise<RoadmapPlanningResult>;
 }

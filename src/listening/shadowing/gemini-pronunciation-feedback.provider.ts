@@ -7,6 +7,8 @@ import {
   PronunciationFeedbackResult,
 } from './pronunciation-feedback.provider';
 import { normaliseMimeForProvider } from './gemini-speech-to-text.provider';
+import { DEFAULT_GEMINI_MODEL_CHAIN, parseGeminiModelList } from '../../shared/gemini-models';
+import { fetchGeminiWithFallback, isGeminiTimeout } from '../../shared/gemini-fetch-with-fallback';
 
 // Sprint 11 Phase 4C — pronunciation coaching via the Gemini REST API.
 //
@@ -75,14 +77,18 @@ export class GeminiPronunciationFeedbackProvider
   implements PronunciationFeedbackProvider
 {
   private readonly logger = new Logger(GeminiPronunciationFeedbackProvider.name);
+  private readonly models: string[];
 
-  constructor(private readonly config: ConfigService) {}
-
-  get model(): string {
-    // gemini-3.6-flash — see env.validation.ts's GEMINI_FEEDBACK_MODEL
-    // comment (2026-09-04: gemini-2.5-flash was fully retired by Google;
-    // verified 3.6-flash still accepts audio inline_data before switching).
-    return this.config.get<string>('GEMINI_FEEDBACK_MODEL', 'gemini-3.6-flash');
+  constructor(private readonly config: ConfigService) {
+    // A chain, not a single model — see env.validation.ts's
+    // GEMINI_FEEDBACK_MODEL comment for the 2026-09-04 outage that
+    // motivated this. Falls through to the next model on 429/503 — see
+    // gemini-fetch-with-fallback.ts. Every model in the chain was verified
+    // to accept audio inline_data.
+    this.models = parseGeminiModelList(
+      this.config.get<string>('GEMINI_FEEDBACK_MODEL', DEFAULT_GEMINI_MODEL_CHAIN),
+      'GEMINI_FEEDBACK_MODEL',
+    );
   }
 
   async generate(
@@ -99,24 +105,21 @@ export class GeminiPronunciationFeedbackProvider
       );
     }
 
-    const model = this.model;
     const timeoutMs = this.config.get<number>(
       'SHADOWING_FEEDBACK_TIMEOUT_MS',
       25000,
     );
 
-    // A bounded wait, always. Without it a hung provider holds the request, the
-    // student's browser and a connection until something else gives up first.
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
-
     let response: Response;
+    let model: string;
     try {
-      response = await fetch(
-        `${GEMINI_ENDPOINT}/${encodeURIComponent(model)}:generateContent`,
-        {
+      ({ response, model } = await fetchGeminiWithFallback(
+        this.models,
+        timeoutMs,
+        (m) => `${GEMINI_ENDPOINT}/${encodeURIComponent(m)}:generateContent`,
+        (_m, signal) => ({
           method: 'POST',
-          signal: controller.signal,
+          signal,
           headers: {
             'Content-Type': 'application/json',
             // Header, not a query parameter: a key in a URL ends up in access
@@ -145,10 +148,12 @@ export class GeminiPronunciationFeedbackProvider
               maxOutputTokens: 512,
             },
           }),
-        },
-      );
+        }),
+        this.logger,
+        'shadowing-feedback',
+      ));
     } catch (caught) {
-      const aborted = caught instanceof Error && caught.name === 'AbortError';
+      const aborted = isGeminiTimeout(caught);
       // The audio is NOT logged, here or anywhere. Only the shape of the
       // failure is, because a student's voice must not end up in a log file.
       this.logger.warn(
@@ -158,8 +163,6 @@ export class GeminiPronunciationFeedbackProvider
         aborted ? 'TIMEOUT' : 'UNAVAILABLE',
         aborted ? 'AI feedback timed out' : 'AI feedback is unavailable',
       );
-    } finally {
-      clearTimeout(timer);
     }
 
     if (!response.ok) {
@@ -207,7 +210,7 @@ export class GeminiPronunciationFeedbackProvider
       );
     }
 
-    return { feedback: truncateFeedback(text) };
+    return { feedback: truncateFeedback(text), model };
   }
 }
 

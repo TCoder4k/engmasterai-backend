@@ -6,6 +6,12 @@ import {
   EngyChatRequest,
   EngyChatResult,
 } from './engy-chat.provider';
+import { DEFAULT_GEMINI_MODEL_CHAIN, parseGeminiModelList } from '../shared/gemini-models';
+import {
+  fetchGeminiWithFallback,
+  GeminiFetchError,
+  isGeminiTimeout,
+} from '../shared/gemini-fetch-with-fallback';
 
 // Phase B — Engy Chat via the Gemini REST API.
 //
@@ -80,17 +86,17 @@ interface GeminiResponseShape {
 @Injectable()
 export class GeminiEngyChatProvider implements EngyChatProvider {
   private readonly logger = new Logger(GeminiEngyChatProvider.name);
+  private readonly models: string[];
 
-  constructor(private readonly config: ConfigService) {}
-
-  get model(): string {
-    // gemini-3.6-flash, not gemini-3.5-flash-lite (2026-09-04 incident): a
-    // student reported "Couldn't send this message" in production; Google's
-    // 3.5 line was returning 503 "high demand" for every model this
-    // provider could plausibly use, confirmed by curling generateContent
-    // directly, while 3.6-flash answered 200 every time — see
-    // env.validation.ts's GEMINI_ENGY_MODEL comment for the full writeup.
-    return this.config.get<string>('GEMINI_ENGY_MODEL', 'gemini-3.6-flash');
+  constructor(private readonly config: ConfigService) {
+    // A chain, not a single model (2026-09-05): after the 2026-09-04 outage
+    // (see env.validation.ts's GEMINI_ENGY_MODEL comment), a single hardcoded
+    // model is still fragile to the next transient per-model capacity blip.
+    // Falls through to the next model on 429/503 — see gemini-fetch-with-fallback.ts.
+    this.models = parseGeminiModelList(
+      this.config.get<string>('GEMINI_ENGY_MODEL', DEFAULT_GEMINI_MODEL_CHAIN),
+      'GEMINI_ENGY_MODEL',
+    );
   }
 
   async reply(request: EngyChatRequest): Promise<EngyChatResult> {
@@ -102,11 +108,7 @@ export class GeminiEngyChatProvider implements EngyChatProvider {
       );
     }
 
-    const model = this.model;
     const timeoutMs = this.config.get<number>('CHAT_REPLY_TIMEOUT_MS', 20000);
-
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
 
     // The context block (if any) rides ONLY on the current turn's parts —
     // never folded into systemInstruction (which is persona, not
@@ -125,12 +127,15 @@ export class GeminiEngyChatProvider implements EngyChatProvider {
     ];
 
     let response: Response;
+    let model: string;
     try {
-      response = await fetch(
-        `${GEMINI_ENDPOINT}/${encodeURIComponent(model)}:generateContent`,
-        {
+      ({ response, model } = await fetchGeminiWithFallback(
+        this.models,
+        timeoutMs,
+        (m) => `${GEMINI_ENDPOINT}/${encodeURIComponent(m)}:generateContent`,
+        (_m, signal) => ({
           method: 'POST',
-          signal: controller.signal,
+          signal,
           headers: {
             'Content-Type': 'application/json',
             // Header, not a query parameter: a key in a URL ends up in
@@ -146,10 +151,13 @@ export class GeminiEngyChatProvider implements EngyChatProvider {
               maxOutputTokens: 700,
             },
           }),
-        },
-      );
+        }),
+        this.logger,
+        'engy-chat',
+      ));
     } catch (caught) {
-      const aborted = caught instanceof Error && caught.name === 'AbortError';
+      const model = caught instanceof GeminiFetchError ? caught.model : this.models[this.models.length - 1];
+      const aborted = isGeminiTimeout(caught);
       // Chat content is NEVER logged, here or anywhere — only the shape of
       // the failure is (docs/CLAUDE.md's logging policy for this feature).
       this.logger.warn(
@@ -159,8 +167,6 @@ export class GeminiEngyChatProvider implements EngyChatProvider {
         aborted ? 'TIMEOUT' : 'UNAVAILABLE',
         aborted ? 'Engy timed out' : 'Engy is unavailable',
       );
-    } finally {
-      clearTimeout(timer);
     }
 
     if (!response.ok) {

@@ -147,6 +147,34 @@ describe('GeminiPronunciationFeedbackProvider', () => {
     expect(String(fetchSpy.mock.calls[0][0])).not.toContain('transcribe-model');
   });
 
+  it('targets the default chain\'s first model when GEMINI_FEEDBACK_MODEL is unset', async () => {
+    const fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValue(answer('ok'));
+    const provider = new GeminiPronunciationFeedbackProvider(
+      config({ GEMINI_API_KEY: 'k' }),
+    );
+
+    await provider.generate(feedbackRequest);
+
+    expect(String(fetchSpy.mock.calls[0][0])).toContain('gemini-3.8-flash');
+  });
+
+  it('falls through to the second configured model when the first returns 503', async () => {
+    const fetchSpy = jest
+      .spyOn(global, 'fetch')
+      .mockResolvedValueOnce({ ok: false, status: 503 } as unknown as Response)
+      .mockResolvedValueOnce(answer('Chú ý âm cuối.'));
+    const provider = new GeminiPronunciationFeedbackProvider(
+      config({ GEMINI_API_KEY: 'k', GEMINI_FEEDBACK_MODEL: 'model-a,model-b' }),
+    );
+
+    const result = await provider.generate(feedbackRequest);
+
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    expect(String(fetchSpy.mock.calls[0][0])).toContain('model-a');
+    expect(String(fetchSpy.mock.calls[1][0])).toContain('model-b');
+    expect(result.feedback).toBe('Chú ý âm cuối.');
+  });
+
   // A missing key is not an outage. Telling an operator "the service is
   // unavailable" for a config value sends them to look at the wrong thing.
   it('reports a missing key as NOT_CONFIGURED without calling anything', async () => {

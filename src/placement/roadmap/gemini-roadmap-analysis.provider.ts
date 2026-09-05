@@ -7,6 +7,11 @@ import {
   RoadmapAnalysisRequest,
   RoadmapAnalysisResult,
 } from './roadmap-analysis.provider';
+import { DEFAULT_GEMINI_MODEL_CHAIN, parseGeminiModelList } from '../../shared/gemini-models';
+import {
+  fetchGeminiWithFallback,
+  isGeminiTimeout,
+} from '../../shared/gemini-fetch-with-fallback';
 
 // Phase 6 — roadmap narration via the Gemini REST API.
 //
@@ -95,19 +100,19 @@ interface GeminiResponseShape {
 @Injectable()
 export class GeminiRoadmapAnalysisProvider implements RoadmapAnalysisProvider {
   private readonly logger = new Logger(GeminiRoadmapAnalysisProvider.name);
+  private readonly models: string[];
 
-  constructor(private readonly config: ConfigService) {}
-
-  get model(): string {
-    // gemini-3.6-flash, not gemini-2.5-flash (2026-09-04): Google fully
-    // retired gemini-2.5-flash — it now 404s with "no longer available to
-    // new users... use models/gemini-3.6-flash" — discovered while
-    // investigating a production Engy Chat outage that turned out to share
-    // a root cause across several Gemini-backed features (see
-    // env.validation.ts's GEMINI_ENGY_MODEL comment). Text-only call (no
-    // inline_data/audio part — see file header), so this swap needed no
-    // further compatibility check.
-    return this.config.get<string>('GEMINI_ROADMAP_MODEL', 'gemini-3.6-flash');
+  constructor(private readonly config: ConfigService) {
+    // A chain, not a single model — see env.validation.ts's
+    // GEMINI_ENGY_MODEL comment for the 2026-09-04 outage that motivated
+    // this. No Joi entry for this key (nothing calls this deprecated
+    // endpoint in the live flow — see .env's own comment), so the chain
+    // constant IS the live default. Falls through to the next model on
+    // 429/503 — see gemini-fetch-with-fallback.ts.
+    this.models = parseGeminiModelList(
+      this.config.get<string>('GEMINI_ROADMAP_MODEL', DEFAULT_GEMINI_MODEL_CHAIN),
+      'GEMINI_ROADMAP_MODEL',
+    );
   }
 
   async generate(
@@ -124,25 +129,21 @@ export class GeminiRoadmapAnalysisProvider implements RoadmapAnalysisProvider {
       );
     }
 
-    const model = this.model;
     const timeoutMs = this.config.get<number>(
       'PLACEMENT_ANALYSIS_TIMEOUT_MS',
       20000,
     );
 
-    // A bounded wait, always. Without it a hung provider holds the request
-    // (and, via the guard's rate-limit bucket, the student's remaining
-    // budget for this feature) until something else gives up first.
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
-
     let response: Response;
+    let model: string;
     try {
-      response = await fetch(
-        `${GEMINI_ENDPOINT}/${encodeURIComponent(model)}:generateContent`,
-        {
+      ({ response, model } = await fetchGeminiWithFallback(
+        this.models,
+        timeoutMs,
+        (m) => `${GEMINI_ENDPOINT}/${encodeURIComponent(m)}:generateContent`,
+        (_m, signal) => ({
           method: 'POST',
-          signal: controller.signal,
+          signal,
           headers: {
             'Content-Type': 'application/json',
             // Header, not a query parameter: a key in a URL ends up in access
@@ -164,10 +165,12 @@ export class GeminiRoadmapAnalysisProvider implements RoadmapAnalysisProvider {
               maxOutputTokens: 400,
             },
           }),
-        },
-      );
+        }),
+        this.logger,
+        'roadmap-analysis',
+      ));
     } catch (caught) {
-      const aborted = caught instanceof Error && caught.name === 'AbortError';
+      const aborted = isGeminiTimeout(caught);
       this.logger.warn(
         `Gemini roadmap analysis ${aborted ? 'timed out' : 'failed'} after ${timeoutMs}ms`,
       );
@@ -177,8 +180,6 @@ export class GeminiRoadmapAnalysisProvider implements RoadmapAnalysisProvider {
           ? 'AI roadmap analysis timed out'
           : 'AI roadmap analysis is unavailable',
       );
-    } finally {
-      clearTimeout(timer);
     }
 
     if (!response.ok) {
@@ -226,7 +227,7 @@ export class GeminiRoadmapAnalysisProvider implements RoadmapAnalysisProvider {
       );
     }
 
-    return { summary: truncateSummary(text) };
+    return { summary: truncateSummary(text), model };
   }
 }
 

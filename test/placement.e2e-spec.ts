@@ -51,7 +51,10 @@ class FakeRoadmapAnalysis implements RoadmapAnalysisProvider {
     if (FakeRoadmapAnalysis.failWith) {
       return Promise.reject(FakeRoadmapAnalysis.failWith);
     }
-    return Promise.resolve({ summary: FakeRoadmapAnalysis.summary });
+    return Promise.resolve({
+      summary: FakeRoadmapAnalysis.summary,
+      model: this.model,
+    });
   }
 }
 
@@ -99,6 +102,7 @@ class FakeRoadmapPlanner implements RoadmapPlannerProvider {
       return Promise.resolve({
         phases: [{ ...FakeRoadmapPlanner.forceInvalidPlan, reason: 'Hallucinated for this test.' }],
         overallReason: FakeRoadmapPlanner.overallReason,
+        model: this.model,
       });
     }
 
@@ -125,7 +129,11 @@ class FakeRoadmapPlanner implements RoadmapPlannerProvider {
         reason: 'AI-selected for this test.',
       };
     });
-    return Promise.resolve({ phases, overallReason: FakeRoadmapPlanner.overallReason });
+    return Promise.resolve({
+      phases,
+      overallReason: FakeRoadmapPlanner.overallReason,
+      model: this.model,
+    });
   }
 }
 
