@@ -145,7 +145,14 @@ export class GeminiPronunciationFeedbackProvider
             generationConfig: {
               // Low, not zero — see the file header.
               temperature: 0.3,
-              maxOutputTokens: 512,
+              // Generous, not tight (2026-09-05 incident): the 3.x model
+              // chain "thinks" before answering, and thinking tokens are
+              // billed against this SAME cap — a tight cap can silently
+              // truncate mid-sentence well before truncateFeedback's own
+              // 900-char ceiling ever gets a chance to apply. This is
+              // headroom for the reasoning step, not a raised feedback-
+              // length target.
+              maxOutputTokens: 2048,
             },
           }),
         }),
@@ -191,6 +198,14 @@ export class GeminiPronunciationFeedbackProvider
         'UNSUPPORTED_AUDIO',
         'The recording could not be processed',
       );
+    }
+
+    // Feedback cut off mid-sentence reads as broken, not as shorter advice —
+    // reported as UNAVAILABLE so the standard retry copy applies, same as an
+    // empty answer below.
+    if (payload.candidates?.[0]?.finishReason === 'MAX_TOKENS') {
+      this.logger.warn('Gemini feedback was cut off at the token limit');
+      throw new PronunciationFeedbackError('UNAVAILABLE', 'AI feedback was cut off');
     }
 
     const text = payload.candidates?.[0]?.content?.parts

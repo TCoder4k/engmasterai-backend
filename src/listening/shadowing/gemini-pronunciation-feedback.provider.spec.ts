@@ -211,6 +211,25 @@ describe('GeminiPronunciationFeedbackProvider', () => {
     );
   });
 
+  // 2026-09-05 production bug: the 3.x model chain spends part of
+  // maxOutputTokens on invisible "thinking" before answering, and a tight
+  // cap cut a real Gemini answer down to a couple of words. Feedback cut
+  // off mid-sentence must fail loudly, never be shown as if complete.
+  it('reports feedback cut off at the token limit as UNAVAILABLE', async () => {
+    jest.spyOn(global, 'fetch').mockResolvedValue(
+      okResponse({
+        candidates: [{ content: { parts: [{ text: 'Chú ý' }] }, finishReason: 'MAX_TOKENS' }],
+      }),
+    );
+    const provider = new GeminiPronunciationFeedbackProvider(
+      config({ GEMINI_API_KEY: 'k' }),
+    );
+
+    await expect(provider.generate(feedbackRequest)).rejects.toMatchObject({
+      kind: 'UNAVAILABLE',
+    });
+  });
+
   it('reads a 400 as audio it cannot decode, and a 500 as an outage', async () => {
     const provider = new GeminiPronunciationFeedbackProvider(
       config({ GEMINI_API_KEY: 'k' }),

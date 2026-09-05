@@ -148,7 +148,14 @@ export class GeminiEngyChatProvider implements EngyChatProvider {
             generationConfig: {
               // Low, not zero — see the file header.
               temperature: 0.4,
-              maxOutputTokens: 700,
+              // Generous, not tight (2026-09-05 incident): the 3.x model
+              // chain "thinks" before answering, and thinking tokens are
+              // billed against this SAME cap — a tight cap can silently
+              // truncate mid-sentence well before truncateEngyReply's own
+              // 1000-char ceiling ever gets a chance to apply. This is
+              // headroom for the reasoning step, not a raised reply-length
+              // target.
+              maxOutputTokens: 2048,
             },
           }),
         }),
@@ -186,6 +193,14 @@ export class GeminiEngyChatProvider implements EngyChatProvider {
         `Gemini blocked an Engy chat request: ${payload.promptFeedback.blockReason}`,
       );
       throw new EngyChatError('BLOCKED', 'The message could not be processed');
+    }
+
+    // A reply cut off mid-sentence reads as broken, not as a shorter answer
+    // — reported as UNAVAILABLE so the standard retry copy applies, same as
+    // an empty answer below.
+    if (payload.candidates?.[0]?.finishReason === 'MAX_TOKENS') {
+      this.logger.warn('Engy chat reply was cut off at the token limit');
+      throw new EngyChatError('UNAVAILABLE', 'Engy reply was cut off');
     }
 
     const text = payload.candidates?.[0]?.content?.parts

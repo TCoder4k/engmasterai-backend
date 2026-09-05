@@ -164,6 +164,19 @@ describe('GeminiEngyChatProvider', () => {
     await expect(provider.reply(request)).rejects.toMatchObject({ kind: 'UNAVAILABLE' });
   });
 
+  it('reports a reply cut off at the token limit as UNAVAILABLE, never a truncated reply', async () => {
+    jest.spyOn(global, 'fetch').mockResolvedValue(
+      okResponse({
+        candidates: [
+          { content: { parts: [{ text: 'She resign' }] }, finishReason: 'MAX_TOKENS' },
+        ],
+      }),
+    );
+    const provider = new GeminiEngyChatProvider(config({ GEMINI_API_KEY: 'k' }));
+
+    await expect(provider.reply(request)).rejects.toMatchObject({ kind: 'UNAVAILABLE' });
+  });
+
   it('reports a safety block as BLOCKED', async () => {
     jest
       .spyOn(global, 'fetch')
