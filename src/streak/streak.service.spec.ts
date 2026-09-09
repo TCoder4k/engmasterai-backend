@@ -309,11 +309,22 @@ const matchInvitationWhere = (inv: FakeInvitation, where: Record<string, unknown
     const gte = (where.respondedAt as { gte: Date }).gte;
     if (!inv.respondedAt || inv.respondedAt.getTime() < gte.getTime()) return false;
   }
+  if (where.expiresAt) {
+    const gt = (where.expiresAt as { gt: Date }).gt;
+    if (inv.expiresAt.getTime() <= gt.getTime()) return false;
+  }
   if (where.inviterId && inv.inviterId !== where.inviterId) return false;
   if (where.inviteeId && inv.inviteeId !== where.inviteeId) return false;
   if (where.OR) {
     const or = where.OR as Record<string, unknown>[];
-    return or.some((clause) => matchInvitationWhere(inv, { ...clause, status: where.status, respondedAt: where.respondedAt }));
+    return or.some((clause) =>
+      matchInvitationWhere(inv, {
+        ...clause,
+        status: where.status,
+        respondedAt: where.respondedAt,
+        expiresAt: where.expiresAt,
+      }),
+    );
   }
   return true;
 };
@@ -370,6 +381,23 @@ describe('StreakService — invitations', () => {
     const invite = await service.sendInvitation(a.id, b.id);
     await service.declineInvitation(b.id, invite.id);
     await expect(service.sendInvitation(a.id, b.id)).rejects.toThrow();
+  });
+
+  // Confirmed production bug (2026-09-09): expiry is checked lazily
+  // (INVITATION_TTL_MS's own comment) — an unanswered invitation stays
+  // status: PENDING forever once its TTL passes, nothing ever flips it. The
+  // pre-check here used to filter on status alone, so a genuinely stale
+  // invitation blocked the ORIGINAL SENDER from ever re-inviting the same
+  // person again, with a false "already exists" 409 — even though
+  // acceptInvitation would immediately 410 that same stale row.
+  it('allows re-inviting once the previous PENDING invitation has expired', async () => {
+    const { service, store } = buildHarness();
+    const a = store.addUser();
+    const b = store.addUser();
+    const invite = await service.sendInvitation(a.id, b.id);
+    store.invitations.find((inv) => inv.id === invite.id)!.expiresAt = new Date(Date.now() - 1);
+
+    await expect(service.sendInvitation(a.id, b.id)).resolves.toBeDefined();
   });
 
   it('a second accept attempt on the same invitation is rejected (race guard)', async () => {
@@ -461,6 +489,26 @@ describe('StreakService — getPairStatus', () => {
 
     await service.acceptInvitation(b.id, invite.id);
     expect((await service.getPairStatus(a.id, b.id)).relationship).toBe('active');
+  });
+
+  // Confirmed production bug (2026-09-09, reported with a real 410 Gone
+  // network trace): status: PENDING alone does not mean "still actionable"
+  // — expiry is checked lazily and never flips this column (see
+  // INVITATION_TTL_MS's comment). Before this fix, a stale invitation still
+  // reported pending_sent/pending_received here, so the Community Chat
+  // profile popover kept showing live Accept/Decline buttons for an
+  // invitation acceptInvitation would immediately 410 — a dead-end loop for
+  // the invitee, with no way for the inviter to send a fresh one either
+  // (see the sendInvitation test above).
+  it('reports none (not pending) for an invitation that is stale — PENDING in status but past its expiresAt', async () => {
+    const { service, store } = buildHarness();
+    const a = store.addUser();
+    const b = store.addUser();
+    const invite = await service.sendInvitation(a.id, b.id);
+    store.invitations.find((inv) => inv.id === invite.id)!.expiresAt = new Date(Date.now() - 1);
+
+    expect((await service.getPairStatus(a.id, b.id)).relationship).toBe('none');
+    expect((await service.getPairStatus(b.id, a.id)).relationship).toBe('none');
   });
 });
 

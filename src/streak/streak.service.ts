@@ -128,7 +128,13 @@ export class StreakService {
     const pairFilter = [{ inviterId: userId, inviteeId }, { inviterId: inviteeId, inviteeId: userId }];
     const [existingPending, recentDecline] = await Promise.all([
       this.prisma.streakInvitation.findFirst({
-        where: { status: StreakInvitationStatus.PENDING, OR: pairFilter },
+        // expiresAt matters here, not just status: PENDING alone. Expiry is
+        // checked lazily (see INVITATION_TTL_MS's own comment above) — an
+        // unanswered invitation past its TTL stays status: PENDING forever,
+        // nothing ever flips it. Without this, a stale invitation blocks
+        // re-inviting the same person indefinitely with a false "already
+        // exists" conflict, even though acceptInvitation would 410 it.
+        where: { status: StreakInvitationStatus.PENDING, expiresAt: { gt: new Date() }, OR: pairFilter },
       }),
       this.prisma.streakInvitation.findFirst({
         where: {
@@ -373,8 +379,17 @@ export class StreakService {
     }
 
     const invitation = await this.prisma.streakInvitation.findFirst({
+      // expiresAt: { gt: now } — same reasoning as sendInvitation's own
+      // existingPending check above (and the same bug class): status:
+      // PENDING alone does not mean "still actionable", since expiry is
+      // checked lazily and never flips this column. Without this filter, an
+      // invitation stale by days still reports pending_sent/pending_received
+      // here, showing live Accept/Decline buttons for something
+      // acceptInvitation will immediately 410 — a confirmed production bug
+      // (2026-09-09).
       where: {
         status: StreakInvitationStatus.PENDING,
+        expiresAt: { gt: new Date() },
         OR: [{ inviterId: userId, inviteeId: otherUserId }, { inviterId: otherUserId, inviteeId: userId }],
       },
       include: { inviter: { select: SAFE_PARTNER_SELECT }, invitee: { select: SAFE_PARTNER_SELECT } },
