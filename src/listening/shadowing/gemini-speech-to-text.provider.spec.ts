@@ -116,7 +116,7 @@ describe('GeminiSpeechToTextProvider', () => {
 
     await provider.transcribe(audioRequest);
 
-    expect(String(fetchSpy.mock.calls[0][0])).toContain('gemini-3.8-flash');
+    expect(String(fetchSpy.mock.calls[0][0])).toContain('gemini-3.5-flash');
   });
 
   it('falls through to the second configured model when the first returns 503', async () => {

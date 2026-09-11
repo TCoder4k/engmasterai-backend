@@ -25,18 +25,41 @@ export const isGeminiTimeout = (caught: unknown): boolean =>
 const RETRYABLE_STATUSES = new Set([429, 503]);
 
 /**
- * Tries each model in order. Falls through to the next model ONLY on HTTP
- * 429 or 503 — the "this specific model has no capacity right now" signal.
- * Any other response (400, a blocked-content 200, etc.) is returned
- * immediately, even if models remain — those would fail identically on any
- * model. A thrown error (network failure, or AbortError on timeout) is NOT
- * retried across models either — it propagates immediately as a
- * GeminiFetchError, so a genuine timeout fails as fast as it does today
- * instead of multiplying the wait by every model in the chain.
+ * Tries each model in order. Falls through to the next model on HTTP 429 or
+ * 503 (the "this specific model has no capacity right now" signal), AND on
+ * a per-model TIMEOUT (AbortError) — added 2026-09-09 after a confirmed
+ * production incident: `gemini-3.8-flash` (front of the default chain)
+ * simply stopped responding at all (no error status, a genuine hang past
+ * the configured timeout) while `gemini-3.5-flash` (back of the same chain)
+ * answered normally in ~9s — measured directly against the real API with
+ * the exact production request shape. The ORIGINAL design (see git history)
+ * deliberately did NOT retry a timeout across models, reasoning that a
+ * genuine per-model hang would "multiply the wait by every model in the
+ * chain" — correct as a description of the cost, but it means a single
+ * hung model at the front of the chain now fails 100% of requests outright,
+ * even when every other model in the chain is healthy. Revisited: a bounded
+ * multiplied wait (worst case timeoutMs × models.length, e.g. 20s × 4 = 80s
+ * if EVERY model is simultaneously down) is a better failure mode than an
+ * unconditional, guaranteed failure whenever only the front model is
+ * affected — which is exactly the scenario observed. `timeoutMs` itself is
+ * unchanged (still each individual attempt's own budget, comfortably above
+ * the ~9s a real answer took in the incident's own measurement) — only the
+ * catch branch's behavior changed.
+ *
+ * A THROWN NETWORK ERROR (DNS failure, connection refused — anything that
+ * is not an AbortError) still propagates immediately, unretried, exactly as
+ * before: that class of failure usually indicates a broader connectivity
+ * problem this process cannot fix by trying a different model name against
+ * the same unreachable host.
+ *
+ * Any non-retryable HTTP response (400, a blocked-content 200, etc.) is
+ * still returned immediately, even if models remain — those fail
+ * identically on any model.
  *
  * Every fallback hop and a fully-exhausted chain are logged in a structured,
  * greppable line for production observability:
  *   `Gemini fallback from=<model> to=<next> status=<code> provider=<name>`
+ *   `Gemini fallback (timeout) from=<model> to=<next> provider=<name>`
  *   `Gemini fallback exhausted model=<last> status=<code> provider=<name>`
  */
 export async function fetchGeminiWithFallback(
@@ -49,12 +72,12 @@ export async function fetchGeminiWithFallback(
 ): Promise<GeminiFallbackResult> {
   for (let i = 0; i < models.length; i++) {
     const model = models[i];
+    const isLast = i === models.length - 1;
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
       const response = await fetch(endpoint(model), buildInit(model, controller.signal));
       if (RETRYABLE_STATUSES.has(response.status)) {
-        const isLast = i === models.length - 1;
         if (!isLast) {
           logger.warn(
             `Gemini fallback from=${model} to=${models[i + 1]} status=${response.status} provider=${providerName}`,
@@ -67,6 +90,11 @@ export async function fetchGeminiWithFallback(
       }
       return { response, model };
     } catch (caught) {
+      const aborted = caught instanceof Error && caught.name === 'AbortError';
+      if (aborted && !isLast) {
+        logger.warn(`Gemini fallback (timeout) from=${model} to=${models[i + 1]} provider=${providerName}`);
+        continue;
+      }
       throw new GeminiFetchError(model, caught);
     } finally {
       clearTimeout(timer);

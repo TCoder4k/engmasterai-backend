@@ -130,6 +130,77 @@ describe('fetchGeminiWithFallback', () => {
     expect(fetchSpy).toHaveBeenCalledTimes(1);
   });
 
+  // Regression test for the confirmed 2026-09-09 production incident:
+  // gemini-3.8-flash (front of the default chain) hung with no response at
+  // all while gemini-3.5-flash (back of the chain) answered normally —
+  // measured directly against the real API. Before this fix, a timeout on
+  // a non-last model propagated immediately instead of trying the next one.
+  it('falls through to the next model on a TIMEOUT (AbortError), not just 429/503', async () => {
+    const abort = new Error('aborted');
+    abort.name = 'AbortError';
+    const fetchSpy = jest
+      .spyOn(global, 'fetch')
+      .mockRejectedValueOnce(abort)
+      .mockResolvedValueOnce(okResponse(200));
+
+    const result = await fetchGeminiWithFallback(
+      ['model-a', 'model-b'],
+      1000,
+      endpoint,
+      buildInit,
+      silentLogger,
+      'test-provider',
+    );
+
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    expect(result.model).toBe('model-b');
+    expect(result.response.status).toBe(200);
+    expect(silentLogger.warn).toHaveBeenCalledWith(
+      expect.stringContaining('Gemini fallback (timeout) from=model-a to=model-b'),
+    );
+  });
+
+  it('a TIMEOUT on the LAST model still propagates as GeminiFetchError — nothing left to fall through to', async () => {
+    const abort = new Error('aborted');
+    abort.name = 'AbortError';
+    jest.spyOn(global, 'fetch').mockRejectedValueOnce(abort);
+
+    const promise = fetchGeminiWithFallback(
+      ['model-a'],
+      1000,
+      endpoint,
+      buildInit,
+      silentLogger,
+      'test-provider',
+    );
+
+    await expect(promise).rejects.toBeInstanceOf(GeminiFetchError);
+    await expect(promise).rejects.toMatchObject({ model: 'model-a' });
+  });
+
+  it('multi-hop: TIMEOUT -> 503 -> 200 — a hang and a capacity error both fall through in the same chain', async () => {
+    const abort = new Error('aborted');
+    abort.name = 'AbortError';
+    const fetchSpy = jest
+      .spyOn(global, 'fetch')
+      .mockRejectedValueOnce(abort)
+      .mockResolvedValueOnce(okResponse(503))
+      .mockResolvedValueOnce(okResponse(200));
+
+    const result = await fetchGeminiWithFallback(
+      ['model-a', 'model-b', 'model-c'],
+      1000,
+      endpoint,
+      buildInit,
+      silentLogger,
+      'test-provider',
+    );
+
+    expect(fetchSpy).toHaveBeenCalledTimes(3);
+    expect(result.model).toBe('model-c');
+    expect(result.response.status).toBe(200);
+  });
+
   it('isGeminiTimeout recognizes an AbortError wrapped in GeminiFetchError', async () => {
     const abort = new Error('aborted');
     abort.name = 'AbortError';

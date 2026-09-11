@@ -65,7 +65,41 @@ describe('GeminiSpeakingTranslateProvider', () => {
 
     await provider.translate(request);
 
-    expect(String(fetchSpy.mock.calls[0][0])).toContain('gemini-3.8-flash');
+    expect(String(fetchSpy.mock.calls[0][0])).toContain('gemini-3.5-flash');
+  });
+
+  // 2026-09-12: a one-sentence subtitle never needs reasoning, but the 3.x
+  // chain "thinks" before answering by default (measured ~9s for a single
+  // short sentence). Disabling it cuts that to ~2s — confirmed directly
+  // against the real API — but ONLY on models proven to accept the param;
+  // gemini-3.6-flash rejects it with a hard 400, which would break the
+  // fallback chain outright (400 is non-retryable by design).
+  it('disables thinking on models confirmed to support it, for a faster subtitle translation', async () => {
+    const fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValue(answer('ok'));
+    const provider = new GeminiSpeakingTranslateProvider(
+      config({ GEMINI_API_KEY: 'k', GEMINI_SPEAKING_TRANSLATE_MODEL: 'gemini-3.5-flash' }),
+    );
+
+    await provider.translate(request);
+
+    const body = JSON.parse((fetchSpy.mock.calls[0][1] as RequestInit).body as string) as {
+      generationConfig: { thinkingConfig?: { thinkingBudget: number } };
+    };
+    expect(body.generationConfig.thinkingConfig).toEqual({ thinkingBudget: 0 });
+  });
+
+  it('leaves thinking on (no thinkingConfig sent) for a model not confirmed to support disabling it', async () => {
+    const fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValue(answer('ok'));
+    const provider = new GeminiSpeakingTranslateProvider(
+      config({ GEMINI_API_KEY: 'k', GEMINI_SPEAKING_TRANSLATE_MODEL: 'gemini-3.6-flash' }),
+    );
+
+    await provider.translate(request);
+
+    const body = JSON.parse((fetchSpy.mock.calls[0][1] as RequestInit).body as string) as {
+      generationConfig: { thinkingConfig?: { thinkingBudget: number } };
+    };
+    expect(body.generationConfig.thinkingConfig).toBeUndefined();
   });
 
   it('falls through to the second configured model when the first returns 503', async () => {

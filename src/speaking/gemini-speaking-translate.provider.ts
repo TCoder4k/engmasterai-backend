@@ -18,6 +18,19 @@ import { fetchGeminiWithFallback, isGeminiTimeout } from '../shared/gemini-fetch
 
 const GEMINI_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models';
 
+// 2026-09-12: a one-sentence subtitle translation needs no reasoning, but the
+// 3.x chain "thinks" before answering by default anyway — measured at ~9s for
+// a single short sentence even on a healthy model (see gemini-models.ts).
+// `thinkingConfig.thinkingBudget: 0` disables that, confirmed directly against
+// the real API with this exact request shape: gemini-3.5-flash/gemini-3.7-flash
+// accept it (verified again today, ~2s, thoughtsTokenCount: 0), gemini-3.6-flash
+// still rejects it with a hard 400 INVALID_ARGUMENT (consistent with the
+// 2026-09-05 finding), and gemini-3.8-flash was unreachable at test time (the
+// same hang from the 2026-09-09 incident, unrelated to this param). Applied
+// ONLY to models confirmed safe — an unlisted model just keeps the slower
+// default "thinking" behavior instead of risking a chain-breaking 400.
+const THINKING_BUDGET_ZERO_SUPPORTED = new Set(['gemini-3.5-flash', 'gemini-3.7-flash']);
+
 const TRANSLATE_SYSTEM_INSTRUCTION = [
   'You are a translation engine, not a conversational assistant.',
   'Translate the English sentence you are given into natural, conversational Vietnamese, the way a fluent bilingual speaker would say it out loud.',
@@ -65,7 +78,7 @@ export class GeminiSpeakingTranslateProvider implements SpeakingTranslateProvide
         this.models,
         timeoutMs,
         (m) => `${GEMINI_ENDPOINT}/${encodeURIComponent(m)}:generateContent`,
-        (_m, signal) => ({
+        (m, signal) => ({
           method: 'POST',
           signal,
           headers: {
@@ -88,8 +101,12 @@ export class GeminiSpeakingTranslateProvider implements SpeakingTranslateProvide
               // because ~190 of a 200-token budget went to invisible
               // reasoning. A short spoken subtitle never needs anywhere
               // near 1024 tokens of actual output; this is headroom for
-              // the reasoning step, not an expectation of long replies.
+              // the reasoning step on models where thinking stays on, not
+              // an expectation of long replies.
               maxOutputTokens: 1024,
+              ...(THINKING_BUDGET_ZERO_SUPPORTED.has(m)
+                ? { thinkingConfig: { thinkingBudget: 0 } }
+                : {}),
             },
           }),
         }),
