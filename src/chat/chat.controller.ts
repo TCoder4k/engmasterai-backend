@@ -95,6 +95,16 @@ export class ChatController {
       // the response — buffering would defeat the whole point of streaming.
       'X-Accel-Buffering': 'no',
     });
+    // Node does NOT actually put the header block on the wire when
+    // `writeHead()` is called — it only queues it, to be sent together with
+    // the FIRST `res.write()`. Without this explicit flush, the frontend's
+    // `fetch()` promise (which resolves once headers are received) would
+    // stay pending until Gemini produces its first token, silently eating
+    // into `fetchWithTimeout`'s 15s client-side budget on every slow reply
+    // and intermittently failing fast ones for no visible reason. Flushing
+    // here makes header delivery instant and independent of Gemini's speed,
+    // matching chatService.ts's documented assumption.
+    res.flushHeaders();
 
     if (prepared.kind === 'replay') {
       res.write(sseFrame('done', prepared.result));

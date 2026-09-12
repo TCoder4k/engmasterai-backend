@@ -4,6 +4,7 @@ import { WsAdapter } from '@nestjs/platform-ws';
 import request from 'supertest';
 import type { App } from 'supertest/types';
 import { randomUUID } from 'crypto';
+import * as http from 'http';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 import {
@@ -37,6 +38,18 @@ class FakeEngyChat implements EngyChatProvider {
    * times out loudly — a much stronger proof than asserting on a mock call.
    */
   static hangUntilAborted = false;
+  /**
+   * 2026-09-12 regression (real production report) — simulates Gemini
+   * taking a while to produce its first token. See the 'flushes SSE
+   * response headers immediately' test below: without an explicit
+   * `res.flushHeaders()` right after `res.writeHead()` in
+   * chat.controller.ts, Node does not put the header block on the wire
+   * until the FIRST `res.write()`, so the client's headers arrive only
+   * after this delay — silently eating into the frontend's 15s
+   * `fetchWithTimeout` budget and causing exactly the intermittent
+   * "Không thể gửi tin nhắn" failures a real user hit.
+   */
+  static delayBeforeFirstDeltaMs = 0;
 
   static reset(): void {
     FakeEngyChat.reply = 'This is a fake Engy reply.';
@@ -44,9 +57,10 @@ class FakeEngyChat implements EngyChatProvider {
     FakeEngyChat.seenRequests = [];
     FakeEngyChat.callCount = 0;
     FakeEngyChat.hangUntilAborted = false;
+    FakeEngyChat.delayBeforeFirstDeltaMs = 0;
   }
 
-  reply(req: EngyChatRequest, onDelta: (text: string) => void, signal?: AbortSignal) {
+  async reply(req: EngyChatRequest, onDelta: (text: string) => void, signal?: AbortSignal) {
     FakeEngyChat.callCount += 1;
     FakeEngyChat.seenRequests.push(req);
     if (FakeEngyChat.failWith) {
@@ -57,6 +71,9 @@ class FakeEngyChat implements EngyChatProvider {
       return new Promise<never>((_resolve, reject) => {
         signal?.addEventListener('abort', () => reject(new Error('aborted')));
       });
+    }
+    if (FakeEngyChat.delayBeforeFirstDeltaMs > 0) {
+      await new Promise((resolve) => setTimeout(resolve, FakeEngyChat.delayBeforeFirstDeltaMs));
     }
     // Split into two deltas (not one big chunk) so the SSE tests below
     // exercise the controller's real delta-forwarding path, not just the
@@ -302,6 +319,62 @@ describe('Engy Chat (e2e)', () => {
         context: null,
       });
     });
+
+    it(
+      "flushes SSE response headers immediately, without waiting for the provider's first token " +
+        '(regression: res.writeHead() alone does not put headers on the wire in Node — chat.controller.ts must call res.flushHeaders() right after)',
+      async () => {
+        const { token } = await registerStudent('flush-headers');
+        FakeEngyChat.delayBeforeFirstDeltaMs = 800;
+
+        // supertest keeps app.getHttpServer() listening across the whole
+        // file, but this test may run before any other request has forced
+        // that — handle both. Raw `http.request` (not supertest) is
+        // required here because supertest/superagent only resolves once the
+        // ENTIRE response has been read, which would hide exactly the bug
+        // this test exists to catch.
+        const server = app.getHttpServer();
+        await new Promise<void>((resolve) => {
+          if (server.address()) return resolve();
+          server.listen(0, resolve);
+        });
+        const { port } = server.address() as { port: number };
+
+        const body = JSON.stringify({ clientMessageId: randomUUID(), message: 'hello' });
+        const start = Date.now();
+        const headersAfterMs = await new Promise<number>((resolve, reject) => {
+          const req = http.request(
+            {
+              host: '127.0.0.1',
+              port,
+              method: 'POST',
+              path: '/chat/messages',
+              headers: {
+                'Content-Type': 'application/json',
+                'Content-Length': Buffer.byteLength(body),
+                Authorization: `Bearer ${token}`,
+              },
+            },
+            (res) => {
+              const elapsed = Date.now() - start;
+              res.resume();
+              res.on('end', () => resolve(elapsed));
+              res.on('error', reject);
+            },
+          );
+          req.on('error', reject);
+          req.end(body);
+        });
+
+        // The fake provider takes 800ms to produce its first token. If
+        // headers were only sent together with the first res.write() (the
+        // bug), headersAfterMs would be ~800ms too. A generous 400ms margin
+        // keeps this robust under load while still failing hard on a
+        // flushHeaders() regression.
+        expect(headersAfterMs).toBeLessThan(400);
+      },
+      10000,
+    );
 
     it('replaying the same clientMessageId sends a SINGLE done event with the SAME reply and calls Gemini exactly once', async () => {
       const { token } = await registerStudent('replay');
