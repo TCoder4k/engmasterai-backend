@@ -1,10 +1,11 @@
-import { NotFoundException, ServiceUnavailableException } from '@nestjs/common';
+import { NotFoundException } from '@nestjs/common';
 import { ChatService } from './chat.service';
 import { AssessmentInProgressException, ChatReplyInProgressException } from './chat.exceptions';
 import { EngyChatError } from './engy-chat.provider';
 import { ChatContextInput } from './chat-context.types';
 
 const GENERAL: ChatContextInput = { type: 'GENERAL' };
+const noopOnDelta = (): void => {};
 
 const buildService = (overrides: {
   assertNotInPlacementAttempt?: jest.Mock;
@@ -40,7 +41,6 @@ const buildService = (overrides: {
     release: overrides.release ?? jest.fn().mockResolvedValue(undefined),
   };
   const provider = {
-    model: 'fake-engy-model',
     reply: overrides.reply ?? jest.fn().mockResolvedValue({ reply: 'Hi there!' }),
   };
   const config = { get: (_key: string, fallback?: unknown) => fallback };
@@ -57,16 +57,14 @@ const buildService = (overrides: {
   return { service, assessmentLock, contextResolver, sessionStore, idempotency, provider };
 };
 
-describe('ChatService.sendMessage', () => {
+describe('ChatService.prepareSend', () => {
   it('blocks with AssessmentInProgressException when a Placement attempt is in progress, before touching context resolution, idempotency or Gemini', async () => {
     const lockError = new AssessmentInProgressException();
     const { service, contextResolver, idempotency, provider } = buildService({
       assertNotInPlacementAttempt: jest.fn().mockRejectedValue(lockError),
     });
 
-    await expect(service.sendMessage('user-1', 'msg-1', 'hello', GENERAL)).rejects.toBe(
-      lockError,
-    );
+    await expect(service.prepareSend('user-1', 'msg-1', 'hello', GENERAL)).rejects.toBe(lockError);
     expect(contextResolver.resolve).not.toHaveBeenCalled();
     expect(idempotency.claim).not.toHaveBeenCalled();
     expect(provider.reply).not.toHaveBeenCalled();
@@ -79,16 +77,13 @@ describe('ChatService.sendMessage', () => {
     });
 
     await expect(
-      service.sendMessage('user-1', 'msg-1', 'hello', {
-        type: 'LESSON',
-        resourceId: 'lesson-1',
-      }),
+      service.prepareSend('user-1', 'msg-1', 'hello', { type: 'LESSON', resourceId: 'lesson-1' }),
     ).rejects.toBe(notFound);
     expect(idempotency.claim).not.toHaveBeenCalled();
     expect(provider.reply).not.toHaveBeenCalled();
   });
 
-  it('an idempotent replay (claim resolves to done) returns the cached reply without calling Gemini', async () => {
+  it('an idempotent replay (claim resolves to done) returns the cached reply as `kind: replay`, without calling Gemini', async () => {
     const { service, provider } = buildService({
       claim: jest.fn().mockResolvedValue({
         outcome: 'done',
@@ -97,12 +92,15 @@ describe('ChatService.sendMessage', () => {
       }),
     });
 
-    const result = await service.sendMessage('user-1', 'msg-1', 'hello', GENERAL);
+    const prepared = await service.prepareSend('user-1', 'msg-1', 'hello', GENERAL);
 
-    expect(result).toEqual({
-      clientMessageId: 'msg-1',
-      reply: 'cached answer',
-      repliedAt: '2026-01-01T00:00:00.000Z',
+    expect(prepared).toEqual({
+      kind: 'replay',
+      result: {
+        clientMessageId: 'msg-1',
+        reply: 'cached answer',
+        repliedAt: '2026-01-01T00:00:00.000Z',
+      },
     });
     expect(provider.reply).not.toHaveBeenCalled();
   });
@@ -112,45 +110,19 @@ describe('ChatService.sendMessage', () => {
       claim: jest.fn().mockResolvedValue({ outcome: 'conflict' }),
     });
 
-    await expect(
-      service.sendMessage('user-1', 'msg-1', 'hello', GENERAL),
-    ).rejects.toBeInstanceOf(ChatReplyInProgressException);
+    await expect(service.prepareSend('user-1', 'msg-1', 'hello', GENERAL)).rejects.toBeInstanceOf(
+      ChatReplyInProgressException,
+    );
     expect(provider.reply).not.toHaveBeenCalled();
   });
 
-  it('the claim owner reads history, calls Gemini with it, commits, and appends the new turn', async () => {
-    const { service, idempotency, sessionStore, provider } = buildService({
-      getTurns: jest
-        .fn()
-        .mockResolvedValue([{ role: 'user', text: 'earlier', at: 1 }]),
-      reply: jest.fn().mockResolvedValue({ reply: 'Hi there!' }),
-    });
-
-    const result = await service.sendMessage('user-1', 'msg-1', 'hello', GENERAL);
-
-    expect(provider.reply).toHaveBeenCalledWith({
-      history: [{ role: 'user', text: 'earlier' }],
-      message: 'hello',
-      context: null,
-    });
-    expect(idempotency.commit).toHaveBeenCalledWith(
-      'user-1',
-      'msg-1',
-      'Hi there!',
-      expect.any(String),
-      1800,
-    );
-    expect(sessionStore.appendTurn).toHaveBeenCalledWith('user-1', 'hello', 'Hi there!');
-    expect(result.reply).toBe('Hi there!');
-    expect(result.clientMessageId).toBe('msg-1');
-  });
-
-  it('passes the resolved context text (not the raw context input) through to the provider', async () => {
-    const { service, provider, contextResolver } = buildService({
+  it('the claim owner gets `kind: claimed` with the resolved context text and mapped history', async () => {
+    const { service, contextResolver } = buildService({
       resolveContext: jest.fn().mockResolvedValue('The student is viewing lesson "Present Perfect".'),
+      getTurns: jest.fn().mockResolvedValue([{ role: 'user', text: 'earlier', at: 1 }]),
     });
 
-    await service.sendMessage('user-1', 'msg-1', 'Explain more', {
+    const prepared = await service.prepareSend('user-1', 'msg-1', 'Explain more', {
       type: 'LESSON',
       resourceId: 'lesson-1',
       stage: 'theory',
@@ -161,33 +133,120 @@ describe('ChatService.sendMessage', () => {
       resourceId: 'lesson-1',
       stage: 'theory',
     });
-    expect(provider.reply).toHaveBeenCalledWith({
-      history: [],
-      message: 'Explain more',
-      context: 'The student is viewing lesson "Present Perfect".',
+    expect(prepared).toEqual({
+      kind: 'claimed',
+      contextText: 'The student is viewing lesson "Present Perfect".',
+      history: [{ role: 'user', text: 'earlier' }],
+    });
+  });
+});
+
+describe('ChatService.streamReply', () => {
+  const signal = () => new AbortController().signal;
+
+  it('calls the provider with onDelta, commits, appends the turn, and returns `kind: done`', async () => {
+    const { service, idempotency, sessionStore, provider } = buildService({
+      reply: jest.fn().mockResolvedValue({ reply: 'Hi there!' }),
+    });
+    const deltas: string[] = [];
+
+    const outcome = await service.streamReply(
+      'user-1',
+      'msg-1',
+      'hello',
+      null,
+      [{ role: 'user', text: 'earlier' }],
+      { signal: signal(), onDelta: (t) => deltas.push(t) },
+    );
+
+    expect(provider.reply).toHaveBeenCalledWith(
+      { history: [{ role: 'user', text: 'earlier' }], message: 'hello', context: null },
+      expect.any(Function),
+      expect.any(Object),
+    );
+    expect(idempotency.commit).toHaveBeenCalledWith(
+      'user-1',
+      'msg-1',
+      'Hi there!',
+      expect.any(String),
+      1800,
+    );
+    expect(sessionStore.appendTurn).toHaveBeenCalledWith('user-1', 'hello', 'Hi there!');
+    expect(outcome).toEqual({
+      kind: 'done',
+      result: { clientMessageId: 'msg-1', reply: 'Hi there!', repliedAt: expect.any(String) },
     });
   });
 
-  it('a Gemini failure releases the claim and reports 503, never committing or appending', async () => {
+  it('forwards onDelta calls from the provider straight through to the caller', async () => {
+    const { service } = buildService({
+      reply: jest.fn().mockImplementation(async (_req, onDelta: (t: string) => void) => {
+        onDelta('Hi ');
+        onDelta('there!');
+        return { reply: 'Hi there!' };
+      }),
+    });
+    const deltas: string[] = [];
+
+    await service.streamReply('user-1', 'msg-1', 'hello', null, [], {
+      signal: signal(),
+      onDelta: (t) => deltas.push(t),
+    });
+
+    expect(deltas).toEqual(['Hi ', 'there!']);
+  });
+
+  it('a Gemini failure releases the claim and returns `kind: error`, never committing or appending', async () => {
     const { service, idempotency, sessionStore } = buildService({
       reply: jest.fn().mockRejectedValue(new EngyChatError('UNAVAILABLE', 'down')),
     });
 
-    await expect(
-      service.sendMessage('user-1', 'msg-1', 'hello', GENERAL),
-    ).rejects.toBeInstanceOf(ServiceUnavailableException);
+    const outcome = await service.streamReply('user-1', 'msg-1', 'hello', null, [], {
+      signal: signal(),
+      onDelta: noopOnDelta,
+    });
+
+    expect(outcome).toEqual({ kind: 'error' });
     expect(idempotency.release).toHaveBeenCalledWith('user-1', 'msg-1');
     expect(idempotency.commit).not.toHaveBeenCalled();
     expect(sessionStore.appendTurn).not.toHaveBeenCalled();
   });
 
-  it('an unexpected (non-EngyChatError) failure still releases the claim and propagates unchanged', async () => {
+  // 2026-09-12 review decision: a client disconnect mid-stream cancels the
+  // Gemini call and releases the claim rather than letting it finish and
+  // commit a reply nobody received — see chat.controller.ts's res.on('close').
+  it('a disconnect (signal already aborted when the provider throws) releases the claim and returns `kind: aborted`, never committing or appending, and does not re-throw', async () => {
+    const controller = new AbortController();
+    const { service, idempotency, sessionStore } = buildService({
+      reply: jest.fn().mockImplementation(async () => {
+        controller.abort();
+        throw new Error('aborted mid-stream');
+      }),
+    });
+
+    const outcome = await service.streamReply('user-1', 'msg-1', 'hello', null, [], {
+      signal: controller.signal,
+      onDelta: noopOnDelta,
+    });
+
+    expect(outcome).toEqual({ kind: 'aborted' });
+    expect(idempotency.release).toHaveBeenCalledWith('user-1', 'msg-1');
+    expect(idempotency.commit).not.toHaveBeenCalled();
+    expect(sessionStore.appendTurn).not.toHaveBeenCalled();
+  });
+
+  it('an unexpected (non-EngyChatError, non-abort) failure still releases the claim and propagates unchanged', async () => {
     const boom = new Error('unexpected');
     const { service, idempotency } = buildService({
       reply: jest.fn().mockRejectedValue(boom),
     });
 
-    await expect(service.sendMessage('user-1', 'msg-1', 'hello', GENERAL)).rejects.toBe(boom);
+    await expect(
+      service.streamReply('user-1', 'msg-1', 'hello', null, [], {
+        signal: signal(),
+        onDelta: noopOnDelta,
+      }),
+    ).rejects.toBe(boom);
     expect(idempotency.release).toHaveBeenCalledWith('user-1', 'msg-1');
   });
 });

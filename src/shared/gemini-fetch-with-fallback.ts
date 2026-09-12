@@ -61,6 +61,18 @@ const RETRYABLE_STATUSES = new Set([429, 503]);
  *   `Gemini fallback from=<model> to=<next> status=<code> provider=<name>`
  *   `Gemini fallback (timeout) from=<model> to=<next> provider=<name>`
  *   `Gemini fallback exhausted model=<last> status=<code> provider=<name>`
+ *
+ * OPTIONAL `externalSignal` (added 2026-09-12 for Engy Chat streaming): a
+ * caller-owned abort signal — e.g. "the client's HTTP connection just
+ * closed" — combined with each attempt's own timeout signal via
+ * `AbortSignal.any`. Firing it aborts the CURRENT fetch (and, per the Fetch
+ * spec, an in-progress streamed body read too — the signal keeps governing
+ * the response after this function returns) and STOPS THE WHOLE CHAIN
+ * immediately, unlike a per-attempt timeout which tries the next model. The
+ * catch block distinguishes the two by checking `externalSignal?.aborted`
+ * BEFORE the existing timeout-fallback branch — trying another (paid) model
+ * after the caller has already given up would be pure waste. Every existing
+ * caller omits this parameter and is completely unaffected.
  */
 export async function fetchGeminiWithFallback(
   models: readonly string[],
@@ -69,14 +81,19 @@ export async function fetchGeminiWithFallback(
   buildInit: (model: string, signal: AbortSignal) => RequestInit,
   logger: Logger,
   providerName: string,
+  externalSignal?: AbortSignal,
 ): Promise<GeminiFallbackResult> {
   for (let i = 0; i < models.length; i++) {
+    if (externalSignal?.aborted) {
+      throw new GeminiFetchError(models[i], new DOMException('Aborted by caller', 'AbortError'));
+    }
     const model = models[i];
     const isLast = i === models.length - 1;
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
+    const signal = externalSignal ? AbortSignal.any([controller.signal, externalSignal]) : controller.signal;
     try {
-      const response = await fetch(endpoint(model), buildInit(model, controller.signal));
+      const response = await fetch(endpoint(model), buildInit(model, signal));
       if (RETRYABLE_STATUSES.has(response.status)) {
         if (!isLast) {
           logger.warn(
@@ -90,6 +107,11 @@ export async function fetchGeminiWithFallback(
       }
       return { response, model };
     } catch (caught) {
+      if (externalSignal?.aborted) {
+        // The caller gave up (e.g. client disconnected) — stop the whole
+        // chain now, never try another model for a response nobody wants.
+        throw new GeminiFetchError(model, caught);
+      }
       const aborted = caught instanceof Error && caught.name === 'AbortError';
       if (aborted && !isLast) {
         logger.warn(`Gemini fallback (timeout) from=${model} to=${models[i + 1]} provider=${providerName}`);

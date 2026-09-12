@@ -284,6 +284,76 @@ describe('fetchGeminiWithFallback', () => {
   });
 });
 
+describe('fetchGeminiWithFallback — externalSignal (2026-09-12, Engy Chat disconnect handling)', () => {
+  it('stops immediately, never calling fetch at all, when externalSignal is already aborted', async () => {
+    const fetchSpy = jest.spyOn(global, 'fetch');
+    const controller = new AbortController();
+    controller.abort();
+
+    const promise = fetchGeminiWithFallback(
+      ['model-a', 'model-b'],
+      1000,
+      endpoint,
+      buildInit,
+      silentLogger,
+      'test-provider',
+      controller.signal,
+    );
+
+    await expect(promise).rejects.toBeInstanceOf(GeminiFetchError);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  // The whole point of distinguishing this from a per-attempt timeout: once
+  // the CALLER has given up (client disconnected), trying another paid
+  // model for a reply nobody will ever see is pure waste.
+  it('an externalSignal abort mid-attempt stops the WHOLE chain, unlike a per-attempt timeout which falls through', async () => {
+    const controller = new AbortController();
+    const abort = new Error('aborted');
+    abort.name = 'AbortError';
+    const fetchSpy = jest.spyOn(global, 'fetch').mockImplementationOnce(async () => {
+      controller.abort(); // the client disconnects WHILE this attempt is in flight
+      throw abort;
+    });
+
+    const promise = fetchGeminiWithFallback(
+      ['model-a', 'model-b'],
+      1000,
+      endpoint,
+      buildInit,
+      silentLogger,
+      'test-provider',
+      controller.signal,
+    );
+
+    await expect(promise).rejects.toBeInstanceOf(GeminiFetchError);
+    expect(fetchSpy).toHaveBeenCalledTimes(1); // never tried model-b
+  });
+
+  it('passing a never-aborted externalSignal leaves ordinary timeout-fallback behavior unchanged', async () => {
+    const controller = new AbortController(); // never aborted for this test
+    const abort = new Error('aborted');
+    abort.name = 'AbortError';
+    const fetchSpy = jest
+      .spyOn(global, 'fetch')
+      .mockRejectedValueOnce(abort)
+      .mockResolvedValueOnce(okResponse(200));
+
+    const result = await fetchGeminiWithFallback(
+      ['model-a', 'model-b'],
+      1000,
+      endpoint,
+      buildInit,
+      silentLogger,
+      'test-provider',
+      controller.signal,
+    );
+
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    expect(result.model).toBe('model-b');
+  });
+});
+
 describe('parseGeminiModelList', () => {
   it('trims and dedupes', () => {
     expect(parseGeminiModelList(' a , b ,a, b ', 'KEY')).toEqual(['a', 'b']);

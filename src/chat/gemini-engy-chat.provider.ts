@@ -12,6 +12,7 @@ import {
   GeminiFetchError,
   isGeminiTimeout,
 } from '../shared/gemini-fetch-with-fallback';
+import { consumeSseStream } from '../shared/sse-frame-reader';
 
 // Phase B — Engy Chat via the Gemini REST API.
 //
@@ -99,7 +100,11 @@ export class GeminiEngyChatProvider implements EngyChatProvider {
     );
   }
 
-  async reply(request: EngyChatRequest): Promise<EngyChatResult> {
+  async reply(
+    request: EngyChatRequest,
+    onDelta: (text: string) => void,
+    signal?: AbortSignal,
+  ): Promise<EngyChatResult> {
     const apiKey = this.config.get<string>('GEMINI_API_KEY');
     if (!apiKey) {
       throw new EngyChatError(
@@ -132,10 +137,13 @@ export class GeminiEngyChatProvider implements EngyChatProvider {
       ({ response, model } = await fetchGeminiWithFallback(
         this.models,
         timeoutMs,
-        (m) => `${GEMINI_ENDPOINT}/${encodeURIComponent(m)}:generateContent`,
-        (_m, signal) => ({
+        // `alt=sse` (2026-09-12): streamed generation, so the reply can be
+        // relayed to the client progressively instead of only once fully
+        // generated — see docs/CLAUDE.md's Engy Chat streaming note.
+        (m) => `${GEMINI_ENDPOINT}/${encodeURIComponent(m)}:streamGenerateContent?alt=sse`,
+        (_m, fetchSignal) => ({
           method: 'POST',
-          signal,
+          signal: fetchSignal,
           headers: {
             'Content-Type': 'application/json',
             // Header, not a query parameter: a key in a URL ends up in
@@ -161,14 +169,23 @@ export class GeminiEngyChatProvider implements EngyChatProvider {
         }),
         this.logger,
         'engy-chat',
+        signal,
       ));
     } catch (caught) {
-      const model = caught instanceof GeminiFetchError ? caught.model : this.models[this.models.length - 1];
+      if (signal?.aborted) {
+        // The caller (a disconnected client — see chat.controller.ts) gave
+        // up; this is not a Gemini failure to log/report as one. The exact
+        // message never reaches anyone — chat.service.ts's streamReply
+        // checks `signal.aborted` itself and never surfaces this text.
+        throw new EngyChatError('UNAVAILABLE', 'Engy chat request was cancelled');
+      }
+      const failedModel =
+        caught instanceof GeminiFetchError ? caught.model : this.models[this.models.length - 1];
       const aborted = isGeminiTimeout(caught);
       // Chat content is NEVER logged, here or anywhere — only the shape of
       // the failure is (docs/CLAUDE.md's logging policy for this feature).
       this.logger.warn(
-        `Engy chat ${aborted ? 'timed out' : 'failed'} after ${timeoutMs}ms (model=${model})`,
+        `Engy chat ${aborted ? 'timed out' : 'failed'} after ${timeoutMs}ms (model=${failedModel})`,
       );
       throw new EngyChatError(
         aborted ? 'TIMEOUT' : 'UNAVAILABLE',
@@ -180,33 +197,66 @@ export class GeminiEngyChatProvider implements EngyChatProvider {
       this.logger.warn(`Engy chat returned HTTP ${response.status} (model=${model})`);
       throw new EngyChatError('UNAVAILABLE', `Engy failed with status ${response.status}`);
     }
-
-    let payload: GeminiResponseShape;
-    try {
-      payload = (await response.json()) as GeminiResponseShape;
-    } catch {
+    if (!response.body) {
       throw new EngyChatError('UNAVAILABLE', 'Engy returned no data');
     }
 
-    if (payload.promptFeedback?.blockReason) {
-      this.logger.warn(
-        `Gemini blocked an Engy chat request: ${payload.promptFeedback.blockReason}`,
-      );
+    let fullText = '';
+    let finishReason: string | undefined;
+    let blockReason: string | undefined;
+
+    try {
+      await consumeSseStream(response.body, (frame) => {
+        let chunk: GeminiResponseShape;
+        try {
+          chunk = JSON.parse(frame.data) as GeminiResponseShape;
+        } catch {
+          return; // a malformed/keep-alive frame — never worth aborting the whole reply over
+        }
+
+        if (chunk.promptFeedback?.blockReason) blockReason = chunk.promptFeedback.blockReason;
+        const candidate = chunk.candidates?.[0];
+        if (candidate?.finishReason) finishReason = candidate.finishReason;
+
+        const deltaText = candidate?.content?.parts?.map((part) => part.text ?? '').join('') ?? '';
+        if (!deltaText) return;
+
+        // Clip BEFORE emitting, never after — a chunk that pushes fullText
+        // past MAX_ENGY_REPLY_CHARS must never let the client see more than
+        // the cap, even for the one chunk that crosses it (2026-09-12 review
+        // finding: "emit the whole chunk, then cancel" still leaks the
+        // overflow to whoever already received that write).
+        const remaining = MAX_ENGY_REPLY_CHARS - fullText.length;
+        if (remaining <= 0) return false;
+        const clipped = deltaText.length > remaining ? deltaText.slice(0, remaining) : deltaText;
+        fullText += clipped;
+        if (clipped) onDelta(clipped);
+        if (clipped.length < deltaText.length) return false; // hit the cap inside this very frame
+      });
+    } catch (caught) {
+      if (signal?.aborted) throw caught; // let streamReply's signal.aborted check classify this
+      this.logger.warn(`Engy chat stream read failed (model=${model})`);
+      throw new EngyChatError('UNAVAILABLE', 'Engy returned no data');
+    }
+
+    if (blockReason) {
+      this.logger.warn(`Gemini blocked an Engy chat request: ${blockReason}`);
       throw new EngyChatError('BLOCKED', 'The message could not be processed');
     }
 
     // A reply cut off mid-sentence reads as broken, not as a shorter answer
     // — reported as UNAVAILABLE so the standard retry copy applies, same as
-    // an empty answer below.
-    if (payload.candidates?.[0]?.finishReason === 'MAX_TOKENS') {
+    // an empty answer below. Skipped when WE ourselves stopped the stream at
+    // MAX_ENGY_REPLY_CHARS: that is a deliberate display bound (already
+    // softened by truncateEngyReply below), not the invisible-thinking-
+    // tokens truncation this check exists to catch.
+    const hitOwnCap = fullText.length >= MAX_ENGY_REPLY_CHARS;
+    if (!hitOwnCap && finishReason === 'MAX_TOKENS') {
       this.logger.warn('Engy chat reply was cut off at the token limit');
       throw new EngyChatError('UNAVAILABLE', 'Engy reply was cut off');
     }
 
-    const text = payload.candidates?.[0]?.content?.parts
-      ?.map((part) => part.text ?? '')
-      .join('')
-      .trim();
+    const text = fullText.trim();
 
     // AN EMPTY ANSWER IS A FAILURE HERE — a blank chat bubble reads as
     // broken, and reported as UNAVAILABLE so the standard retry copy

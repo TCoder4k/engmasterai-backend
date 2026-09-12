@@ -55,5 +55,20 @@ export interface EngyChatResult {
 }
 
 export interface EngyChatProvider {
-  reply(request: EngyChatRequest): Promise<EngyChatResult>;
+  /**
+   * `onDelta` fires once per streamed text fragment as it arrives (already
+   * clipped to MAX_ENGY_REPLY_CHARS — see gemini-engy-chat.provider.ts), so
+   * a caller can render progressively instead of waiting for the whole
+   * reply (2026-09-12, Engy Chat streaming). The returned Promise still
+   * resolves with the complete `{reply}` once the stream ends, unchanged.
+   *
+   * `signal` is an OPTIONAL externally-triggered abort (e.g. the client's
+   * HTTP connection closed mid-stream) — when it fires, the in-flight
+   * Gemini call is cancelled outright rather than left to finish unread.
+   */
+  reply(
+    request: EngyChatRequest,
+    onDelta: (text: string) => void,
+    signal?: AbortSignal,
+  ): Promise<EngyChatResult>;
 }

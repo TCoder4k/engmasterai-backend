@@ -24,28 +24,76 @@ import {
  * `callCount` is what the idempotent-replay tests assert against.
  */
 class FakeEngyChat implements EngyChatProvider {
-  readonly model = 'fake-engy-model';
   static reply = 'This is a fake Engy reply.';
   static failWith: EngyChatError | null = null;
   static seenRequests: EngyChatRequest[] = [];
   static callCount = 0;
+  /**
+   * 2026-09-12 streaming rewrite — when set, `reply()` emits one partial
+   * delta then returns a Promise that settles ONLY when the caller's signal
+   * fires. Without a real abort wired all the way from the client's HTTP
+   * connection through chat.controller.ts -> chat.service.ts -> this
+   * provider, that Promise never settles and the disconnect e2e test below
+   * times out loudly — a much stronger proof than asserting on a mock call.
+   */
+  static hangUntilAborted = false;
 
   static reset(): void {
     FakeEngyChat.reply = 'This is a fake Engy reply.';
     FakeEngyChat.failWith = null;
     FakeEngyChat.seenRequests = [];
     FakeEngyChat.callCount = 0;
+    FakeEngyChat.hangUntilAborted = false;
   }
 
-  reply(req: EngyChatRequest) {
+  reply(req: EngyChatRequest, onDelta: (text: string) => void, signal?: AbortSignal) {
     FakeEngyChat.callCount += 1;
     FakeEngyChat.seenRequests.push(req);
     if (FakeEngyChat.failWith) {
       return Promise.reject(FakeEngyChat.failWith);
     }
-    return Promise.resolve({ reply: FakeEngyChat.reply });
+    if (FakeEngyChat.hangUntilAborted) {
+      onDelta('partial reply that must never be committed...');
+      return new Promise<never>((_resolve, reject) => {
+        signal?.addEventListener('abort', () => reject(new Error('aborted')));
+      });
+    }
+    // Split into two deltas (not one big chunk) so the SSE tests below
+    // exercise the controller's real delta-forwarding path, not just the
+    // final `done` event.
+    const text = FakeEngyChat.reply;
+    const mid = Math.ceil(text.length / 2);
+    onDelta(text.slice(0, mid));
+    if (mid < text.length) onDelta(text.slice(mid));
+    return Promise.resolve({ reply: text });
   }
 }
+
+interface SseEvent {
+  event: string;
+  data: unknown;
+}
+
+/**
+ * The whole SSE body is already fully buffered by the time supertest
+ * resolves (the connection closes after the server's own `res.end()`), so a
+ * simple split is enough here — no need for shared/sse-frame-reader.ts's
+ * incremental-buffering algorithm, which exists for a body read WHILE it is
+ * still arriving.
+ */
+const parseSseEvents = (text: string): SseEvent[] =>
+  text
+    .split('\n\n')
+    .filter((frame) => frame.trim().length > 0)
+    .map((frame) => {
+      const lines = frame.split('\n');
+      const eventLine = lines.find((line) => line.startsWith('event:'));
+      const dataLine = lines.find((line) => line.startsWith('data:'));
+      return {
+        event: eventLine ? eventLine.slice('event:'.length).trim() : '',
+        data: dataLine ? (JSON.parse(dataLine.slice('data:'.length).trim()) as unknown) : undefined,
+      };
+    });
 
 describe('Engy Chat (e2e)', () => {
   let app: INestApplication<App>;
@@ -220,7 +268,7 @@ describe('Engy Chat (e2e)', () => {
         .expect(400);
     });
 
-    it('sends a message and gets Engy\'s reply back', async () => {
+    it('sends a message and gets Engy\'s reply back via SSE — delta events followed by one done event', async () => {
       const { token } = await registerStudent('happy');
       FakeEngyChat.reply = 'Hello! How can I help you learn English today?';
       const clientMessageId = randomUUID();
@@ -229,13 +277,24 @@ describe('Engy Chat (e2e)', () => {
         .post('/chat/messages')
         .set('Authorization', `Bearer ${token}`)
         .send({ clientMessageId, message: 'Hi Engy!' })
-        .expect(201);
+        .expect(200);
 
-      expect(res.body).toMatchObject({
+      expect(res.headers['content-type']).toContain('text/event-stream');
+      const events = parseSseEvents(res.text);
+      const deltas = events.filter((e) => e.event === 'delta');
+      const done = events.find((e) => e.event === 'done');
+      // At least the two deltas FakeEngyChat.reply() emits, reassembling to
+      // the exact full reply — proves the controller relays every delta,
+      // not just the final result.
+      expect(deltas.length).toBeGreaterThanOrEqual(2);
+      expect(deltas.map((e) => (e.data as { text: string }).text).join('')).toBe(
+        'Hello! How can I help you learn English today?',
+      );
+      expect(done?.data).toMatchObject({
         clientMessageId,
         reply: 'Hello! How can I help you learn English today?',
       });
-      expect(typeof (res.body as { repliedAt: string }).repliedAt).toBe('string');
+      expect(typeof (done?.data as { repliedAt: string }).repliedAt).toBe('string');
       expect(FakeEngyChat.callCount).toBe(1);
       expect(FakeEngyChat.seenRequests[0]).toEqual({
         history: [],
@@ -244,7 +303,7 @@ describe('Engy Chat (e2e)', () => {
       });
     });
 
-    it('replaying the same clientMessageId returns the SAME reply and calls Gemini exactly once', async () => {
+    it('replaying the same clientMessageId sends a SINGLE done event with the SAME reply and calls Gemini exactly once', async () => {
       const { token } = await registerStudent('replay');
       FakeEngyChat.reply = 'First and only answer.';
       const clientMessageId = randomUUID();
@@ -253,7 +312,8 @@ describe('Engy Chat (e2e)', () => {
         .post('/chat/messages')
         .set('Authorization', `Bearer ${token}`)
         .send({ clientMessageId, message: 'Explain present perfect' })
-        .expect(201);
+        .expect(200);
+      const firstDone = parseSseEvents(first.text).find((e) => e.event === 'done');
 
       // Change what the fake WOULD return, to prove the replay is served
       // from the idempotency cache rather than calling the provider again.
@@ -263,11 +323,56 @@ describe('Engy Chat (e2e)', () => {
         .post('/chat/messages')
         .set('Authorization', `Bearer ${token}`)
         .send({ clientMessageId, message: 'Explain present perfect' })
-        .expect(201);
+        .expect(200);
+      const secondEvents = parseSseEvents(second.text);
 
-      expect(second.body).toEqual(first.body);
+      // A replay is sent as a SINGLE done event, not re-streamed delta by
+      // delta — there is nothing left to stream, the answer is already known.
+      expect(secondEvents).toEqual([{ event: 'done', data: firstDone?.data }]);
       expect(FakeEngyChat.callCount).toBe(1);
     });
+
+    it('a client disconnect mid-stream cancels the Gemini call, releases the claim, and never commits the partial reply', async () => {
+      const { token } = await registerStudent('disconnect');
+      FakeEngyChat.hangUntilAborted = true;
+      const clientMessageId = randomUUID();
+
+      const inFlight = request(app.getHttpServer())
+        .post('/chat/messages')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ clientMessageId, message: 'hello' });
+      inFlight.end(() => {
+        // Intentionally empty — the assertions below don't depend on this
+        // callback; the request is aborted before it would ever fire.
+      });
+
+      // Give the server time to enter provider.reply() and emit the first
+      // partial delta before we pull the connection out from under it.
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      inFlight.abort();
+      // Let the server's `res.on('close')` handler and the resulting
+      // idempotency.release() actually run before asserting on their effect.
+      await new Promise((resolve) => setTimeout(resolve, 500));
+
+      const sessionRes = await request(app.getHttpServer())
+        .get('/chat/session')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+      expect(sessionRes.body).toEqual({ turns: [], expiresAt: null });
+
+      // Retrying with the SAME clientMessageId must succeed — proves the
+      // claim was released on disconnect, not left stuck for its whole TTL.
+      FakeEngyChat.hangUntilAborted = false;
+      FakeEngyChat.reply = 'A fresh answer after the retry.';
+      const retry = await request(app.getHttpServer())
+        .post('/chat/messages')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ clientMessageId, message: 'hello' })
+        .expect(200);
+      const retryDone = parseSseEvents(retry.text).find((e) => e.event === 'done');
+      expect(retryDone?.data).toMatchObject({ reply: 'A fresh answer after the retry.' });
+      expect(FakeEngyChat.callCount).toBe(2); // the hung attempt + the retry — never a 3rd
+    }, 10000);
 
     it('an unfinished Placement Attempt returns 403 ASSESSMENT_IN_PROGRESS, never calling Gemini', async () => {
       const { token, userId } = await registerStudent('placement-blocked');
@@ -291,7 +396,7 @@ describe('Engy Chat (e2e)', () => {
         .post('/chat/messages')
         .set('Authorization', `Bearer ${token}`)
         .send({ clientMessageId: randomUUID(), message: 'hello' })
-        .expect(201);
+        .expect(200);
 
       expect(FakeEngyChat.callCount).toBe(1);
     });
@@ -306,7 +411,7 @@ describe('Engy Chat (e2e)', () => {
           .post('/chat/messages')
           .set('Authorization', `Bearer ${token}`)
           .send({ clientMessageId: randomUUID(), message: `message ${i}` })
-          .expect(201);
+          .expect(200);
       }
 
       await request(app.getHttpServer())
@@ -356,7 +461,7 @@ describe('Engy Chat (e2e)', () => {
             message: 'Can you explain this more simply?',
             context: { type: 'LESSON', resourceId: lessonId, stage: 'theory' },
           })
-          .expect(201);
+          .expect(200);
 
         const seen = FakeEngyChat.seenRequests[0];
         expect(seen.context).toContain('Present Perfect Tense');
@@ -375,7 +480,7 @@ describe('Engy Chat (e2e)', () => {
             message: 'hello',
             context: { type: 'LESSON', resourceId: lessonId, stage: 'quiz' },
           })
-          .expect(201);
+          .expect(200);
 
         const seen = FakeEngyChat.seenRequests[0];
         expect(seen.context).toContain('Present Perfect Tense');
@@ -411,7 +516,7 @@ describe('Engy Chat (e2e)', () => {
             message: 'Can you use it in a sentence?',
             context: { type: 'VOCAB_WORD', resourceId: vocabWordId },
           })
-          .expect(201);
+          .expect(200);
 
         const seen = FakeEngyChat.seenRequests[0];
         expect(seen.context).toContain('từ chức');
@@ -460,7 +565,7 @@ describe('Engy Chat (e2e)', () => {
         .post('/chat/messages')
         .set('Authorization', `Bearer ${token}`)
         .send({ clientMessageId: randomUUID(), message: 'Give me an example sentence' })
-        .expect(201);
+        .expect(200);
 
       const res = await request(app.getHttpServer())
         .get('/chat/session')
@@ -487,7 +592,7 @@ describe('Engy Chat (e2e)', () => {
         .post('/chat/messages')
         .set('Authorization', `Bearer ${token}`)
         .send({ clientMessageId: randomUUID(), message: 'hello' })
-        .expect(201);
+        .expect(200);
 
       await request(app.getHttpServer())
         .delete('/chat/session')
