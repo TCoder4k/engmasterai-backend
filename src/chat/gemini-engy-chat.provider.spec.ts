@@ -396,16 +396,16 @@ describe('truncateEngyReply', () => {
   });
 
   it('cuts a long reply at the last sentence boundary within the tail third', () => {
-    const long = `${'a'.repeat(900)}. ${'b'.repeat(200)}`;
+    const long = `${'a'.repeat(MAX_ENGY_REPLY_CHARS - 100)}. ${'b'.repeat(200)}`;
     const result = truncateEngyReply(long);
-    expect(result.length).toBeLessThanOrEqual(1000);
+    expect(result.length).toBeLessThanOrEqual(MAX_ENGY_REPLY_CHARS);
     expect(result.endsWith('.')).toBe(true);
   });
 
   it('falls back to a hard cut with an ellipsis when there is no sentence boundary', () => {
-    const long = 'x'.repeat(1200);
+    const long = 'x'.repeat(MAX_ENGY_REPLY_CHARS + 200);
     const result = truncateEngyReply(long);
     expect(result.endsWith('…')).toBe(true);
-    expect(result.length).toBeLessThanOrEqual(1001);
+    expect(result.length).toBeLessThanOrEqual(MAX_ENGY_REPLY_CHARS + 1);
   });
 });
