@@ -250,9 +250,24 @@ export class GeminiEngyChatProvider implements EngyChatProvider {
     // MAX_ENGY_REPLY_CHARS: that is a deliberate display bound (already
     // softened by truncateEngyReply below), not the invisible-thinking-
     // tokens truncation this check exists to catch.
+    //
+    // 2026-09-13 fix (real production report): this used to only check
+    // `finishReason === 'MAX_TOKENS'`. Under real Gemini API strain (quota
+    // exhaustion on one model in the fallback chain, 503 overload on the
+    // next), a stream can also end with the connection simply closing
+    // early — `reader.read()` returns `done: true` — WITHOUT Gemini ever
+    // sending a final chunk that carries a `finishReason` at all. That left
+    // `finishReason` as `undefined`, which `=== 'MAX_TOKENS'` never matches,
+    // so whatever few words had streamed in (e.g. "Tất nhiên là") were
+    // returned as if they were a complete, successful answer — no error, no
+    // retry prompt, just a silently truncated reply. Checking `!== 'STOP'`
+    // instead catches that case (and SAFETY/RECITATION/OTHER, which were
+    // equally unhandled before) alongside MAX_TOKENS, while STOP — the one
+    // value that actually means "the model finished normally" — still
+    // passes through untouched.
     const hitOwnCap = fullText.length >= MAX_ENGY_REPLY_CHARS;
-    if (!hitOwnCap && finishReason === 'MAX_TOKENS') {
-      this.logger.warn('Engy chat reply was cut off at the token limit');
+    if (!hitOwnCap && finishReason !== 'STOP') {
+      this.logger.warn(`Engy chat reply did not finish normally (finishReason=${finishReason ?? 'none'})`);
       throw new EngyChatError('UNAVAILABLE', 'Engy reply was cut off');
     }
 

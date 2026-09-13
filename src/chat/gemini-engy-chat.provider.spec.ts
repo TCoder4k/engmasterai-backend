@@ -217,6 +217,35 @@ describe('GeminiEngyChatProvider', () => {
     await expect(provider.reply(request, noop)).rejects.toMatchObject({ kind: 'UNAVAILABLE' });
   });
 
+  // 2026-09-13 real production report: a user saw a short, sentence-
+  // fragment reply ("Tất nhiên là") rendered as if it were a normal,
+  // complete answer — no error, no retry prompt. Root cause: under real
+  // Gemini API strain (one model in the fallback chain quota-exhausted,
+  // the next overloaded), the stream can end (`reader.read()` returns
+  // `done: true`) WITHOUT Gemini ever sending a final chunk that carries a
+  // `finishReason` at all — the old check only ever compared against the
+  // literal string 'MAX_TOKENS', so an `undefined` finishReason slipped
+  // through as if the model had finished normally.
+  it('reports a stream that ends with no finishReason at all as UNAVAILABLE, never a silently truncated reply', async () => {
+    jest.spyOn(global, 'fetch').mockResolvedValue(
+      streamResponse([sseChunk({ candidates: [{ content: { parts: [{ text: 'Tất nhiên là' }] } }] })]),
+    );
+    const provider = new GeminiEngyChatProvider(config({ GEMINI_API_KEY: 'k' }));
+
+    await expect(provider.reply(request, noop)).rejects.toMatchObject({ kind: 'UNAVAILABLE' });
+  });
+
+  it('reports a SAFETY finishReason as UNAVAILABLE, not a truncated success', async () => {
+    jest.spyOn(global, 'fetch').mockResolvedValue(
+      streamResponse([
+        sseChunk({ candidates: [{ content: { parts: [{ text: 'Well,' }] }, finishReason: 'SAFETY' }] }),
+      ]),
+    );
+    const provider = new GeminiEngyChatProvider(config({ GEMINI_API_KEY: 'k' }));
+
+    await expect(provider.reply(request, noop)).rejects.toMatchObject({ kind: 'UNAVAILABLE' });
+  });
+
   it('reports a safety block as BLOCKED', async () => {
     jest
       .spyOn(global, 'fetch')
