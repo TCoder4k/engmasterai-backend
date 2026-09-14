@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { IsInt, IsOptional, Min } from 'class-validator';
+import { IsInt, IsOptional, IsString, Min } from 'class-validator';
 
 // Query params for GET /users. Mirrors QueryCourseDto: the @Type(() => Number)
 // coercion only takes effect under a transform-enabled ValidationPipe, which
@@ -18,4 +18,11 @@ export class QueryUserDto {
   @Min(1)
   @IsOptional()
   limit?: number;
+
+  // Matches against name or email, case-insensitively — see
+  // UserService.findAll. No @Length cap: an overlong value just matches
+  // nothing, same as any other search box.
+  @IsString()
+  @IsOptional()
+  search?: string;
 }

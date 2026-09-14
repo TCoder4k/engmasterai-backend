@@ -54,18 +54,34 @@ export class UserService {
     private readonly cloudinaryService: CloudinaryService,
   ) {}
 
-  async findAll(page?: number, limit?: number) {
+  async findAll(page?: number, limit?: number, search?: string) {
     const take = Math.min(limit || 10, MAX_LIMIT);
     const skip = page ? (page - 1) * take : 0;
 
+    // Name/email, case-insensitively, plus an exact id match — an admin
+    // pasting a user's id (e.g. from a support ticket) is still "finding a
+    // student", not a different feature. Trimmed so a stray space from a
+    // copy-paste doesn't turn a real match into zero results.
+    const trimmed = search?.trim();
+    const where: Prisma.UserWhereInput | undefined = trimmed
+      ? {
+          OR: [
+            { name: { contains: trimmed, mode: 'insensitive' as const } },
+            { email: { contains: trimmed, mode: 'insensitive' as const } },
+            { id: trimmed },
+          ],
+        }
+      : undefined;
+
     const [users, total] = await Promise.all([
       this.prismaService.user.findMany({
+        where,
         skip,
         take,
         select: SAFE_USER_SELECT,
         orderBy: { createdAt: 'desc' },
       }),
-      this.prismaService.user.count(),
+      this.prismaService.user.count({ where }),
     ]);
 
     return {

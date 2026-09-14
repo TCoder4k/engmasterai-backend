@@ -46,7 +46,7 @@ export class UserController {
   @Get()
   @Roles(UserRole.ADMIN)
   async findAll(@Query(queryPipe) query: QueryUserDto) {
-    return this.userService.findAll(query.page, query.limit);
+    return this.userService.findAll(query.page, query.limit, query.search);
   }
 
   //Xem thông tin bản thân - ALL authenticated users can access
