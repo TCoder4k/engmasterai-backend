@@ -45,12 +45,16 @@ const GEMINI_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models
  * getting sliced off mid-word well before finishing. 1000 was tuned against
  * pronunciation feedback's 900, which is a single paragraph of commentary on
  * one attempt, not a multi-section explanation a student explicitly asked
- * for; the two were never really comparable use cases. `maxOutputTokens`
- * below was raised alongside this so there is still real headroom left for
- * visible text after Gemini's own "thinking" tokens (see the token-budget
- * comment there).
+ * for; the two were never really comparable use cases.
+ *
+ * 2026-09-14, raised again from 1800 to 3000: 1800 still wasn't enough for
+ * a multi-section vocabulary breakdown (literal meaning, figurative meaning,
+ * common phrase, idiom — each with its own example) reported cut off mid
+ * idiom. `maxOutputTokens` below was raised alongside both increases so
+ * there is still real headroom left for visible text after Gemini's own
+ * "thinking" tokens (see the token-budget comment there).
  */
-export const MAX_ENGY_REPLY_CHARS = 1800;
+export const MAX_ENGY_REPLY_CHARS = 3000;
 
 /**
  * Phase B's system instruction. Every negative clause is load-bearing, same
@@ -173,17 +177,18 @@ export class GeminiEngyChatProvider implements EngyChatProvider {
               // truncate mid-sentence well before truncateEngyReply's own
               // MAX_ENGY_REPLY_CHARS ceiling ever gets a chance to apply.
               // This is headroom for the reasoning step, not a raised
-              // reply-length target. Raised from 2048 to 4096 alongside the
-              // 2026-09-13 MAX_ENGY_REPLY_CHARS increase (1000 -> 1800):
+              // reply-length target. Raised 2048 -> 4096 -> 8192 alongside
+              // MAX_ENGY_REPLY_CHARS's own 1000 -> 1800 -> 3000 increases:
               // observed thinking usage has run as high as ~95% of the
-              // budget on a single real call, and 1800 characters of
-              // Vietnamese/English prose needs meaningfully more visible-
-              // token headroom than 1000 did — doubling the cap without
-              // also raising this would have made the ALREADY-real
-              // MAX_TOKENS failure path (finishReason !== 'STOP' above)
-              // fire more often for exactly the long, structured answers
-              // this raise exists to support.
-              maxOutputTokens: 4096,
+              // budget on a single real call, so visible-text headroom has
+              // to scale with the display cap or the ALREADY-real MAX_TOKENS
+              // failure path (finishReason !== 'STOP' above) starts firing
+              // more often for exactly the long, structured answers these
+              // raises exist to support. Confirmed well within every chain
+              // model's own output limit (65536, checked directly against
+              // the API 2026-09-14) — headroom here costs nothing but a
+              // slightly larger response if Gemini actually uses it.
+              maxOutputTokens: 8192,
             },
           }),
         }),
