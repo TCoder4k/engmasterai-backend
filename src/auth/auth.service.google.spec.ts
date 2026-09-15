@@ -75,6 +75,7 @@ describe('AuthService — google() / linkGoogle()', () => {
     email: verifiedIdentity.email,
     role: UserRole.USER,
     emailVerifiedAt: new Date(),
+    isActive: true,
   };
 
   beforeEach(() => {
@@ -327,6 +328,7 @@ describe('AuthService — google() / linkGoogle()', () => {
       password: null as string | null,
       role: UserRole.USER,
       emailVerifiedAt: null as Date | null,
+      isActive: true,
     };
 
     beforeEach(async () => {

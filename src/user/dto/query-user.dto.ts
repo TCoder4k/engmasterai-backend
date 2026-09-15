@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { IsInt, IsOptional, IsString, Min } from 'class-validator';
+import { IsIn, IsInt, IsOptional, IsString, Min } from 'class-validator';
 
 // Query params for GET /users. Mirrors QueryCourseDto: the @Type(() => Number)
 // coercion only takes effect under a transform-enabled ValidationPipe, which
@@ -25,4 +25,18 @@ export class QueryUserDto {
   @IsString()
   @IsOptional()
   search?: string;
+
+  // Admin student list only (AdminStudentOverviewService.listOverview) —
+  // ignored by the plain GET /users list. FREE/PRO derived the same way as
+  // the response's own isPro (Subscription.expiresAt vs now), never a
+  // stored status.
+  @IsIn(['FREE', 'PRO'])
+  @IsOptional()
+  plan?: 'FREE' | 'PRO';
+
+  // Admin student list only, same scoping as `plan` above — filters on the
+  // real User.isActive gate (see AuthService), never a display-only label.
+  @IsIn(['ACTIVE', 'BLOCKED'])
+  @IsOptional()
+  status?: 'ACTIVE' | 'BLOCKED';
 }

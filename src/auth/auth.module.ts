@@ -61,6 +61,11 @@ import { MailModule } from '../mail/mail.module';
     RolesGuard,
     TokenBlacklistService,
     RateLimiterService,
+    // Sprint 15 (Admin student management) — the admin block/unblock endpoint
+    // reuses revokeAllForUser() as-is (already used by the password-reset
+    // flow) to tear down every outstanding refresh session the instant a
+    // user is blocked, instead of building any new session infrastructure.
+    RefreshTokenService,
   ],
 })
 export class AuthModule implements NestModule {

@@ -24,7 +24,15 @@ import { AdminDashboardAnalyticsService } from './admin-dashboard-analytics.serv
 // RateLimiterService need no import — AuthModule is @Global() and exports both.
 @Module({
   imports: [PrismaModule, LessonModule],
-  controllers: [DashboardAnalyticsController, AdminDashboardAnalyticsController],
+  controllers: [
+    DashboardAnalyticsController,
+    AdminDashboardAnalyticsController,
+  ],
   providers: [DashboardAnalyticsService, AdminDashboardAnalyticsService],
+  // Sprint 15 (Admin student management) — the admin student-detail page
+  // reuses getDashboardAnalytics()'s currentStreakDays as-is (same timezone-
+  // aware streak logic the student's own dashboard uses) rather than a second
+  // streak implementation that could disagree with it.
+  exports: [DashboardAnalyticsService],
 })
 export class AnalyticsModule {}

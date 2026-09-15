@@ -259,6 +259,7 @@ export class AuthService {
         password: true,
         role: true,
         emailVerifiedAt: true,
+        isActive: true,
       },
     });
 
@@ -290,6 +291,27 @@ export class AuthService {
     if (!passwordMatched) {
       logFailure();
       throw new ForbiddenException('Invalid credentials');
+    }
+
+    // Sprint 15 (Admin student management) — deliberately checked AFTER
+    // password verification, not before: an unauthenticated caller must
+    // never be able to distinguish "wrong password" from "account blocked"
+    // (that would be an enumeration regression). Once credentials are
+    // proven valid, blocked status is an administrative fact this specific,
+    // now-authenticated caller is entitled to see, so it gets its own clear
+    // message rather than the generic invalid_credentials one.
+    if (!user.isActive) {
+      this.authEventLogger.log('auth.login.failed', {
+        requestId: logContext.requestId,
+        route,
+        durationMs: Date.now() - startedAt,
+        userId: user.id,
+        ipHash: logContext.ipHash,
+        failureCategory: 'account_blocked',
+      });
+      throw new ForbiddenException(
+        'Tài khoản của bạn đã bị khóa. Vui lòng liên hệ quản trị viên.',
+      );
     }
 
     this.authEventLogger.log('auth.login.succeeded', {
@@ -340,6 +362,21 @@ export class AuthService {
 
     const existingIdentity = await this.findGoogleIdentity(verified.sub);
     if (existingIdentity) {
+      // Sprint 15 — checked only after the Google identity is fully
+      // resolved (external identity already authenticated), never before.
+      if (!existingIdentity.user.isActive) {
+        this.authEventLogger.log('auth.google.failed', {
+          requestId: logContext.requestId,
+          route,
+          durationMs: Date.now() - startedAt,
+          userId: existingIdentity.user.id,
+          ipHash: logContext.ipHash,
+          failureCategory: 'account_blocked',
+        });
+        throw new ForbiddenException(
+          'Tài khoản của bạn đã bị khóa. Vui lòng liên hệ quản trị viên.',
+        );
+      }
       this.authEventLogger.log('auth.google.succeeded', {
         requestId: logContext.requestId,
         route,
@@ -396,6 +433,19 @@ export class AuthService {
       // rather than assuming which constraint fired.
       const raceIdentity = await this.findGoogleIdentity(verified.sub);
       if (raceIdentity) {
+        if (!raceIdentity.user.isActive) {
+          this.authEventLogger.log('auth.google.failed', {
+            requestId: logContext.requestId,
+            route,
+            durationMs: Date.now() - startedAt,
+            userId: raceIdentity.user.id,
+            ipHash: logContext.ipHash,
+            failureCategory: 'account_blocked',
+          });
+          throw new ForbiddenException(
+            'Tài khoản của bạn đã bị khóa. Vui lòng liên hệ quản trị viên.',
+          );
+        }
         this.authEventLogger.log('auth.google.succeeded', {
           requestId: logContext.requestId,
           route,
@@ -507,6 +557,7 @@ export class AuthService {
         password: true,
         role: true,
         emailVerifiedAt: true,
+        isActive: true,
       },
     });
 
@@ -522,6 +573,23 @@ export class AuthService {
     if (!passwordMatched) {
       logFailure();
       throw new ForbiddenException('Invalid credentials');
+    }
+
+    // Sprint 15 — same ordering rule as login(): checked only after the
+    // password proves this caller really controls the account.
+    if (!user.isActive) {
+      this.authEventLogger.log('auth.google.link_failed', {
+        requestId: logContext.requestId,
+        route,
+        durationMs: Date.now() - startedAt,
+        userId: user.id,
+        emailHash,
+        ipHash: logContext.ipHash,
+        failureCategory: 'account_blocked',
+      });
+      throw new ForbiddenException(
+        'Tài khoản của bạn đã bị khóa. Vui lòng liên hệ quản trị viên.',
+      );
     }
 
     try {
@@ -1316,7 +1384,7 @@ export class AuthService {
 
     const user = await this.prismaService.user.findUnique({
       where: { id: userId },
-      select: { id: true, email: true, role: true },
+      select: { id: true, email: true, role: true, isActive: true },
     });
 
     if (!user) {
@@ -1331,6 +1399,28 @@ export class AuthService {
         ipHash: logContext.ipHash,
         familyIdTruncated,
         failureCategory: 'invalid_refresh_session',
+      });
+      throw new UnauthorizedException('Invalid refresh session');
+    }
+
+    // Sprint 15 — AdminStudentOverviewService.setActiveStatus already calls
+    // revokeAllForUser() the instant an admin blocks this user, so in the
+    // ordinary case this session is already gone by the time we get here.
+    // This check is the defensive backstop for a refresh that was already
+    // in flight, or a family issued after the block that predates a second
+    // block. Same generic message as every other refresh failure — refresh
+    // is a background call, not a user-facing credential form, so there is
+    // no case here for a distinct "blocked" message the way login() has.
+    if (!user.isActive) {
+      await this.refreshTokenService.revoke(parsed.familyId);
+      this.authEventLogger.log('auth.refresh.failed', {
+        requestId: logContext.requestId,
+        route,
+        durationMs: Date.now() - startedAt,
+        userId: user.id,
+        ipHash: logContext.ipHash,
+        familyIdTruncated,
+        failureCategory: 'account_blocked',
       });
       throw new UnauthorizedException('Invalid refresh session');
     }

@@ -213,6 +213,13 @@ model User {
   avatarUrl String? //can be null
   role      UserRole @default(USER)
 
+  // Sprint 15 (Admin student management) — a real account-state gate, not a
+  // display label. Checked by AuthService on login/refresh (see
+  // auth.service.ts); an already-issued access token is NOT invalidated when
+  // this flips to false (JwtStrategy stays a zero-DB-lookup strategy by
+  // design) — the accepted gap is documented in docs/memory.md.
+  isActive Boolean @default(true)
+
   // Sprint 10 (Gamification) — BOTH OF THESE ARE CACHES, and that is the whole
   // point of the design. XpTransaction is the single source of truth:
   //
