@@ -10,7 +10,10 @@ import { randomBytes } from 'crypto';
 import { Prisma, StreakInvitationStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationService } from '../notification/notification.service';
-import { enumerateCalendarWeekInTimeZone, formatDayInTimeZone } from '../analytics/day-window';
+import {
+  enumerateCalendarWeekInTimeZone,
+  formatDayInTimeZone,
+} from '../analytics/day-window';
 import { startOfDayInTimeZone } from '../learning/timezone.util';
 import { dayKeyToDate } from '../gamification/day-key';
 import { canonicalPair, daysBetweenLabels } from './streak-day.util';
@@ -68,23 +71,39 @@ const LEADERBOARD_PARTNER_SELECT = {
 } as const;
 
 type PairWithUsers = Prisma.StreakPairGetPayload<{
-  include: { userLow: { select: typeof SAFE_PARTNER_SELECT }; userHigh: { select: typeof SAFE_PARTNER_SELECT } };
+  include: {
+    userLow: { select: typeof SAFE_PARTNER_SELECT };
+    userHigh: { select: typeof SAFE_PARTNER_SELECT };
+  };
 }>;
 
 type InvitationWithUsers = Prisma.StreakInvitationGetPayload<{
-  include: { inviter: { select: typeof SAFE_PARTNER_SELECT }; invitee: { select: typeof SAFE_PARTNER_SELECT } };
+  include: {
+    inviter: { select: typeof SAFE_PARTNER_SELECT };
+    invitee: { select: typeof SAFE_PARTNER_SELECT };
+  };
 }>;
 
-const toPartnerDto = (user: { id: string; name: string; avatarUrl: string | null; level: number }): StreakPartnerDto => ({
+const toPartnerDto = (user: {
+  id: string;
+  name: string;
+  avatarUrl: string | null;
+  level: number;
+}): StreakPartnerDto => ({
   id: user.id,
   name: user.name,
   avatarUrl: user.avatarUrl,
   level: user.level,
 });
 
-const toStreakPairDto = (pair: PairWithUsers, viewerId: string): StreakPairDto => ({
+const toStreakPairDto = (
+  pair: PairWithUsers,
+  viewerId: string,
+): StreakPairDto => ({
   id: pair.id,
-  partner: toPartnerDto(pair.userLowId === viewerId ? pair.userHigh : pair.userLow),
+  partner: toPartnerDto(
+    pair.userLowId === viewerId ? pair.userHigh : pair.userLow,
+  ),
   status: pair.status,
   currentStreak: pair.currentStreak,
   longestStreak: pair.longestStreak,
@@ -92,10 +111,15 @@ const toStreakPairDto = (pair: PairWithUsers, viewerId: string): StreakPairDto =
   publicShareId: pair.publicShareId,
 });
 
-const toInvitationDto = (invitation: InvitationWithUsers, viewerId: string): StreakInvitationDto => ({
+const toInvitationDto = (
+  invitation: InvitationWithUsers,
+  viewerId: string,
+): StreakInvitationDto => ({
   id: invitation.id,
   direction: invitation.inviterId === viewerId ? 'sent' : 'received',
-  counterpart: toPartnerDto(invitation.inviterId === viewerId ? invitation.invitee : invitation.inviter),
+  counterpart: toPartnerDto(
+    invitation.inviterId === viewerId ? invitation.invitee : invitation.inviter,
+  ),
   status: invitation.status,
   createdAt: invitation.createdAt.toISOString(),
   expiresAt: invitation.expiresAt.toISOString(),
@@ -118,14 +142,23 @@ export class StreakService {
 
   // ---- invitations ----------------------------------------------------
 
-  async sendInvitation(userId: string, inviteeId: string): Promise<StreakInvitationDto> {
+  async sendInvitation(
+    userId: string,
+    inviteeId: string,
+  ): Promise<StreakInvitationDto> {
     if (inviteeId === userId) {
       throw new BadRequestException("You can't invite yourself");
     }
-    const invitee = await this.prisma.user.findUnique({ where: { id: inviteeId }, select: { id: true } });
+    const invitee = await this.prisma.user.findUnique({
+      where: { id: inviteeId },
+      select: { id: true },
+    });
     if (!invitee) throw new NotFoundException('User not found');
 
-    const pairFilter = [{ inviterId: userId, inviteeId }, { inviterId: inviteeId, inviteeId: userId }];
+    const pairFilter = [
+      { inviterId: userId, inviteeId },
+      { inviterId: inviteeId, inviteeId: userId },
+    ];
     const [existingPending, recentDecline] = await Promise.all([
       this.prisma.streakInvitation.findFirst({
         // expiresAt matters here, not just status: PENDING alone. Expiry is
@@ -134,7 +167,11 @@ export class StreakService {
         // nothing ever flips it. Without this, a stale invitation blocks
         // re-inviting the same person indefinitely with a false "already
         // exists" conflict, even though acceptInvitation would 410 it.
-        where: { status: StreakInvitationStatus.PENDING, expiresAt: { gt: new Date() }, OR: pairFilter },
+        where: {
+          status: StreakInvitationStatus.PENDING,
+          expiresAt: { gt: new Date() },
+          OR: pairFilter,
+        },
       }),
       this.prisma.streakInvitation.findFirst({
         where: {
@@ -145,7 +182,9 @@ export class StreakService {
       }),
     ]);
     if (existingPending) {
-      throw new ConflictException('An invitation already exists between you and this user');
+      throw new ConflictException(
+        'An invitation already exists between you and this user',
+      );
     }
     if (recentDecline) {
       throw new ConflictException('Please wait before re-inviting this user');
@@ -153,15 +192,27 @@ export class StreakService {
 
     const row = await this.prisma.$transaction(async (tx) => {
       const created = await tx.streakInvitation.create({
-        data: { inviterId: userId, inviteeId, expiresAt: new Date(Date.now() + INVITATION_TTL_MS) },
-        include: { inviter: { select: SAFE_PARTNER_SELECT }, invitee: { select: SAFE_PARTNER_SELECT } },
+        data: {
+          inviterId: userId,
+          inviteeId,
+          expiresAt: new Date(Date.now() + INVITATION_TTL_MS),
+        },
+        include: {
+          inviter: { select: SAFE_PARTNER_SELECT },
+          invitee: { select: SAFE_PARTNER_SELECT },
+        },
       });
-      await this.notifications.create(tx, inviteeId, 'STREAK_INVITATION_RECEIVED', {
-        partnerId: created.inviter.id,
-        partnerName: created.inviter.name,
-        partnerAvatarUrl: created.inviter.avatarUrl,
-        invitationId: created.id,
-      });
+      await this.notifications.create(
+        tx,
+        inviteeId,
+        'STREAK_INVITATION_RECEIVED',
+        {
+          partnerId: created.inviter.id,
+          partnerName: created.inviter.name,
+          partnerAvatarUrl: created.inviter.avatarUrl,
+          invitationId: created.id,
+        },
+      );
       return created;
     });
     return toInvitationDto(row, userId);
@@ -181,16 +232,25 @@ export class StreakService {
     const rows = await this.prisma.streakInvitation.findMany({
       where,
       orderBy: { createdAt: 'desc' },
-      include: { inviter: { select: SAFE_PARTNER_SELECT }, invitee: { select: SAFE_PARTNER_SELECT } },
+      include: {
+        inviter: { select: SAFE_PARTNER_SELECT },
+        invitee: { select: SAFE_PARTNER_SELECT },
+      },
     });
     return rows.map((row) => toInvitationDto(row, userId));
   }
 
-  async acceptInvitation(userId: string, invitationId: string): Promise<StreakPairDto> {
+  async acceptInvitation(
+    userId: string,
+    invitationId: string,
+  ): Promise<StreakPairDto> {
     return this.prisma.$transaction(async (tx) => {
       const invitation = await tx.streakInvitation.findUnique({
         where: { id: invitationId },
-        include: { inviter: { select: SAFE_PARTNER_SELECT }, invitee: { select: SAFE_PARTNER_SELECT } },
+        include: {
+          inviter: { select: SAFE_PARTNER_SELECT },
+          invitee: { select: SAFE_PARTNER_SELECT },
+        },
       });
       if (!invitation) throw new NotFoundException('Invitation not found');
       if (invitation.inviteeId !== userId) throw new ForbiddenException();
@@ -203,12 +263,23 @@ export class StreakService {
       // invitation between the read above and here.
       const updated = await tx.streakInvitation.updateMany({
         where: { id: invitationId, status: StreakInvitationStatus.PENDING },
-        data: { status: StreakInvitationStatus.ACCEPTED, respondedAt: new Date() },
+        data: {
+          status: StreakInvitationStatus.ACCEPTED,
+          respondedAt: new Date(),
+        },
       });
-      if (updated.count === 0) throw new ConflictException('Invitation already resolved');
+      if (updated.count === 0)
+        throw new ConflictException('Invitation already resolved');
 
-      const acceptedBy = invitation.inviterId === userId ? invitation.inviter : invitation.invitee;
-      const pair = await this.createOrRestartPair(tx, invitation.inviterId, acceptedBy);
+      const acceptedBy =
+        invitation.inviterId === userId
+          ? invitation.inviter
+          : invitation.invitee;
+      const pair = await this.createOrRestartPair(
+        tx,
+        invitation.inviterId,
+        acceptedBy,
+      );
 
       return toStreakPairDto(pair, userId);
     });
@@ -236,7 +307,10 @@ export class StreakService {
     const [userLowId, userHighId] = canonicalPair(inviterId, acceptedBy.id);
 
     const activeCount = await tx.streakPair.count({
-      where: { status: 'ACTIVE', OR: [{ userLowId: acceptedBy.id }, { userHighId: acceptedBy.id }] },
+      where: {
+        status: 'ACTIVE',
+        OR: [{ userLowId: acceptedBy.id }, { userHighId: acceptedBy.id }],
+      },
     });
     if (activeCount >= MAX_ACTIVE_STREAKS_PER_USER) {
       throw new ConflictException('Too many active streaks');
@@ -245,42 +319,67 @@ export class StreakService {
     const pair = await tx.streakPair.upsert({
       where: { userLowId_userHighId: { userLowId, userHighId } },
       create: { userLowId, userHighId, status: 'ACTIVE' },
-      update: { status: 'ACTIVE', currentStreak: 0, lastQualifiedDay: null, startedAt: new Date() },
-      include: { userLow: { select: SAFE_PARTNER_SELECT }, userHigh: { select: SAFE_PARTNER_SELECT } },
+      update: {
+        status: 'ACTIVE',
+        currentStreak: 0,
+        lastQualifiedDay: null,
+        startedAt: new Date(),
+      },
+      include: {
+        userLow: { select: SAFE_PARTNER_SELECT },
+        userHigh: { select: SAFE_PARTNER_SELECT },
+      },
     });
 
-    await this.notifications.create(tx, inviterId, 'STREAK_INVITATION_ACCEPTED', {
-      partnerId: acceptedBy.id,
-      partnerName: acceptedBy.name,
-      partnerAvatarUrl: acceptedBy.avatarUrl,
-      streakId: pair.id,
-    });
+    await this.notifications.create(
+      tx,
+      inviterId,
+      'STREAK_INVITATION_ACCEPTED',
+      {
+        partnerId: acceptedBy.id,
+        partnerName: acceptedBy.name,
+        partnerAvatarUrl: acceptedBy.avatarUrl,
+        streakId: pair.id,
+      },
+    );
 
     return pair;
   }
 
   async declineInvitation(userId: string, invitationId: string): Promise<void> {
-    const invitation = await this.prisma.streakInvitation.findUnique({ where: { id: invitationId } });
+    const invitation = await this.prisma.streakInvitation.findUnique({
+      where: { id: invitationId },
+    });
     if (!invitation) throw new NotFoundException('Invitation not found');
     if (invitation.inviteeId !== userId) throw new ForbiddenException();
 
     const updated = await this.prisma.streakInvitation.updateMany({
       where: { id: invitationId, status: StreakInvitationStatus.PENDING },
-      data: { status: StreakInvitationStatus.DECLINED, respondedAt: new Date() },
+      data: {
+        status: StreakInvitationStatus.DECLINED,
+        respondedAt: new Date(),
+      },
     });
-    if (updated.count === 0) throw new ConflictException('Invitation already resolved');
+    if (updated.count === 0)
+      throw new ConflictException('Invitation already resolved');
   }
 
   async cancelInvitation(userId: string, invitationId: string): Promise<void> {
-    const invitation = await this.prisma.streakInvitation.findUnique({ where: { id: invitationId } });
+    const invitation = await this.prisma.streakInvitation.findUnique({
+      where: { id: invitationId },
+    });
     if (!invitation) throw new NotFoundException('Invitation not found');
     if (invitation.inviterId !== userId) throw new ForbiddenException();
 
     const updated = await this.prisma.streakInvitation.updateMany({
       where: { id: invitationId, status: StreakInvitationStatus.PENDING },
-      data: { status: StreakInvitationStatus.CANCELLED, respondedAt: new Date() },
+      data: {
+        status: StreakInvitationStatus.CANCELLED,
+        respondedAt: new Date(),
+      },
     });
-    if (updated.count === 0) throw new ConflictException('Invitation already resolved');
+    if (updated.count === 0)
+      throw new ConflictException('Invitation already resolved');
   }
 
   // ---- invite link (persistent, reusable — distinct from the targeted ----
@@ -296,7 +395,10 @@ export class StreakService {
     if (user.streakInviteToken) return { token: user.streakInviteToken };
 
     const token = randomBytes(16).toString('base64url');
-    await this.prisma.user.update({ where: { id: userId }, data: { streakInviteToken: token } });
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { streakInviteToken: token },
+    });
     return { token };
   }
 
@@ -310,7 +412,10 @@ export class StreakService {
     return { inviterName: user.name, inviterAvatarUrl: user.avatarUrl };
   }
 
-  async acceptInviteLink(userId: string, token: string): Promise<StreakPairDto> {
+  async acceptInviteLink(
+    userId: string,
+    token: string,
+  ): Promise<StreakPairDto> {
     const inviter = await this.prisma.user.findUnique({
       where: { streakInviteToken: token },
       select: SAFE_PARTNER_SELECT,
@@ -324,7 +429,10 @@ export class StreakService {
       const [userLowId, userHighId] = canonicalPair(inviter.id, userId);
       const existing = await tx.streakPair.findUnique({
         where: { userLowId_userHighId: { userLowId, userHighId } },
-        include: { userLow: { select: SAFE_PARTNER_SELECT }, userHigh: { select: SAFE_PARTNER_SELECT } },
+        include: {
+          userLow: { select: SAFE_PARTNER_SELECT },
+          userHigh: { select: SAFE_PARTNER_SELECT },
+        },
       });
       // Re-joining via a link you already used must be a harmless no-op,
       // never a silent reset — unlike acceptInvitation, there is no PENDING
@@ -335,7 +443,10 @@ export class StreakService {
         return toStreakPairDto(existing, userId);
       }
 
-      const me = await tx.user.findUniqueOrThrow({ where: { id: userId }, select: SAFE_PARTNER_SELECT });
+      const me = await tx.user.findUniqueOrThrow({
+        where: { id: userId },
+        select: SAFE_PARTNER_SELECT,
+      });
       const pair = await this.createOrRestartPair(tx, inviter.id, me);
       return toStreakPairDto(pair, userId);
     });
@@ -349,13 +460,22 @@ export class StreakService {
       // 'ACTIVE' < 'BROKEN' lexicographically, so ascending puts active
       // pairs first without a CASE expression.
       orderBy: [{ status: 'asc' }, { updatedAt: 'desc' }],
-      include: { userLow: { select: SAFE_PARTNER_SELECT }, userHigh: { select: SAFE_PARTNER_SELECT } },
+      include: {
+        userLow: { select: SAFE_PARTNER_SELECT },
+        userHigh: { select: SAFE_PARTNER_SELECT },
+      },
     });
 
     const fresh = await this.prisma.$transaction(async (tx) => {
       const result: PairWithUsers[] = [];
       for (const row of rows) {
-        result.push(row.status === 'ACTIVE' ? await this.recomputePairState(tx, row) : row);
+        result.push(
+          row.status === 'ACTIVE'
+            ? await this.recomputePairState(tx, row)
+            : row.status === 'BROKEN'
+              ? await this.maybeAutoRestartPair(tx, row)
+              : row,
+        );
       }
       return result;
     });
@@ -363,13 +483,19 @@ export class StreakService {
     return fresh.map((row) => toStreakPairDto(row, userId));
   }
 
-  async getPairStatus(userId: string, otherUserId: string): Promise<PairRelationshipDto> {
+  async getPairStatus(
+    userId: string,
+    otherUserId: string,
+  ): Promise<PairRelationshipDto> {
     if (otherUserId === userId) throw new BadRequestException();
 
     const [userLowId, userHighId] = canonicalPair(userId, otherUserId);
     const pair = await this.prisma.streakPair.findUnique({
       where: { userLowId_userHighId: { userLowId, userHighId } },
-      include: { userLow: { select: SAFE_PARTNER_SELECT }, userHigh: { select: SAFE_PARTNER_SELECT } },
+      include: {
+        userLow: { select: SAFE_PARTNER_SELECT },
+        userHigh: { select: SAFE_PARTNER_SELECT },
+      },
     });
     if (pair) {
       return {
@@ -390,13 +516,20 @@ export class StreakService {
       where: {
         status: StreakInvitationStatus.PENDING,
         expiresAt: { gt: new Date() },
-        OR: [{ inviterId: userId, inviteeId: otherUserId }, { inviterId: otherUserId, inviteeId: userId }],
+        OR: [
+          { inviterId: userId, inviteeId: otherUserId },
+          { inviterId: otherUserId, inviteeId: userId },
+        ],
       },
-      include: { inviter: { select: SAFE_PARTNER_SELECT }, invitee: { select: SAFE_PARTNER_SELECT } },
+      include: {
+        inviter: { select: SAFE_PARTNER_SELECT },
+        invitee: { select: SAFE_PARTNER_SELECT },
+      },
     });
     if (invitation) {
       return {
-        relationship: invitation.inviterId === userId ? 'pending_sent' : 'pending_received',
+        relationship:
+          invitation.inviterId === userId ? 'pending_sent' : 'pending_received',
         invitation: toInvitationDto(invitation, userId),
       };
     }
@@ -409,10 +542,16 @@ export class StreakService {
    * for a low-frequency detail view, not something on the recordProgress
    * hot path.
    */
-  async getStreakDetail(userId: string, pairId: string): Promise<StreakDetailDto> {
+  async getStreakDetail(
+    userId: string,
+    pairId: string,
+  ): Promise<StreakDetailDto> {
     const found = await this.prisma.streakPair.findUnique({
       where: { id: pairId },
-      include: { userLow: { select: SAFE_PARTNER_SELECT }, userHigh: { select: SAFE_PARTNER_SELECT } },
+      include: {
+        userLow: { select: SAFE_PARTNER_SELECT },
+        userHigh: { select: SAFE_PARTNER_SELECT },
+      },
     });
     if (!found) throw new NotFoundException('Streak not found');
     this.assertParticipant(found, userId);
@@ -425,16 +564,34 @@ export class StreakService {
     // so currentStreak would stay stuck even though both sides truly
     // qualified today. Re-derives from the real UserDailyActivity rows on
     // every detail read instead of trusting the hook alone.
+    //
+    // A BROKEN pair goes through the separate maybeAutoRestartPair path
+    // (2026-09-16 fix) instead: reported bug — a pair whose streak had
+    // broken stayed frozen at "0 ngày" / "Chuỗi đã kết thúc" forever even
+    // after both partners resumed studying, because recomputePairState was
+    // never invoked for anything but ACTIVE pairs.
     const pair =
       found.status === 'ACTIVE'
-        ? await this.prisma.$transaction((tx) => this.recomputePairState(tx, found))
-        : found;
+        ? await this.prisma.$transaction((tx) =>
+            this.recomputePairState(tx, found),
+          )
+        : found.status === 'BROKEN'
+          ? await this.prisma.$transaction((tx) =>
+              this.maybeAutoRestartPair(tx, found),
+            )
+          : found;
 
     const partner = pair.userLowId === userId ? pair.userHigh : pair.userLow;
 
     const [meUser, partnerUser] = await Promise.all([
-      this.prisma.user.findUniqueOrThrow({ where: { id: userId }, select: { timezone: true } }),
-      this.prisma.user.findUniqueOrThrow({ where: { id: partner.id }, select: { timezone: true } }),
+      this.prisma.user.findUniqueOrThrow({
+        where: { id: userId },
+        select: { timezone: true },
+      }),
+      this.prisma.user.findUniqueOrThrow({
+        where: { id: partner.id },
+        select: { timezone: true },
+      }),
     ]);
     const meTimeZone = meUser.timezone ?? 'UTC';
     const partnerTimeZone = partnerUser.timezone ?? 'UTC';
@@ -453,7 +610,13 @@ export class StreakService {
     const windowStart = dayKeyToDate(dayLabels[0]);
     const todayLabel = formatDayInTimeZone(new Date(), meTimeZone);
 
-    const [meDays, partnerDays, meActivityToday, partnerActivityToday, percentileRank] = await Promise.all([
+    const [
+      meDays,
+      partnerDays,
+      meActivityToday,
+      partnerActivityToday,
+      percentileRank,
+    ] = await Promise.all([
       this.prisma.userDailyActivity.findMany({
         where: { userId, day: { gte: windowStart } },
         select: { day: true },
@@ -468,7 +631,9 @@ export class StreakService {
     ]);
 
     const meDaySet = new Set(meDays.map((row) => dayColumnToLabel(row.day)));
-    const partnerDaySet = new Set(partnerDays.map((row) => dayColumnToLabel(row.day)));
+    const partnerDaySet = new Set(
+      partnerDays.map((row) => dayColumnToLabel(row.day)),
+    );
     const calendar: StreakDayStatus[] = dayLabels.map((day) => ({
       day,
       meQualified: meDaySet.has(day),
@@ -476,7 +641,9 @@ export class StreakService {
       isFuture: day > todayLabel,
     }));
 
-    const isAtRiskToday = !(meDaySet.has(todayLabel) && partnerDaySet.has(todayLabel));
+    const isAtRiskToday = !(
+      meDaySet.has(todayLabel) && partnerDaySet.has(todayLabel)
+    );
 
     return {
       ...toStreakPairDto(pair, userId),
@@ -497,7 +664,10 @@ export class StreakService {
    * event (a submitted attempt) is what matters here, not which of the two
    * modes it was.
    */
-  private async describeActivity(userId: string, timeZone: string): Promise<StreakActivityToday> {
+  private async describeActivity(
+    userId: string,
+    timeZone: string,
+  ): Promise<StreakActivityToday> {
     const dayStart = startOfDayInTimeZone(new Date(), timeZone);
     const dayEnd = new Date(dayStart.getTime() + 86_400_000);
 
@@ -531,19 +701,29 @@ export class StreakService {
 
     const candidates: { at: Date; label: StreakActivityToday['label'] }[] = [];
     if (step) candidates.push({ at: step.lastActivityAt, label: 'lesson' });
-    if (attempt) candidates.push({ at: attempt.submittedAt, label: 'practice' });
+    if (attempt)
+      candidates.push({ at: attempt.submittedAt, label: 'practice' });
     if (review) candidates.push({ at: review.reviewedAt, label: 'vocab' });
-    if (dictation) candidates.push({ at: dictation.submittedAt, label: 'listening' });
-    if (shadowing) candidates.push({ at: shadowing.submittedAt, label: 'listening' });
-    if (candidates.length === 0) return { qualified: false, label: null, at: null };
+    if (dictation)
+      candidates.push({ at: dictation.submittedAt, label: 'listening' });
+    if (shadowing)
+      candidates.push({ at: shadowing.submittedAt, label: 'listening' });
+    if (candidates.length === 0)
+      return { qualified: false, label: null, at: null };
 
     candidates.sort((a, b) => b.at.getTime() - a.at.getTime());
-    return { qualified: true, label: candidates[0].label, at: candidates[0].at.toISOString() };
+    return {
+      qualified: true,
+      label: candidates[0].label,
+      at: candidates[0].at.toISOString(),
+    };
   }
 
   /** "Top N%" among currently-ACTIVE pairs. Two COUNTs; null below the sample floor. */
   private async percentileRank(currentStreak: number): Promise<number | null> {
-    const total = await this.prisma.streakPair.count({ where: { status: 'ACTIVE' } });
+    const total = await this.prisma.streakPair.count({
+      where: { status: 'ACTIVE' },
+    });
     if (total < MIN_PAIRS_FOR_PERCENTILE) return null;
 
     const betterOrEqual = await this.prisma.streakPair.count({
@@ -586,20 +766,29 @@ export class StreakService {
       currentStreak: pair.currentStreak,
       longestStreak: pair.longestStreak,
       totalXp: pair.userLow.totalPoints + pair.userHigh.totalPoints,
-      isCurrentUserPair: pair.userLowId === userId || pair.userHighId === userId,
+      isCurrentUserPair:
+        pair.userLowId === userId || pair.userHighId === userId,
     }));
   }
 
   // ---- sharing ------------------------------------------------------------
 
-  async generateShareLink(userId: string, pairId: string): Promise<{ shareId: string }> {
-    const pair = await this.prisma.streakPair.findUnique({ where: { id: pairId } });
+  async generateShareLink(
+    userId: string,
+    pairId: string,
+  ): Promise<{ shareId: string }> {
+    const pair = await this.prisma.streakPair.findUnique({
+      where: { id: pairId },
+    });
     if (!pair) throw new NotFoundException('Streak not found');
     this.assertParticipant(pair, userId);
     if (pair.publicShareId) return { shareId: pair.publicShareId };
 
     const shareId = randomBytes(16).toString('base64url');
-    await this.prisma.streakPair.update({ where: { id: pairId }, data: { publicShareId: shareId } });
+    await this.prisma.streakPair.update({
+      where: { id: pairId },
+      data: { publicShareId: shareId },
+    });
     return { shareId };
   }
 
@@ -642,10 +831,20 @@ export class StreakService {
    * streak/notification write landing or rolling back together with the
    * activity that caused it, never disagreeing with it.
    */
-  async onUserActivityDay(tx: Prisma.TransactionClient, userId: string, dayLabel: string): Promise<void> {
+  async onUserActivityDay(
+    tx: Prisma.TransactionClient,
+    userId: string,
+    dayLabel: string,
+  ): Promise<void> {
     const pairs = await tx.streakPair.findMany({
-      where: { status: 'ACTIVE', OR: [{ userLowId: userId }, { userHighId: userId }] },
-      include: { userLow: { select: SAFE_PARTNER_SELECT }, userHigh: { select: SAFE_PARTNER_SELECT } },
+      where: {
+        status: 'ACTIVE',
+        OR: [{ userLowId: userId }, { userHighId: userId }],
+      },
+      include: {
+        userLow: { select: SAFE_PARTNER_SELECT },
+        userHigh: { select: SAFE_PARTNER_SELECT },
+      },
     });
     for (const pair of pairs) {
       await this.processPairActivity(tx, pair, userId, dayLabel);
@@ -672,8 +871,14 @@ export class StreakService {
     if (pair.lastQualifiedDay === dayLabel) return;
 
     // A fully-past day with no qualification breaks the streak.
-    if (pair.lastQualifiedDay && daysBetweenLabels(pair.lastQualifiedDay, dayLabel) > 1) {
-      await tx.streakPair.update({ where: { id: pair.id }, data: { status: 'BROKEN', currentStreak: 0 } });
+    if (
+      pair.lastQualifiedDay &&
+      daysBetweenLabels(pair.lastQualifiedDay, dayLabel) > 1
+    ) {
+      await tx.streakPair.update({
+        where: { id: pair.id },
+        data: { status: 'BROKEN', currentStreak: 0 },
+      });
       await Promise.all([
         this.notifications.create(tx, pair.userLowId, 'STREAK_BROKEN', {
           partnerId: pair.userHigh.id,
@@ -692,7 +897,9 @@ export class StreakService {
     }
 
     const partnerDay = await tx.userDailyActivity.findUnique({
-      where: { userId_day: { userId: partner.id, day: dayKeyToDate(dayLabel) } },
+      where: {
+        userId_day: { userId: partner.id, day: dayKeyToDate(dayLabel) },
+      },
     });
 
     if (!partnerDay) {
@@ -704,25 +911,35 @@ export class StreakService {
       // every single page view that triggers a recompute — only the
       // one-shot live hook is allowed to send it.
       if (options.notifyPartnerPending) {
-        await this.notifications.create(tx, partner.id, 'STREAK_PARTNER_ACTIVE', {
-          partnerId: me.id,
-          partnerName: me.name,
-          partnerAvatarUrl: me.avatarUrl,
-          streakId: pair.id,
-        });
+        await this.notifications.create(
+          tx,
+          partner.id,
+          'STREAK_PARTNER_ACTIVE',
+          {
+            partnerId: me.id,
+            partnerName: me.name,
+            partnerAvatarUrl: me.avatarUrl,
+            streakId: pair.id,
+          },
+        );
       }
       return;
     }
 
     const nextStreak =
-      pair.lastQualifiedDay && daysBetweenLabels(pair.lastQualifiedDay, dayLabel) === 1
+      pair.lastQualifiedDay &&
+      daysBetweenLabels(pair.lastQualifiedDay, dayLabel) === 1
         ? pair.currentStreak + 1
         : 1;
     const nextLongest = Math.max(pair.longestStreak, nextStreak);
 
     await tx.streakPair.update({
       where: { id: pair.id },
-      data: { currentStreak: nextStreak, longestStreak: nextLongest, lastQualifiedDay: dayLabel },
+      data: {
+        currentStreak: nextStreak,
+        longestStreak: nextLongest,
+        lastQualifiedDay: dayLabel,
+      },
     });
 
     if ((MILESTONES as readonly number[]).includes(nextStreak)) {
@@ -760,14 +977,29 @@ export class StreakService {
    * the one deliberate behavioural difference from the live hook — see the
    * comment on that branch in processPairActivity for why.
    */
-  private async recomputePairState(tx: Prisma.TransactionClient, pair: PairWithUsers): Promise<PairWithUsers> {
+  private async recomputePairState(
+    tx: Prisma.TransactionClient,
+    pair: PairWithUsers,
+  ): Promise<PairWithUsers> {
     const [lowUser, highUser] = await Promise.all([
-      tx.user.findUniqueOrThrow({ where: { id: pair.userLowId }, select: { timezone: true } }),
-      tx.user.findUniqueOrThrow({ where: { id: pair.userHighId }, select: { timezone: true } }),
+      tx.user.findUniqueOrThrow({
+        where: { id: pair.userLowId },
+        select: { timezone: true },
+      }),
+      tx.user.findUniqueOrThrow({
+        where: { id: pair.userHighId },
+        select: { timezone: true },
+      }),
     ]);
     const attempts: { userId: string; dayLabel: string }[] = [
-      { userId: pair.userLowId, dayLabel: formatDayInTimeZone(new Date(), lowUser.timezone ?? 'UTC') },
-      { userId: pair.userHighId, dayLabel: formatDayInTimeZone(new Date(), highUser.timezone ?? 'UTC') },
+      {
+        userId: pair.userLowId,
+        dayLabel: formatDayInTimeZone(new Date(), lowUser.timezone ?? 'UTC'),
+      },
+      {
+        userId: pair.userHighId,
+        dayLabel: formatDayInTimeZone(new Date(), highUser.timezone ?? 'UTC'),
+      },
     ];
 
     let current = pair;
@@ -780,11 +1012,16 @@ export class StreakService {
       });
       if (!ownDay) continue;
 
-      await this.processPairActivity(tx, current, userId, dayLabel, { notifyPartnerPending: false });
+      await this.processPairActivity(tx, current, userId, dayLabel, {
+        notifyPartnerPending: false,
+      });
 
       const refreshed = await tx.streakPair.findUnique({
         where: { id: pair.id },
-        include: { userLow: { select: SAFE_PARTNER_SELECT }, userHigh: { select: SAFE_PARTNER_SELECT } },
+        include: {
+          userLow: { select: SAFE_PARTNER_SELECT },
+          userHigh: { select: SAFE_PARTNER_SELECT },
+        },
       });
       if (!refreshed) break;
       current = refreshed;
@@ -792,7 +1029,91 @@ export class StreakService {
     return current;
   }
 
-  private assertParticipant(pair: { userLowId: string; userHighId: string }, userId: string): void {
-    if (pair.userLowId !== userId && pair.userHighId !== userId) throw new ForbiddenException();
+  /**
+   * Auto-restart a BROKEN pair on read (2026-09-16 fix for a reported bug:
+   * both partners resumed studying — each showed "Đã học hôm nay ✓" — but
+   * the pair stayed frozen at "0 ngày" / "Chuỗi đã kết thúc" forever,
+   * because the only code path that ever cleared BROKEN was accepting a
+   * fresh invite, not simply both people being active again).
+   *
+   * Deliberately requires BOTH sides to have already qualified today (each
+   * checked on their OWN "today", in their own timezone) before touching
+   * anything — one partner alone must leave the pair BROKEN untouched
+   * (pinned by 'leaves a BROKEN pair untouched by the recompute' above),
+   * since a restart is a mutual thing, not something either partner can
+   * trigger alone by resuming solo.
+   *
+   * Once both qualify, resets the pair to the exact same clean slate
+   * createOrRestartPair already uses for a manual re-invite (status
+   * ACTIVE, currentStreak 0, lastQualifiedDay null, startedAt now), then
+   * hands it straight to recomputePairState — so the resulting
+   * currentStreak: 1 comes from the SAME, already-proven increment logic
+   * every other day-1 streak uses, not a second hand-rolled calculation.
+   */
+  private async maybeAutoRestartPair(
+    tx: Prisma.TransactionClient,
+    pair: PairWithUsers,
+  ): Promise<PairWithUsers> {
+    const [lowUser, highUser] = await Promise.all([
+      tx.user.findUniqueOrThrow({
+        where: { id: pair.userLowId },
+        select: { timezone: true },
+      }),
+      tx.user.findUniqueOrThrow({
+        where: { id: pair.userHighId },
+        select: { timezone: true },
+      }),
+    ]);
+    const lowDayLabel = formatDayInTimeZone(
+      new Date(),
+      lowUser.timezone ?? 'UTC',
+    );
+    const highDayLabel = formatDayInTimeZone(
+      new Date(),
+      highUser.timezone ?? 'UTC',
+    );
+
+    const [lowToday, highToday] = await Promise.all([
+      tx.userDailyActivity.findUnique({
+        where: {
+          userId_day: {
+            userId: pair.userLowId,
+            day: dayKeyToDate(lowDayLabel),
+          },
+        },
+      }),
+      tx.userDailyActivity.findUnique({
+        where: {
+          userId_day: {
+            userId: pair.userHighId,
+            day: dayKeyToDate(highDayLabel),
+          },
+        },
+      }),
+    ]);
+    if (!lowToday || !highToday) return pair;
+
+    const reset = await tx.streakPair.update({
+      where: { id: pair.id },
+      data: {
+        status: 'ACTIVE',
+        currentStreak: 0,
+        lastQualifiedDay: null,
+        startedAt: new Date(),
+      },
+      include: {
+        userLow: { select: SAFE_PARTNER_SELECT },
+        userHigh: { select: SAFE_PARTNER_SELECT },
+      },
+    });
+    return this.recomputePairState(tx, reset);
+  }
+
+  private assertParticipant(
+    pair: { userLowId: string; userHighId: string },
+    userId: string,
+  ): void {
+    if (pair.userLowId !== userId && pair.userHighId !== userId)
+      throw new ForbiddenException();
   }
 }

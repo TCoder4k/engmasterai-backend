@@ -101,7 +101,11 @@ class FakeStore {
   withInvitationInclude(inv: FakeInvitation) {
     const inviter = this.users.find((u) => u.id === inv.inviterId)!;
     const invitee = this.users.find((u) => u.id === inv.inviteeId)!;
-    return { ...inv, inviter: userSelect(inviter), invitee: userSelect(invitee) };
+    return {
+      ...inv,
+      inviter: userSelect(inviter),
+      invitee: userSelect(invitee),
+    };
   }
 }
 
@@ -116,20 +120,43 @@ const buildPrismaClient = (store: FakeStore) => {
         ({ where }: { where: { id?: string; streakInviteToken?: string } }) => {
           const u = where.id
             ? store.users.find((row) => row.id === where.id)
-            : store.users.find((row) => row.streakInviteToken === where.streakInviteToken);
-          return Promise.resolve(u ? { ...userSelect(u), streakInviteToken: u.streakInviteToken } : null);
+            : store.users.find(
+                (row) => row.streakInviteToken === where.streakInviteToken,
+              );
+          return Promise.resolve(
+            u
+              ? { ...userSelect(u), streakInviteToken: u.streakInviteToken }
+              : null,
+          );
         },
       ),
-      findUniqueOrThrow: jest.fn(({ where: { id } }: { where: { id: string } }) => {
-        const u = store.users.find((row) => row.id === id);
-        if (!u) throw new Error('not found');
-        return Promise.resolve({ ...userSelect(u), timezone: u.timezone, streakInviteToken: u.streakInviteToken });
-      }),
-      update: jest.fn(({ where: { id }, data }: { where: { id: string }; data: Partial<FakeUser> }) => {
-        const u = store.users.find((row) => row.id === id)!;
-        Object.assign(u, data);
-        return Promise.resolve({ ...userSelect(u), streakInviteToken: u.streakInviteToken });
-      }),
+      findUniqueOrThrow: jest.fn(
+        ({ where: { id } }: { where: { id: string } }) => {
+          const u = store.users.find((row) => row.id === id);
+          if (!u) throw new Error('not found');
+          return Promise.resolve({
+            ...userSelect(u),
+            timezone: u.timezone,
+            streakInviteToken: u.streakInviteToken,
+          });
+        },
+      ),
+      update: jest.fn(
+        ({
+          where: { id },
+          data,
+        }: {
+          where: { id: string };
+          data: Partial<FakeUser>;
+        }) => {
+          const u = store.users.find((row) => row.id === id)!;
+          Object.assign(u, data);
+          return Promise.resolve({
+            ...userSelect(u),
+            streakInviteToken: u.streakInviteToken,
+          });
+        },
+      ),
     },
     streakInvitation: {
       create: jest.fn(
@@ -151,21 +178,47 @@ const buildPrismaClient = (store: FakeStore) => {
           return Promise.resolve(store.withInvitationInclude(row));
         },
       ),
-      findFirst: jest.fn(({ where }: { where: { status?: string; OR?: unknown[]; respondedAt?: { gte: Date } } }) => {
-        const matches = store.invitations.filter((inv) => matchInvitationWhere(inv, where));
-        return Promise.resolve(matches[0] ? store.withInvitationInclude(matches[0]) : null);
-      }),
+      findFirst: jest.fn(
+        ({
+          where,
+        }: {
+          where: {
+            status?: string;
+            OR?: unknown[];
+            respondedAt?: { gte: Date };
+          };
+        }) => {
+          const matches = store.invitations.filter((inv) =>
+            matchInvitationWhere(inv, where),
+          );
+          return Promise.resolve(
+            matches[0] ? store.withInvitationInclude(matches[0]) : null,
+          );
+        },
+      ),
       findMany: jest.fn(({ where }: { where: Record<string, unknown> }) => {
-        const matches = store.invitations.filter((inv) => matchInvitationWhere(inv, where));
-        return Promise.resolve(matches.map((inv) => store.withInvitationInclude(inv)));
+        const matches = store.invitations.filter((inv) =>
+          matchInvitationWhere(inv, where),
+        );
+        return Promise.resolve(
+          matches.map((inv) => store.withInvitationInclude(inv)),
+        );
       }),
       findUnique: jest.fn(({ where: { id } }: { where: { id: string } }) => {
         const row = store.invitations.find((inv) => inv.id === id);
         return Promise.resolve(row ? store.withInvitationInclude(row) : null);
       }),
       updateMany: jest.fn(
-        ({ where, data }: { where: { id: string; status: string }; data: Partial<FakeInvitation> }) => {
-          const row = store.invitations.find((inv) => inv.id === where.id && inv.status === where.status);
+        ({
+          where,
+          data,
+        }: {
+          where: { id: string; status: string };
+          data: Partial<FakeInvitation>;
+        }) => {
+          const row = store.invitations.find(
+            (inv) => inv.id === where.id && inv.status === where.status,
+          );
           if (!row) return Promise.resolve({ count: 0 });
           Object.assign(row, data);
           return Promise.resolve({ count: 1 });
@@ -178,7 +231,11 @@ const buildPrismaClient = (store: FakeStore) => {
           where,
           select,
         }: {
-          where: { id?: string; userLowId_userHighId?: { userLowId: string; userHighId: string }; publicShareId?: string };
+          where: {
+            id?: string;
+            userLowId_userHighId?: { userLowId: string; userHighId: string };
+            publicShareId?: string;
+          };
           select?: unknown;
         }) => {
           let row: FakePair | undefined;
@@ -189,11 +246,14 @@ const buildPrismaClient = (store: FakeStore) => {
                 p.userLowId === where.userLowId_userHighId!.userLowId &&
                 p.userHighId === where.userLowId_userHighId!.userHighId,
             );
-          else if (where.publicShareId) row = store.pairs.find((p) => p.publicShareId === where.publicShareId);
+          else if (where.publicShareId)
+            row = store.pairs.find(
+              (p) => p.publicShareId === where.publicShareId,
+            );
           if (!row) return Promise.resolve(null);
           if (select) {
-            const low = store.users.find((u) => u.id === row!.userLowId)!;
-            const high = store.users.find((u) => u.id === row!.userHighId)!;
+            const low = store.users.find((u) => u.id === row.userLowId)!;
+            const high = store.users.find((u) => u.id === row.userHighId)!;
             return Promise.resolve({
               currentStreak: row.currentStreak,
               status: row.status,
@@ -219,7 +279,10 @@ const buildPrismaClient = (store: FakeStore) => {
           if (orderBy) {
             matches = [...matches].sort((a, b) => {
               for (const clause of orderBy) {
-                const [field, dir] = Object.entries(clause)[0] as [keyof FakePair, 'asc' | 'desc'];
+                const [field, dir] = Object.entries(clause)[0] as [
+                  keyof FakePair,
+                  'asc' | 'desc',
+                ];
                 const av = a[field] as number;
                 const bv = b[field] as number;
                 if (av !== bv) return dir === 'desc' ? bv - av : av - bv;
@@ -232,7 +295,9 @@ const buildPrismaClient = (store: FakeStore) => {
         },
       ),
       count: jest.fn(({ where }: { where: Record<string, unknown> }) =>
-        Promise.resolve(store.pairs.filter((p) => matchPairWhere(p, where)).length),
+        Promise.resolve(
+          store.pairs.filter((p) => matchPairWhere(p, where)).length,
+        ),
       ),
       upsert: jest.fn(
         ({
@@ -240,12 +305,17 @@ const buildPrismaClient = (store: FakeStore) => {
           create,
           update,
         }: {
-          where: { userLowId_userHighId: { userLowId: string; userHighId: string } };
+          where: {
+            userLowId_userHighId: { userLowId: string; userHighId: string };
+          };
           create: { userLowId: string; userHighId: string; status: string };
           update: Partial<FakePair>;
         }) => {
           const key = where.userLowId_userHighId;
-          let row = store.pairs.find((p) => p.userLowId === key.userLowId && p.userHighId === key.userHighId);
+          let row = store.pairs.find(
+            (p) =>
+              p.userLowId === key.userLowId && p.userHighId === key.userHighId,
+          );
           if (row) {
             Object.assign(row, update);
           } else {
@@ -266,26 +336,47 @@ const buildPrismaClient = (store: FakeStore) => {
           return Promise.resolve(store.withPairInclude(row));
         },
       ),
-      update: jest.fn(({ where: { id }, data }: { where: { id: string }; data: Partial<FakePair> }) => {
-        const row = store.pairs.find((p) => p.id === id)!;
-        Object.assign(row, data);
-        return Promise.resolve(store.withPairInclude(row));
-      }),
+      update: jest.fn(
+        ({
+          where: { id },
+          data,
+        }: {
+          where: { id: string };
+          data: Partial<FakePair>;
+        }) => {
+          const row = store.pairs.find((p) => p.id === id)!;
+          Object.assign(row, data);
+          return Promise.resolve(store.withPairInclude(row));
+        },
+      ),
     },
     userDailyActivity: {
-      findMany: jest.fn(({ where }: { where: { userId: string; day: { gte: Date } } }) =>
-        Promise.resolve(
-          store.dailyActivity
-            .filter((row) => row.userId === where.userId && row.day.getTime() >= where.day.gte.getTime())
-            .map((row) => ({ day: row.day })),
-        ),
+      findMany: jest.fn(
+        ({ where }: { where: { userId: string; day: { gte: Date } } }) =>
+          Promise.resolve(
+            store.dailyActivity
+              .filter(
+                (row) =>
+                  row.userId === where.userId &&
+                  row.day.getTime() >= where.day.gte.getTime(),
+              )
+              .map((row) => ({ day: row.day })),
+          ),
       ),
       findUnique: jest.fn(
-        ({ where: { userId_day } }: { where: { userId_day: { userId: string; day: Date } } }) => {
+        ({
+          where: { userId_day },
+        }: {
+          where: { userId_day: { userId: string; day: Date } };
+        }) => {
           const row = store.dailyActivity.find(
-            (r) => r.userId === userId_day.userId && r.day.getTime() === userId_day.day.getTime(),
+            (r) =>
+              r.userId === userId_day.userId &&
+              r.day.getTime() === userId_day.day.getTime(),
           );
-          return Promise.resolve(row ? { userId: row.userId, day: row.day } : null);
+          return Promise.resolve(
+            row ? { userId: row.userId, day: row.day } : null,
+          );
         },
       ),
     },
@@ -293,21 +384,31 @@ const buildPrismaClient = (store: FakeStore) => {
     lessonTaskAttempt: { findFirst: jest.fn(() => Promise.resolve(null)) },
     wordReviewLog: { findFirst: jest.fn(() => Promise.resolve(null)) },
     listeningDictationAttempt: {
-      findFirst: jest.fn<Promise<{ submittedAt: Date } | null>, []>(() => Promise.resolve(null)),
+      findFirst: jest.fn<Promise<{ submittedAt: Date } | null>, []>(() =>
+        Promise.resolve(null),
+      ),
     },
     listeningShadowingAttempt: {
-      findFirst: jest.fn<Promise<{ submittedAt: Date } | null>, []>(() => Promise.resolve(null)),
+      findFirst: jest.fn<Promise<{ submittedAt: Date } | null>, []>(() =>
+        Promise.resolve(null),
+      ),
     },
-    $transaction: jest.fn((fn: (tx: unknown) => Promise<unknown>) => fn(client)),
+    $transaction: jest.fn((fn: (tx: unknown) => Promise<unknown>) =>
+      fn(client),
+    ),
   };
   return client;
 };
 
-const matchInvitationWhere = (inv: FakeInvitation, where: Record<string, unknown>): boolean => {
+const matchInvitationWhere = (
+  inv: FakeInvitation,
+  where: Record<string, unknown>,
+): boolean => {
   if (where.status && inv.status !== where.status) return false;
   if (where.respondedAt) {
     const gte = (where.respondedAt as { gte: Date }).gte;
-    if (!inv.respondedAt || inv.respondedAt.getTime() < gte.getTime()) return false;
+    if (!inv.respondedAt || inv.respondedAt.getTime() < gte.getTime())
+      return false;
   }
   if (where.expiresAt) {
     const gt = (where.expiresAt as { gt: Date }).gt;
@@ -329,7 +430,10 @@ const matchInvitationWhere = (inv: FakeInvitation, where: Record<string, unknown
   return true;
 };
 
-const matchPairWhere = (pair: FakePair, where: Record<string, unknown>): boolean => {
+const matchPairWhere = (
+  pair: FakePair,
+  where: Record<string, unknown>,
+): boolean => {
   if (where.status && pair.status !== where.status) return false;
   if (where.userLowId && pair.userLowId !== where.userLowId) return false;
   if (where.userHighId && pair.userHighId !== where.userHighId) return false;
@@ -339,7 +443,9 @@ const matchPairWhere = (pair: FakePair, where: Record<string, unknown>): boolean
   }
   if (where.OR) {
     const or = where.OR as Record<string, unknown>[];
-    return or.some((clause) => matchPairWhere(pair, { ...clause, status: where.status }));
+    return or.some((clause) =>
+      matchPairWhere(pair, { ...clause, status: where.status }),
+    );
   }
   return true;
 };
@@ -395,7 +501,9 @@ describe('StreakService — invitations', () => {
     const a = store.addUser();
     const b = store.addUser();
     const invite = await service.sendInvitation(a.id, b.id);
-    store.invitations.find((inv) => inv.id === invite.id)!.expiresAt = new Date(Date.now() - 1);
+    store.invitations.find((inv) => inv.id === invite.id)!.expiresAt = new Date(
+      Date.now() - 1,
+    );
 
     await expect(service.sendInvitation(a.id, b.id)).resolves.toBeDefined();
   });
@@ -484,11 +592,17 @@ describe('StreakService — getPairStatus', () => {
     expect((await service.getPairStatus(a.id, b.id)).relationship).toBe('none');
 
     const invite = await service.sendInvitation(a.id, b.id);
-    expect((await service.getPairStatus(a.id, b.id)).relationship).toBe('pending_sent');
-    expect((await service.getPairStatus(b.id, a.id)).relationship).toBe('pending_received');
+    expect((await service.getPairStatus(a.id, b.id)).relationship).toBe(
+      'pending_sent',
+    );
+    expect((await service.getPairStatus(b.id, a.id)).relationship).toBe(
+      'pending_received',
+    );
 
     await service.acceptInvitation(b.id, invite.id);
-    expect((await service.getPairStatus(a.id, b.id)).relationship).toBe('active');
+    expect((await service.getPairStatus(a.id, b.id)).relationship).toBe(
+      'active',
+    );
   });
 
   // Confirmed production bug (2026-09-09, reported with a real 410 Gone
@@ -505,7 +619,9 @@ describe('StreakService — getPairStatus', () => {
     const a = store.addUser();
     const b = store.addUser();
     const invite = await service.sendInvitation(a.id, b.id);
-    store.invitations.find((inv) => inv.id === invite.id)!.expiresAt = new Date(Date.now() - 1);
+    store.invitations.find((inv) => inv.id === invite.id)!.expiresAt = new Date(
+      Date.now() - 1,
+    );
 
     expect((await service.getPairStatus(a.id, b.id)).relationship).toBe('none');
     expect((await service.getPairStatus(b.id, a.id)).relationship).toBe('none');
@@ -597,8 +713,18 @@ describe('StreakService — onUserActivityDay', () => {
     expect(store.pairs[0].status).toBe('BROKEN');
     expect(store.pairs[0].currentStreak).toBe(0);
     expect(store.pairs[0].longestStreak).toBe(5);
-    expect(notifications.create).toHaveBeenCalledWith(expect.anything(), a.id, 'STREAK_BROKEN', expect.anything());
-    expect(notifications.create).toHaveBeenCalledWith(expect.anything(), b.id, 'STREAK_BROKEN', expect.anything());
+    expect(notifications.create).toHaveBeenCalledWith(
+      expect.anything(),
+      a.id,
+      'STREAK_BROKEN',
+      expect.anything(),
+    );
+    expect(notifications.create).toHaveBeenCalledWith(
+      expect.anything(),
+      b.id,
+      'STREAK_BROKEN',
+      expect.anything(),
+    );
   });
 
   it('ignores a day label that is already behind the recorded high-water mark', async () => {
@@ -620,7 +746,11 @@ describe('StreakService — onUserActivityDay', () => {
 });
 
 describe('StreakService — getLeaderboard', () => {
-  const acceptedPairWithStreak = async (currentStreak: number, longestStreak = currentStreak, points = 0) => {
+  const acceptedPairWithStreak = async (
+    currentStreak: number,
+    longestStreak = currentStreak,
+    points = 0,
+  ) => {
     const { service, store } = buildHarness();
     const a = store.addUser({ totalPoints: points });
     const b = store.addUser({ totalPoints: points });
@@ -679,7 +809,7 @@ describe('StreakService — getLeaderboard', () => {
     expect(board).toHaveLength(0);
   });
 
-  it('sums both members\' real totalPoints into totalXp — no fabricated stat', async () => {
+  it("sums both members' real totalPoints into totalXp — no fabricated stat", async () => {
     const { service, a } = await acceptedPairWithStreak(5, 5, 300);
 
     const board = await service.getLeaderboard(a.id);
@@ -687,7 +817,7 @@ describe('StreakService — getLeaderboard', () => {
     expect(board[0].totalXp).toBe(600);
   });
 
-  it('flags the viewer\'s own pair and no one else\'s', async () => {
+  it("flags the viewer's own pair and no one else's", async () => {
     const { service, a } = await acceptedPairWithStreak(5);
     const stranger = 'not-a-participant';
 
@@ -715,7 +845,9 @@ describe('StreakService — getStreakDetail activity-today labeling', () => {
 
   it('labels a listening-only day as qualified, with the shared "listening" label', async () => {
     const { service, store, prisma, a } = await acceptedPair();
-    prisma.listeningDictationAttempt.findFirst.mockResolvedValueOnce({ submittedAt: new Date() });
+    prisma.listeningDictationAttempt.findFirst.mockResolvedValueOnce({
+      submittedAt: new Date(),
+    });
 
     const detail = await service.getStreakDetail(a.id, store.pairs[0].id);
 
@@ -731,7 +863,11 @@ describe('StreakService — getStreakDetail activity-today labeling', () => {
 
     const detail = await service.getStreakDetail(a.id, store.pairs[0].id);
 
-    expect(detail.meActivityToday).toEqual({ qualified: false, label: null, at: null });
+    expect(detail.meActivityToday).toEqual({
+      qualified: false,
+      label: null,
+      at: null,
+    });
   });
 });
 
@@ -833,6 +969,43 @@ describe('StreakService — self-healing recompute on read', () => {
     expect(detail.status).toBe('BROKEN');
     expect(detail.currentStreak).toBe(0);
   });
+
+  // Reported bug (2026-09-16): a pair whose streak had broken (status
+  // BROKEN, currentStreak 0) stayed stuck that way forever even after BOTH
+  // partners resumed studying — each showed "Đã học hôm nay ✓" but the page
+  // still showed "0 ngày" / "Chuỗi đã kết thúc", because nothing ever
+  // re-ran the recompute for anything but an ACTIVE pair.
+  it('auto-restarts a BROKEN pair once BOTH partners have qualified again today', async () => {
+    const { service, store, a, b } = await acceptedPair();
+    store.pairs[0].status = 'BROKEN';
+    store.pairs[0].currentStreak = 0;
+    store.pairs[0].longestStreak = 5;
+    store.pairs[0].lastQualifiedDay = '2020-01-01';
+    const today = formatDayInTimeZone(new Date(), 'UTC');
+    store.addQualifiedDay(a.id, today);
+    store.addQualifiedDay(b.id, today);
+
+    const detail = await service.getStreakDetail(a.id, store.pairs[0].id);
+
+    expect(detail.status).toBe('ACTIVE');
+    expect(detail.currentStreak).toBe(1);
+    expect(detail.longestStreak).toBe(5); // preserved, restart is not a fresh record
+    expect(store.pairs[0].lastQualifiedDay).toBe(today);
+  });
+
+  it('listMyStreaks also auto-restarts a BROKEN pair once both partners qualify again', async () => {
+    const { service, store, a, b } = await acceptedPair();
+    store.pairs[0].status = 'BROKEN';
+    store.pairs[0].currentStreak = 0;
+    const today = formatDayInTimeZone(new Date(), 'UTC');
+    store.addQualifiedDay(a.id, today);
+    store.addQualifiedDay(b.id, today);
+
+    const rows = await service.listMyStreaks(a.id);
+
+    expect(rows[0].status).toBe('ACTIVE');
+    expect(rows[0].currentStreak).toBe(1);
+  });
 });
 
 describe('StreakService — public sharing', () => {
@@ -856,7 +1029,9 @@ describe('StreakService — public sharing', () => {
     const stranger = store.addUser();
     const invite = await service.sendInvitation(a.id, b.id);
     const pair = await service.acceptInvitation(b.id, invite.id);
-    await expect(service.generateShareLink(stranger.id, pair.id)).rejects.toThrow();
+    await expect(
+      service.generateShareLink(stranger.id, pair.id),
+    ).rejects.toThrow();
   });
 
   it('the public payload never includes ids, level, or any authenticated-only field', async () => {
@@ -912,7 +1087,9 @@ describe('StreakService — invite link (persistent, reusable)', () => {
   it('404s accepting an unknown token', async () => {
     const { service, store } = buildHarness();
     const a = store.addUser();
-    await expect(service.acceptInviteLink(a.id, 'does-not-exist')).rejects.toThrow();
+    await expect(
+      service.acceptInviteLink(a.id, 'does-not-exist'),
+    ).rejects.toThrow();
   });
 
   it('the preview never includes id, email or any authenticated-only field', async () => {
