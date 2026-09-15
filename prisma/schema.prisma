@@ -295,7 +295,7 @@ model User {
 
   speakingAttempts SpeakingAttempt[]
 
-  communityMessages CommunityMessage[]
+  communityMessages  CommunityMessage[]
   communityReadState CommunityReadState?
 
   streakInvitationsSent     StreakInvitation[] @relation("StreakInvitationsSent")
@@ -313,6 +313,13 @@ model User {
 
   personalVocabWords     PersonalVocabWord[]
   personalWordReviewLogs PersonalWordReviewLog[]
+
+  // Sprint 14 — Payment/Subscription. `payments` is the append-only ledger
+  // (every purchase attempt, PENDING or not); `subscription` is the current-
+  // entitlement cache derived from it, at most one row per user. See
+  // Payment/Subscription models below for the full design.
+  payments     Payment[]
+  subscription Subscription?
 
   @@map("users") //users dùng cho query sql , còn User dùng cho code
 }
@@ -1868,20 +1875,20 @@ model Roadmap {
 // switch, visibility is two-level (see speaking-visibility.ts), no cached
 // aggregates.
 model SpeakingScenario {
-  id          String     @id @default(uuid())
-  name        String
-  nameVi      String
-  description String?
+  id            String     @id @default(uuid())
+  name          String
+  nameVi        String
+  description   String?
   /// Vietnamese translation of `description` — added 2026-08-20 so the
   /// student UI never mixes languages (title already had titleVi/nameVi;
   /// description never did). Optional, matching `description?`'s own
   /// optionality — a scenario is free to have neither.
   descriptionVi String?
-  orderIndex  Int        @default(0)
-  isPublished Boolean    @default(false)
+  orderIndex    Int        @default(0)
+  isPublished   Boolean    @default(false)
   // Optional, like ListeningCategory.level — a scenario can span several
   // exercise levels.
-  level       CefrLevel?
+  level         CefrLevel?
 
   /// Marks the ONE open-topic scenario ("Nói chuyện tự do"/"Free Talk"),
   /// rendered in its own catalog section instead of the regular
@@ -1918,11 +1925,11 @@ model SpeakingScenario {
 // author line-by-line, only a persona, an opening line, and rules. Plain
 // nested CRUD, no whole-document PUT (no child array to upsert).
 model SpeakingExercise {
-  id          String    @id @default(uuid())
-  scenarioId  String
-  title       String
-  titleVi     String
-  description String // shown to the student before starting, e.g. "Order a coffee"
+  id            String    @id @default(uuid())
+  scenarioId    String
+  title         String
+  titleVi       String
+  description   String // shown to the student before starting, e.g. "Order a coffee"
   /// Vietnamese translation of `description` — added 2026-08-20 (real
   /// student report: the session header always showed titleVi as the
   /// heading but description stayed English-only, so Vietnamese-mode never
@@ -1931,8 +1938,8 @@ model SpeakingExercise {
   /// the migration against existing rows; the application always supplies
   /// a real value going forward (CreateSpeakingExerciseDto requires it) and
   /// the seed's own backfill step overwrites the empty default immediately.
-  descriptionVi String @default("")
-  level       CefrLevel // required, like ListeningContent.level
+  descriptionVi String    @default("")
+  level         CefrLevel // required, like ListeningContent.level
 
   /// Who the AI plays, e.g. "a barista at a busy coffee shop". SERVER/AI
   /// CONTEXT ONLY — feeds the Gemini system instruction
@@ -2021,8 +2028,8 @@ model SpeakingAttempt {
 // row): that design fits one user's private, ephemeral session; this is
 // shared, durable history every user needs to be able to page back through.
 model CommunityMessage {
-  id     String @id @default(uuid())
-  userId String
+  id      String @id @default(uuid())
+  userId  String
   content String
 
   // The send-idempotency key, generated client-side once per logical
@@ -2285,4 +2292,98 @@ model PersonalWordReviewLog {
   @@index([userId, reviewedAt])
   @@index([personalWordId])
   @@map("personal_word_review_logs")
+}
+
+// ============================================================================
+// Sprint 14 — Payment / Subscription (EngMasterAI PRO via ACB/VietQR/SePay)
+// ============================================================================
+//
+// Ledger + cache, the same relationship as XpTransaction -> User.totalPoints:
+// Payment is the append-only source of truth (one row per purchase attempt,
+// immutable once PAID); Subscription is a derived current-entitlement cache,
+// at most one row per user.
+//
+// `status` only ever moves PENDING -> PAID at the database layer (or, for a
+// future admin flow that is out of scope this sprint, -> CANCELLED/REFUNDED).
+// There is deliberately NO "EXPIRED" database value: a design review found
+// that persisting expiry as a written status invites exactly the bug it
+// looks like it prevents (see SubscriptionStatus's absence below). EXPIRED
+// is a presentation-layer projection only — PaymentService derives it as
+// `status === 'PENDING' && expiresAt <= now` on read, never writes it. This
+// is also why a payment can be settled by a genuinely late bank-transfer
+// webhook long after its `expiresAt` has passed for display purposes: the
+// row is still physically PENDING and still eligible.
+enum PaymentStatus {
+  PENDING
+  PAID
+  CANCELLED
+  REFUNDED
+}
+
+enum PaymentProvider {
+  BANK_TRANSFER
+}
+
+enum SubscriptionPlan {
+  PRO_MONTHLY
+}
+
+// One row per purchase attempt. `paymentCode` is the short, unique,
+// server-generated string embedded as the bank-transfer description (see
+// PaymentService.generatePaymentCode) — the primary key SePay's webhook uses
+// to find this row. `providerTransactionId` is SePay's own transaction id,
+// set exactly once when the row transitions to PAID: its `@unique` is the
+// mandatory database-level idempotency backstop for webhook processing (a
+// conditional `updateMany` guarded by `providerTransactionId: null` plus this
+// constraint is what makes a retried/duplicate webhook delivery a safe no-op
+// — see PaymentService.processSepayWebhook).
+model Payment {
+  id                    String           @id @default(uuid())
+  userId                String
+  plan                  SubscriptionPlan
+  amount                Int // VND, server-chosen only (PaymentService.PLAN_PRICES) — never trusts a client-sent amount
+  currency              String           @default("VND")
+  provider              PaymentProvider  @default(BANK_TRANSFER)
+  paymentCode           String           @unique
+  status                PaymentStatus    @default(PENDING)
+  expiresAt             DateTime
+  providerTransactionId String?          @unique
+  paidAt                DateTime?
+  createdAt             DateTime         @default(now())
+  updatedAt             DateTime         @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([userId, plan, status]) // the create-or-reuse lookup: "does a live PENDING row already exist for this user+plan"
+  @@map("payments")
+}
+
+// Current-entitlement cache, one row per user. Deliberately has NO status
+// column: a persisted ACTIVE/EXPIRED flag would never actually flip to
+// EXPIRED (nothing writes it, since there is no cron/sweep job in this
+// codebase), which would make PRO access never expire. Instead:
+//
+//   isPro        = subscription != null && subscription.expiresAt > now
+//   proExpiresAt = subscription?.expiresAt ?? null
+//
+// derived fresh on every read (see UserService's SAFE_USER_SELECT). Renewal
+// (PaymentService.extendSubscriptionAtomically) is a single database-
+// evaluated `INSERT ... ON CONFLICT ("userId") DO UPDATE SET "expiresAt" =
+// GREATEST("expiresAt", now()) + duration` — never an app-level
+// read-then-write — so two different payments for the same user settling
+// concurrently cannot lose one payment's extension to write-skew.
+model Subscription {
+  id            String           @id @default(uuid())
+  userId        String           @unique
+  plan          SubscriptionPlan
+  startsAt      DateTime // set once, at first-ever purchase; renewals never touch this
+  expiresAt     DateTime // the only field a renewal ever changes
+  lastPaymentId String // most recent Payment.id that extended this row — audit/traceability only, never read for correctness
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("subscriptions")
 }

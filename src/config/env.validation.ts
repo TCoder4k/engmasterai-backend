@@ -204,13 +204,11 @@ export const envValidationSchema = Joi.object({
   // SendGrid were both tried and removed the same day, 2026-08-20 (see
   // docs/memory.md). Widen this enum again only alongside a new
   // MailProvider class in src/mail/providers/.
-  EMAIL_PROVIDER: Joi.string()
-    .valid('brevo')
-    .when('EMAIL_ENABLED', {
-      is: true,
-      then: Joi.required(),
-      otherwise: Joi.optional(),
-    }),
+  EMAIL_PROVIDER: Joi.string().valid('brevo').when('EMAIL_ENABLED', {
+    is: true,
+    then: Joi.required(),
+    otherwise: Joi.optional(),
+  }),
   EMAIL_FROM: Joi.string().email().when('EMAIL_ENABLED', {
     is: true,
     then: Joi.required(),
@@ -443,13 +441,21 @@ export const envValidationSchema = Joi.object({
   // outage, reported live by a student unable to send an Engy message in
   // production).
   GEMINI_ENGY_MODEL: Joi.string().default(DEFAULT_GEMINI_MODEL_CHAIN),
-  CHAT_REPLY_TIMEOUT_MS: Joi.number().integer().min(1000).max(60000).default(20000),
+  CHAT_REPLY_TIMEOUT_MS: Joi.number()
+    .integer()
+    .min(1000)
+    .max(60000)
+    .default(20000),
   // Sliding TTL for a user's bounded Redis chat history (chat:session:<userId>)
   // — the plan's approved "~30 minutes" default. Also the TTL a committed
   // idempotency claim's final reply is cached under (chat.service.ts), so a
   // late legitimate replay within this window still gets its answer without
   // a second Gemini call.
-  CHAT_SESSION_TTL_SECONDS: Joi.number().integer().min(60).max(7200).default(1800),
+  CHAT_SESSION_TTL_SECONDS: Joi.number()
+    .integer()
+    .min(60)
+    .max(7200)
+    .default(1800),
 
   // Speaking Partner. The conversation itself is Gemini Live
   // (GEMINI_LIVE_MODEL/GEMINI_LIVE_VOICE, src/speaking/live/) — a single
@@ -472,8 +478,12 @@ export const envValidationSchema = Joi.object({
   // behaviour before this var existed) — set this to run the A/B/C
   // comparison documented in the Speaking Live sprint doc, not a supported
   // permanent configuration.
-  GEMINI_LIVE_INPUT_LANGUAGE_CODES: Joi.string().allow('').default('en-US,vi-VN'),
-  GEMINI_LIVE_OUTPUT_LANGUAGE_CODES: Joi.string().allow('').default('en-US,vi-VN'),
+  GEMINI_LIVE_INPUT_LANGUAGE_CODES: Joi.string()
+    .allow('')
+    .default('en-US,vi-VN'),
+  GEMINI_LIVE_OUTPUT_LANGUAGE_CODES: Joi.string()
+    .allow('')
+    .default('en-US,vi-VN'),
   // Temporary diagnostic scaffolding, OFF by default — when enabled, dumps
   // each real Speaking Live turn's raw captured audio to a WAV file in the
   // OS temp dir (never the repo) plus duration/RMS/peak/clipping stats to
@@ -486,14 +496,81 @@ export const envValidationSchema = Joi.object({
   // Sliding TTL for a bounded Redis conversation history
   // (speaking:session:<userId>:<attemptId>) — same shape as
   // CHAT_SESSION_TTL_SECONDS.
-  SPEAKING_SESSION_TTL_SECONDS: Joi.number().integer().min(60).max(7200).default(1800),
+  SPEAKING_SESSION_TTL_SECONDS: Joi.number()
+    .integer()
+    .min(60)
+    .max(7200)
+    .default(1800),
   // A THIRD, independent Speaking Gemini job — on-demand subtitle
   // translation (POST /speaking/translate), own token/provider/env vars,
   // never folded into GEMINI_SPEAKING_MODEL's own call. Same fallback-chain
   // mechanism as GEMINI_ENGY_MODEL/GEMINI_DICTIONARY_TRANSLATION_MODEL above
   // (see GEMINI_DICTIONARY_TRANSLATION_MODEL's comment for the root cause).
-  GEMINI_SPEAKING_TRANSLATE_MODEL: Joi.string().default(DEFAULT_GEMINI_MODEL_CHAIN),
-  SPEAKING_TRANSLATE_TIMEOUT_MS: Joi.number().integer().min(1000).max(60000).default(20000),
+  GEMINI_SPEAKING_TRANSLATE_MODEL: Joi.string().default(
+    DEFAULT_GEMINI_MODEL_CHAIN,
+  ),
+  SPEAKING_TRANSLATE_TIMEOUT_MS: Joi.number()
+    .integer()
+    .min(1000)
+    .max(60000)
+    .default(20000),
+
+  // Sprint 14 — Payment/Subscription (EngMasterAI PRO via ACB/VietQR/SePay).
+  // Off by default; the whole app boots normally with zero payment config
+  // and the PaymentModule's routes are unreachable/unregistered behaviour is
+  // out of scope for the flag itself (see app.module.ts) — the flag's job
+  // here is purely to make every other PAYMENT_* var conditionally required,
+  // same one-flag-per-feature shape as TURNSTILE_ENABLED/GOOGLE_AUTH_ENABLED/
+  // EMAIL_ENABLED above (deliberately NOT a second PAYMENT_SEPAY_WEBHOOK_ENABLED
+  // — this codebase never uses two flags for one feature).
+  PAYMENT_ENABLED: Joi.boolean().default(false),
+  // VietQR bank identifier used to build the hosted QR image URL
+  // (img.vietqr.io/image/<code>-<account>-<template>.png) — a short bank code
+  // like "ACB", not a secret. Falls back to ACB's numeric BIN (970416) only
+  // if the short code doesn't resolve for the real account (verify manually
+  // before go-live).
+  PAYMENT_ACB_BANK_CODE: Joi.string().min(1).default('ACB'),
+  // Real production values are never committed — set only in the deployed
+  // environment. Not cryptographic secrets (they're shown to every payer's
+  // banking app), but still real account data, so no default here.
+  PAYMENT_ACB_ACCOUNT_NUMBER: Joi.string().min(1).when('PAYMENT_ENABLED', {
+    is: true,
+    then: Joi.required(),
+    otherwise: Joi.optional(),
+  }),
+  PAYMENT_ACB_ACCOUNT_NAME: Joi.string().min(1).when('PAYMENT_ENABLED', {
+    is: true,
+    then: Joi.required(),
+    otherwise: Joi.optional(),
+  }),
+  // HMAC-SHA256 secret configured in the SePay dashboard for this webhook —
+  // never logged, never returned in any API response. See
+  // SepayWebhookVerifier.
+  PAYMENT_SEPAY_WEBHOOK_SECRET: Joi.string().min(1).when('PAYMENT_ENABLED', {
+    is: true,
+    then: Joi.required(),
+    otherwise: Joi.optional(),
+  }),
+  // Server-authoritative price for PRO_MONTHLY — the frontend never sends an
+  // amount, ever (see PaymentService.PLAN_PRICES). No default in production;
+  // .env.example ships a placeholder.
+  PAYMENT_PRO_MONTHLY_PRICE_VND: Joi.number()
+    .integer()
+    .positive()
+    .when('PAYMENT_ENABLED', {
+      is: true,
+      then: Joi.required(),
+      otherwise: Joi.optional(),
+    }),
+  // Countdown/reuse-window length shown to the payer and used by the
+  // create-or-reuse decision (PaymentService.findLivePending) — NOT a
+  // database expiry: a payment stays physically PENDING (and payable by a
+  // late webhook) long after this window, see Payment's schema comment.
+  PAYMENT_ORDER_TTL_MINUTES: Joi.number()
+    .integer()
+    .min(1)
+    .max(1440)
+    .default(15),
 })
   // Cloudinary/other unrelated vars are intentionally out of this sprint's
   // scope (see docs/sprints/sprint-01C-security-hardening.md) — `unknown`

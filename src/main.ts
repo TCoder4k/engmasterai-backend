@@ -10,7 +10,16 @@ import { parseAllowedOrigins } from './config/cors-origins.util';
 import { resolveTrustProxyValue } from './config/trust-proxy.util';
 
 async function bootstrap() {
-  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  // `rawBody: true` populates `req.rawBody` (a Buffer of the exact bytes
+  // received) on EVERY request, alongside Nest's normal JSON body parsing —
+  // it does not disable or change `req.body` for any other route. Added for
+  // Sprint 14's SePay webhook, which must verify an HMAC-SHA256 signature
+  // computed over the raw, unmodified request body (SePay's own docs warn
+  // that re-serializing the parsed body will not reproduce their signature).
+  // See src/payment/sepay-webhook-verifier.service.ts.
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
+    rawBody: true,
+  });
   const config = app.get(ConfigService);
 
   // WebSocket surfaces in this app: Speaking Live (SpeakingLiveGateway,

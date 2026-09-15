@@ -35,14 +35,27 @@ const SAFE_USER_SELECT = {
   emailVerifiedAt: true,
   onboardedAt: true,
   learningGoal: true,
+  // Sprint 14 (Payment/Subscription) — same derived-boolean shape as
+  // emailVerified/onboarded above. Subscription deliberately has no status
+  // column (see its schema comment): "is this user PRO" is a pure function
+  // of expiresAt, derived fresh below, never a persisted flag that could go
+  // stale. One relational select, not a second query.
+  subscription: { select: { expiresAt: true } },
 };
 
 type SafeUserRow = Prisma.UserGetPayload<{ select: typeof SAFE_USER_SELECT }>;
 
-const toSafeUser = ({ emailVerifiedAt, onboardedAt, ...rest }: SafeUserRow) => ({
+const toSafeUser = ({
+  emailVerifiedAt,
+  onboardedAt,
+  subscription,
+  ...rest
+}: SafeUserRow) => ({
   ...rest,
   emailVerified: emailVerifiedAt !== null,
   onboarded: onboardedAt !== null,
+  isPro: subscription !== null && subscription.expiresAt > new Date(),
+  proExpiresAt: subscription?.expiresAt ?? null,
 });
 
 const MAX_LIMIT = 100;
