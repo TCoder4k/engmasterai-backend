@@ -16,6 +16,10 @@ export interface PaymentPresentationDto {
   paymentId: string;
   plan: SubscriptionPlan;
   amount: number;
+  // "Regular price," shown struck-through next to `amount` on CheckoutPage.
+  // null when PAYMENT_PRO_MONTHLY_COMPARE_AT_VND is unset (most
+  // deployments) — display-only, never itself charged.
+  compareAtAmount: number | null;
   currency: string;
   paymentCode: string;
   status: PaymentPresentationStatus;

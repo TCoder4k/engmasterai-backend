@@ -1,5 +1,15 @@
-import { Controller, Param, ParseUUIDPipe, Post, Req, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Param,
+  ParseUUIDPipe,
+  Post,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards';
+import { PrismaService } from '../prisma/prisma.service';
+import { getProStatusAndTimeZone } from '../shared/subscription-status.util';
+import { UsageQuotaService } from '../usage/usage-quota.service';
 import { SpeakingRateLimitGuard } from './rate-limit/speaking-rate-limit.guard';
 import { SpeakingRateLimit } from './rate-limit/speaking-rate-limits.decorator';
 import { SpeakingAttemptService } from './speaking-attempt.service';
@@ -15,13 +25,24 @@ interface RequestWithUser {
 
 @Controller('speaking')
 export class SpeakingAttemptController {
-  constructor(private readonly attemptService: SpeakingAttemptService) {}
+  constructor(
+    private readonly attemptService: SpeakingAttemptService,
+    private readonly usageQuota: UsageQuotaService,
+    private readonly prisma: PrismaService,
+  ) {}
 
   /**
    * Start a new attempt for an exercise. No Gemini call — the opening line
    * is authored content, read straight off the exercise row. The response
    * also carries the one-shot `liveTicket` the frontend uses to open the
    * Speaking Live WebSocket for this attempt.
+   *
+   * 2026-09-16 pricing relaunch — gated by the "speaking" (DAILY) usage
+   * quota. The real Gemini Live cost happens later, over the WebSocket this
+   * ticket opens — but "a lượt luyện nói" (a speaking session) is naturally
+   * one attempt-start, matching the product's own "3 lượt/ngày" framing, so
+   * this is the correct place to meter it rather than per-turn inside the
+   * gateway.
    */
   @UseGuards(JwtAuthGuard, SpeakingRateLimitGuard)
   @SpeakingRateLimit({ kind: 'start', max: 30, windowSeconds: 600 })
@@ -30,6 +51,16 @@ export class SpeakingAttemptController {
     @Req() req: RequestWithUser,
     @Param('exerciseId', ParseUUIDPipe) exerciseId: string,
   ) {
+    const { isPro, timeZone } = await getProStatusAndTimeZone(
+      this.prisma,
+      req.user.userId,
+    );
+    await this.usageQuota.checkAndIncrement(
+      req.user.userId,
+      'speaking',
+      isPro,
+      timeZone,
+    );
     return this.attemptService.start(req.user.userId, exerciseId);
   }
 

@@ -14,6 +14,7 @@ import { GeminiSpeechToTextProvider } from './shadowing/gemini-speech-to-text.pr
 import { SPEECH_TO_TEXT_PROVIDER } from './shadowing/speech-to-text.provider';
 import { GeminiPronunciationFeedbackProvider } from './shadowing/gemini-pronunciation-feedback.provider';
 import { PRONUNCIATION_FEEDBACK_PROVIDER } from './shadowing/pronunciation-feedback.provider';
+import { UsageModule } from '../usage/usage.module';
 
 // Sprint 11 — Listening content.
 //
@@ -48,7 +49,10 @@ import { PRONUNCIATION_FEEDBACK_PROVIDER } from './shadowing/pronunciation-feedb
 // it touches six files in five modules and belongs in a change that is only
 // that, not smuggled into a feature sprint.
 @Module({
-  imports: [PrismaModule, GamificationModule],
+  // 2026-09-16 pricing relaunch — UsageModule for the "aiGrading" quota gate
+  // on Shadowing's AI pronunciation-feedback endpoint (same safe one-way
+  // edge as everywhere else it's imported).
+  imports: [PrismaModule, GamificationModule, UsageModule],
   controllers: [
     ListeningCatalogController,
     ListeningAdminController,

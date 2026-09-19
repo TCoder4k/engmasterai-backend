@@ -15,6 +15,9 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
 import { JwtAuthGuard } from '../../auth/guards';
+import { PrismaService } from '../../prisma/prisma.service';
+import { getProStatusAndTimeZone } from '../../shared/subscription-status.util';
+import { UsageQuotaService } from '../../usage/usage-quota.service';
 import { QuizRateLimitGuard } from '../../lesson/quiz/rate-limit/quiz-rate-limit.guard';
 import { QuizRateLimit } from '../../lesson/quiz/rate-limit/quiz-rate-limits.decorator';
 import { ShadowingService, MAX_AUDIO_BYTES } from './shadowing.service';
@@ -62,7 +65,11 @@ const queryPipe = new ValidationPipe({ transform: true });
 
 @Controller('listening')
 export class ShadowingController {
-  constructor(private readonly shadowingService: ShadowingService) {}
+  constructor(
+    private readonly shadowingService: ShadowingService,
+    private readonly usageQuota: UsageQuotaService,
+    private readonly prisma: PrismaService,
+  ) {}
 
   /**
    * Submit one spoken attempt for one sentence.
@@ -113,6 +120,11 @@ export class ShadowingController {
    * OWN RATE-LIMIT KIND `aiFeedback`, 10/600s. Deliberately not `speech`: the
    * kind IS the bucket, and letting optional coaching drain the budget that
    * guards attempt submission would break the feature to protect the extra.
+   *
+   * 2026-09-16 pricing relaunch — ALSO gated by the "aiGrading" usage quota
+   * (the closest real match to the product's "Chấm bài AI" row — see
+   * docs/memory.md). Checked after the cheap Redis rate-limit guard above,
+   * before the (paid) audio upload + pronunciation-feedback call.
    */
   @UseGuards(JwtAuthGuard, QuizRateLimitGuard)
   @QuizRateLimit({ kind: 'aiFeedback', max: 10, windowSeconds: 600 })
@@ -129,6 +141,16 @@ export class ShadowingController {
     @Body(bodyPipe) dto: RequestShadowingFeedbackDto,
     @UploadedFile() audio?: Express.Multer.File,
   ) {
+    const { isPro, timeZone } = await getProStatusAndTimeZone(
+      this.prisma,
+      req.user.userId,
+    );
+    await this.usageQuota.checkAndIncrement(
+      req.user.userId,
+      'aiGrading',
+      isPro,
+      timeZone,
+    );
     return this.shadowingService.requestFeedback(
       req.user.userId,
       segmentId,

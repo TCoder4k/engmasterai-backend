@@ -31,7 +31,7 @@ import { PrismaService } from '../src/prisma/prisma.service';
 // just an HTTP POST this suite signs itself with the test secret configured
 // in .env.test.
 const SEPAY_SECRET = 'e2e-test-secret';
-const PRICE_VND = 199000;
+const PRICE_VND = 19000;
 
 describe('Payment + Subscription (e2e) — Sprint 14', () => {
   let app: INestApplication<App>;
@@ -145,6 +145,18 @@ describe('Payment + Subscription (e2e) — Sprint 14', () => {
       expect(res.body.status).toBe('PENDING');
       expect(res.body.qrUrl).toContain('img.vietqr.io');
       expect(res.body).not.toHaveProperty('sepaySecret');
+      createdPaymentIds.push(res.body.paymentId);
+    });
+
+    it('compareAtAmount is null when PAYMENT_PRO_MONTHLY_COMPARE_AT_VND is unset in this environment', async () => {
+      const { token } = await registerAndLogin('compare-at');
+      const res = await request(app.getHttpServer())
+        .post('/payments')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ plan: 'PRO_MONTHLY' });
+
+      expect(res.status).toBe(201);
+      expect(res.body.compareAtAmount).toBeNull();
       createdPaymentIds.push(res.body.paymentId);
     });
 

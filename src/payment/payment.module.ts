@@ -6,6 +6,7 @@ import { SepayWebhookVerifier } from './sepay-webhook-verifier.service';
 import { SepayWebhookGuard } from './sepay-webhook.guard';
 import { PaymentRateLimitGuard } from './rate-limit/payment-rate-limit.guard';
 import { PaymentWebhookRateLimitGuard } from './rate-limit/payment-webhook-rate-limit.guard';
+import { SubscriptionGrantService } from './subscription-grant.service';
 
 // Sprint 14 — Payment/Subscription. Greenfield module, same shape as
 // ChatModule: imports ONLY PrismaModule — AuthModule is @Global() and
@@ -20,6 +21,8 @@ import { PaymentWebhookRateLimitGuard } from './rate-limit/payment-webhook-rate-
     SepayWebhookGuard,
     PaymentRateLimitGuard,
     PaymentWebhookRateLimitGuard,
+    SubscriptionGrantService,
   ],
+  exports: [SubscriptionGrantService],
 })
 export class PaymentModule {}

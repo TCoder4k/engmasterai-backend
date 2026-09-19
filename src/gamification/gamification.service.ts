@@ -10,6 +10,7 @@ import { collectActiveDays } from '../shared/activity-window';
 import { publishedLesson, publishedTask } from '../shared/published-scope';
 import { startOfDayInTimeZone } from '../learning/timezone.util';
 import { StreakService } from '../streak/streak.service';
+import { ReferralService } from '../referral/referral.service';
 import {
   AchievementKey,
   AchievementSnapshot,
@@ -82,6 +83,7 @@ export class GamificationService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly streakService: StreakService,
+    private readonly referralService: ReferralService,
   ) {}
 
   /**
@@ -145,7 +147,15 @@ export class GamificationService {
 
     // --- 3.5. Streak Together's hook, same gating as step 3 ------------------
     if (isNewDay) {
-      await this.streakService.onUserActivityDay(tx, userId, formatDayInTimeZone(input.at, timeZone));
+      await this.streakService.onUserActivityDay(
+        tx,
+        userId,
+        formatDayInTimeZone(input.at, timeZone),
+      );
+      // 2026-09-16 pricing relaunch (Phase C) — the referral reward fires on
+      // the invitee's first genuine activity day, same gate as the streak
+      // hook immediately above (not at code-redemption time).
+      await this.referralService.onUserActivityDay(tx, userId);
     }
 
     // --- 4. the awards -------------------------------------------------------

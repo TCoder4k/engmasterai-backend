@@ -16,6 +16,7 @@ import { SpeakingLiveGateway } from './live/speaking-live.gateway';
 import { SpeakingLiveTicketStore } from './live/speaking-live-ticket.store';
 import { SPEAKING_LIVE_CONNECTION_PROVIDER } from './live/speaking-live-connection.provider';
 import { GeminiSpeakingLiveConnectionProvider } from './live/gemini-speaking-live-connection.provider';
+import { UsageModule } from '../usage/usage.module';
 
 // Speaking Partner — a separate learning domain, not part of ChatModule (a
 // general tutor assistant) or ListeningModule's Shadowing (which grades
@@ -33,7 +34,10 @@ import { GeminiSpeakingLiveConnectionProvider } from './live/gemini-speaking-liv
 // but Reflector and RateLimiterService, and AuthModule is @Global() and
 // already exports the latter.
 @Module({
-  imports: [PrismaModule],
+  // 2026-09-16 pricing relaunch — UsageModule for the "speaking" (daily)
+  // quota gate on attempt starts (same safe one-way edge as everywhere
+  // else it's imported).
+  imports: [PrismaModule, UsageModule],
   controllers: [
     SpeakingCatalogController,
     SpeakingAttemptController,
@@ -51,8 +55,14 @@ import { GeminiSpeakingLiveConnectionProvider } from './live/gemini-speaking-liv
     // Token-bound, not a bare class — e2e/unit tests substitute a fake
     // without a real network/paid call, same convention as every other
     // external/AI provider in this codebase.
-    { provide: SPEAKING_TRANSLATE_PROVIDER, useClass: GeminiSpeakingTranslateProvider },
-    { provide: SPEAKING_LIVE_CONNECTION_PROVIDER, useClass: GeminiSpeakingLiveConnectionProvider },
+    {
+      provide: SPEAKING_TRANSLATE_PROVIDER,
+      useClass: GeminiSpeakingTranslateProvider,
+    },
+    {
+      provide: SPEAKING_LIVE_CONNECTION_PROVIDER,
+      useClass: GeminiSpeakingLiveConnectionProvider,
+    },
     SpeakingRateLimitGuard,
   ],
 })

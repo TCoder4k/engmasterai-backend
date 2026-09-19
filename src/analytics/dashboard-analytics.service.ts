@@ -12,6 +12,7 @@ import {
   formatDayInTimeZone,
 } from './day-window';
 import { rankTopStudents, TOP_STUDENTS_LIMIT } from './top-students-ranking';
+import { LessonMilestoneService } from '../lesson/progress/lesson-milestone.service';
 import {
   ActivityAnalyticsDto,
   DashboardAnalyticsDto,
@@ -72,7 +73,10 @@ const RECENT_ACCURACY_ATTEMPT_LIMIT = 20;
 // an admin's action would be indefensible. Do not "fix" this into symmetry.
 @Injectable()
 export class DashboardAnalyticsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly lessonMilestone: LessonMilestoneService,
+  ) {}
 
   async getDashboardAnalytics(
     userId: string,
@@ -102,7 +106,10 @@ export class DashboardAnalyticsService {
       effectiveTimeZone,
       ACTIVITY_WINDOW_DAYS,
     );
-    const calendarDays = enumerateCalendarWeekInTimeZone(now, effectiveTimeZone);
+    const calendarDays = enumerateCalendarWeekInTimeZone(
+      now,
+      effectiveTimeZone,
+    );
     // The window opens at the START of its first day, not `now - 7 days`.
     // Subtracting a duration would clip the earliest day at whatever time of
     // day it happens to be, so that tile would light up only for activity
@@ -254,6 +261,16 @@ export class DashboardAnalyticsService {
               recentAttempts.length,
           )
         : null;
+
+    // 2026-09-16 pricing relaunch (Phase C) — fire-and-forget, deliberately
+    // NOT awaited: this dashboard read is documented above as a constant,
+    // eleven-query cost, and the lesson-milestone check's own cost is only
+    // constant-cheap (one query) in the common case — awaiting it here would
+    // make every dashboard load wait on a check that matters for at most one
+    // request per student, ever. checkAndGrant catches its own errors, so a
+    // rejected promise here is never actually possible, but .catch stays as
+    // defense in depth against ever surfacing an unhandled rejection.
+    this.lessonMilestone.checkAndGrant(userId).catch(() => undefined);
 
     return { effectiveTimeZone, today, activity, recentAccuracyPercent };
   }

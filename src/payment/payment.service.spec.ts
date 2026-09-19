@@ -92,6 +92,53 @@ describe('PaymentService.createOrReusePayment', () => {
     );
   });
 
+  it('includes compareAtAmount when configured above the real price', async () => {
+    const { service } = buildService({
+      config: {
+        PAYMENT_PRO_MONTHLY_PRICE_VND: 19000,
+        PAYMENT_PRO_MONTHLY_COMPARE_AT_VND: 59000,
+      },
+      payment: {
+        create: jest.fn().mockResolvedValue(paymentRow({ amount: 19000 })),
+      },
+    });
+    const result = await service.createOrReusePayment(
+      'user-1',
+      'PRO_MONTHLY' as never,
+    );
+    expect(result.dto.compareAtAmount).toBe(59000);
+  });
+
+  it('is null when PAYMENT_PRO_MONTHLY_COMPARE_AT_VND is not configured', async () => {
+    const { service } = buildService({
+      payment: {
+        create: jest.fn().mockResolvedValue(paymentRow({ amount: 199000 })),
+      },
+    });
+    const result = await service.createOrReusePayment(
+      'user-1',
+      'PRO_MONTHLY' as never,
+    );
+    expect(result.dto.compareAtAmount).toBeNull();
+  });
+
+  it('defensively ignores a misconfigured compareAtAmount at or below the real price', async () => {
+    const { service } = buildService({
+      config: {
+        PAYMENT_PRO_MONTHLY_PRICE_VND: 19000,
+        PAYMENT_PRO_MONTHLY_COMPARE_AT_VND: 10000,
+      },
+      payment: {
+        create: jest.fn().mockResolvedValue(paymentRow({ amount: 19000 })),
+      },
+    });
+    const result = await service.createOrReusePayment(
+      'user-1',
+      'PRO_MONTHLY' as never,
+    );
+    expect(result.dto.compareAtAmount).toBeNull();
+  });
+
   it('sets expiresAt to now + PAYMENT_ORDER_TTL_MINUTES', async () => {
     const before = Date.now();
     const { service, prisma } = buildService({

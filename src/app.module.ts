@@ -26,6 +26,8 @@ import { NotificationModule } from './notification/notification.module';
 import { StreakModule } from './streak/streak.module';
 import { VocabPersonalModule } from './vocab-personal/vocab-personal.module';
 import { PaymentModule } from './payment/payment.module';
+import { UsageModule } from './usage/usage.module';
+import { ReferralModule } from './referral/referral.module';
 import { envValidationSchema } from './config/env.validation';
 
 @Module({
@@ -60,6 +62,8 @@ import { envValidationSchema } from './config/env.validation';
     StreakModule,
     VocabPersonalModule,
     PaymentModule,
+    UsageModule,
+    ReferralModule,
   ],
 })
 export class AppModule {}

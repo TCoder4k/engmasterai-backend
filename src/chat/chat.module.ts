@@ -9,13 +9,16 @@ import { AssessmentLockService } from './assessment-lock.service';
 import { ENGY_CHAT_PROVIDER } from './engy-chat.provider';
 import { GeminiEngyChatProvider } from './gemini-engy-chat.provider';
 import { ChatRateLimitGuard } from './rate-limit/chat-rate-limit.guard';
+import { UsageModule } from '../usage/usage.module';
 
 // Engy Chat, Phase B + Phase C. Wholly new, greenfield module — same
 // reasoning as DictionaryModule (see its own header): imports ONLY
 // PrismaModule (for AssessmentLockService's/ChatContextResolver's reads);
 // AuthModule is @Global() and exports RateLimiterService already.
 @Module({
-  imports: [PrismaModule],
+  // 2026-09-16 pricing relaunch — UsageModule for the "aiQuery" quota gate,
+  // shared with Dictionary lookup (same safe-one-way-edge reasoning).
+  imports: [PrismaModule, UsageModule],
   controllers: [ChatController],
   providers: [
     ChatService,

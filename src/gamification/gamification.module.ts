@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { PrismaModule } from '../prisma/prisma.module';
 import { QuizRateLimitGuard } from '../lesson/quiz/rate-limit/quiz-rate-limit.guard';
 import { StreakModule } from '../streak/streak.module';
+import { ReferralModule } from '../referral/referral.module';
 import { GamificationController } from './gamification.controller';
 import { GamificationService } from './gamification.service';
 
@@ -35,7 +36,12 @@ import { GamificationService } from './gamification.service';
 //
 // Exported so the two engines can inject GamificationService.
 @Module({
-  imports: [PrismaModule, StreakModule],
+  // 2026-09-16 pricing relaunch — ReferralModule added for the exact same
+  // reason and under the exact same safety argument as StreakModule above:
+  // recordProgress() also calls ReferralService.onUserActivityDay() from
+  // the same isNewDay gate, and ReferralModule imports nothing that could
+  // cycle back here (PrismaModule + PaymentModule, both leaves).
+  imports: [PrismaModule, StreakModule, ReferralModule],
   controllers: [GamificationController],
   providers: [GamificationService, QuizRateLimitGuard],
   exports: [GamificationService],

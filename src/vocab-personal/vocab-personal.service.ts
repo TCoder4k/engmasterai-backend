@@ -2,8 +2,14 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { LearningState, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { startOfDayInTimeZone } from '../learning/timezone.util';
-import { enumerateDaysInTimeZone, formatDayInTimeZone } from '../analytics/day-window';
-import { next as schedulerNext, ProgressSnapshot } from '../learning/srs/scheduler';
+import {
+  enumerateDaysInTimeZone,
+  formatDayInTimeZone,
+} from '../analytics/day-window';
+import {
+  next as schedulerNext,
+  ProgressSnapshot,
+} from '../learning/srs/scheduler';
 import { CreatePersonalVocabWordDto } from './dto/create-personal-vocab-word.dto';
 import { UpdatePersonalVocabWordDto } from './dto/update-personal-vocab-word.dto';
 import { BulkCreatePersonalVocabWordsDto } from './dto/bulk-create-personal-vocab-words.dto';
@@ -17,6 +23,7 @@ import {
   PersonalReviewIdempotencyKeyReusedException,
   PersonalWordAlreadyExistsException,
   PersonalWordVersionConflictException,
+  VocabWordLimitReachedException,
 } from './vocab-personal.exceptions';
 import {
   BulkCreatePersonalVocabWordsResponseDto,
@@ -29,17 +36,26 @@ import {
 
 const DEFAULT_LIMIT = 20;
 const MAX_LIMIT = 50;
+// 2026-09-16 pricing relaunch — the one real, non-AI PRO gate. Deliberately
+// the same number as MAX_LIMIT above but UNRELATED to it: MAX_LIMIT bounds
+// one list() page size, this bounds a Free account's total saved-word count.
+const FREE_VOCAB_WORD_LIMIT = 50;
 // "In progress" for the mockup's 4 stat cards — see
 // query-personal-vocab-words.dto.ts's PersonalWordStatusFilter comment for
 // why LearningState's 5 real values collapse into 3 presentation buckets.
-const LEARNING_BUCKET_STATES: LearningState[] = ['LEARNING', 'REVIEW', 'RELEARNING'];
+const LEARNING_BUCKET_STATES: LearningState[] = [
+  'LEARNING',
+  'REVIEW',
+  'RELEARNING',
+];
 
 // Module-local narrowing helper, same idiom as auth.service.ts/
 // learning.service.ts/community-chat.service.ts (each keeps its own copy
 // rather than a shared util — this codebase's established convention for
 // this exact one-liner).
 const isUniqueConstraintViolation = (error: unknown): boolean =>
-  error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002';
+  error instanceof Prisma.PrismaClientKnownRequestError &&
+  error.code === 'P2002';
 
 const normalizeText = (text: string): string => text.trim().toLowerCase();
 
@@ -180,7 +196,9 @@ export class VocabPersonalService {
       where: { userId, textNormalized: { in: normalizedTexts } },
       select: { id: true, textNormalized: true },
     });
-    const idByNormalized = new Map(rows.map((row) => [row.textNormalized, row.id]));
+    const idByNormalized = new Map(
+      rows.map((row) => [row.textNormalized, row.id]),
+    );
 
     const result: PersonalVocabWordSavedStatusDto = {};
     for (const normalized of normalizedTexts) {
@@ -194,6 +212,18 @@ export class VocabPersonalService {
     userId: string,
     dto: CreatePersonalVocabWordDto,
   ): Promise<PersonalVocabWordDto> {
+    if (!(await this.isUserPro(userId))) {
+      const currentCount = await this.prisma.personalVocabWord.count({
+        where: { userId },
+      });
+      if (currentCount >= FREE_VOCAB_WORD_LIMIT) {
+        throw new VocabWordLimitReachedException(
+          currentCount,
+          1,
+          FREE_VOCAB_WORD_LIMIT,
+        );
+      }
+    }
     try {
       const row = await this.prisma.personalVocabWord.create({
         data: {
@@ -240,7 +270,10 @@ export class VocabPersonalService {
   ): Promise<BulkCreatePersonalVocabWordsResponseDto> {
     const seenInBatch = new Set<string>();
     const skippedWords: string[] = [];
-    const toInsert: { input: CreatePersonalVocabWordDto; textNormalized: string }[] = [];
+    const toInsert: {
+      input: CreatePersonalVocabWordDto;
+      textNormalized: string;
+    }[] = [];
 
     for (const input of dto.words) {
       const textNormalized = normalizeText(input.text);
@@ -250,6 +283,19 @@ export class VocabPersonalService {
       }
       seenInBatch.add(textNormalized);
       toInsert.push({ input, textNormalized });
+    }
+
+    if (toInsert.length > 0 && !(await this.isUserPro(userId))) {
+      const currentCount = await this.prisma.personalVocabWord.count({
+        where: { userId },
+      });
+      if (currentCount + toInsert.length > FREE_VOCAB_WORD_LIMIT) {
+        throw new VocabWordLimitReachedException(
+          currentCount,
+          toInsert.length,
+          FREE_VOCAB_WORD_LIMIT,
+        );
+      }
     }
 
     let createdCount = 0;
@@ -340,7 +386,10 @@ export class VocabPersonalService {
     });
 
     if (existingLog) {
-      if (existingLog.personalWordId !== id || existingLog.rating !== dto.rating) {
+      if (
+        existingLog.personalWordId !== id ||
+        existingLog.rating !== dto.rating
+      ) {
         throw new PersonalReviewIdempotencyKeyReusedException();
       }
       // A replay earns nothing new — return the word's current snapshot,
@@ -349,7 +398,8 @@ export class VocabPersonalService {
       const word = await this.prisma.personalVocabWord.findFirst({
         where: { id, userId },
       });
-      if (!word) throw new NotFoundException('Personal vocabulary word not found');
+      if (!word)
+        throw new NotFoundException('Personal vocabulary word not found');
       return {
         state: word.state,
         intervalDays: word.intervalDays,
@@ -368,7 +418,8 @@ export class VocabPersonalService {
     const word = await this.prisma.personalVocabWord.findFirst({
       where: { id, userId },
     });
-    if (!word) throw new NotFoundException('Personal vocabulary word not found');
+    if (!word)
+      throw new NotFoundException('Personal vocabulary word not found');
 
     return this.attemptReview(userId, word, dto);
   }
@@ -436,16 +487,25 @@ export class VocabPersonalService {
   // startOfDayInTimeZone rather than inventing new timezone math (owner
   // review point on dueTodayCount): the local midnight of the day AFTER
   // `now` is exactly that boundary.
-  private async resolveTomorrowStart(userId: string, tz: string | undefined): Promise<Date> {
+  private async resolveTomorrowStart(
+    userId: string,
+    tz: string | undefined,
+  ): Promise<Date> {
     const user = await this.prisma.user.findUniqueOrThrow({
       where: { id: userId },
       select: { timezone: true },
     });
     const effectiveTz = tz ?? user.timezone ?? 'UTC';
-    return startOfDayInTimeZone(new Date(Date.now() + 24 * 60 * 60 * 1000), effectiveTz);
+    return startOfDayInTimeZone(
+      new Date(Date.now() + 24 * 60 * 60 * 1000),
+      effectiveTz,
+    );
   }
 
-  async getStats(userId: string, tz: string | undefined): Promise<PersonalVocabStatsDto> {
+  async getStats(
+    userId: string,
+    tz: string | undefined,
+  ): Promise<PersonalVocabStatsDto> {
     const user = await this.prisma.user.findUniqueOrThrow({
       where: { id: userId },
       select: { timezone: true },
@@ -461,31 +521,45 @@ export class VocabPersonalService {
       effectiveTz,
     );
 
-    const [total, mastered, learning, newCount, dueTodayCount, struggledCount, reviewRows] =
-      await Promise.all([
-        this.prisma.personalVocabWord.count({ where: { userId } }),
-        this.prisma.personalVocabWord.count({ where: { userId, state: 'MASTERED' } }),
-        this.prisma.personalVocabWord.count({
-          where: { userId, state: { in: LEARNING_BUCKET_STATES } },
-        }),
-        this.prisma.personalVocabWord.count({ where: { userId, state: 'NEW' } }),
-        // Deliberately includes never-reviewed (nextReviewAt = null) words —
-        // unlike getDueReviews' NEW-state exclusion/daily-introduction quota,
-        // which paces an admin-curated deck. A personal word is user-
-        // initiated (typed or pasted in deliberately) and should be
-        // reviewable immediately.
-        this.prisma.personalVocabWord.count({
-          where: {
-            userId,
-            OR: [{ nextReviewAt: null }, { nextReviewAt: { lt: tomorrowStart } }],
-          },
-        }),
-        this.prisma.personalVocabWord.count({ where: { userId, lapses: { gt: 0 } } }),
-        this.prisma.personalWordReviewLog.findMany({
-          where: { userId, reviewedAt: { gte: sevenDaysAgoStart, lt: tomorrowStart } },
-          select: { reviewedAt: true },
-        }),
-      ]);
+    const [
+      total,
+      mastered,
+      learning,
+      newCount,
+      dueTodayCount,
+      struggledCount,
+      reviewRows,
+    ] = await Promise.all([
+      this.prisma.personalVocabWord.count({ where: { userId } }),
+      this.prisma.personalVocabWord.count({
+        where: { userId, state: 'MASTERED' },
+      }),
+      this.prisma.personalVocabWord.count({
+        where: { userId, state: { in: LEARNING_BUCKET_STATES } },
+      }),
+      this.prisma.personalVocabWord.count({ where: { userId, state: 'NEW' } }),
+      // Deliberately includes never-reviewed (nextReviewAt = null) words —
+      // unlike getDueReviews' NEW-state exclusion/daily-introduction quota,
+      // which paces an admin-curated deck. A personal word is user-
+      // initiated (typed or pasted in deliberately) and should be
+      // reviewable immediately.
+      this.prisma.personalVocabWord.count({
+        where: {
+          userId,
+          OR: [{ nextReviewAt: null }, { nextReviewAt: { lt: tomorrowStart } }],
+        },
+      }),
+      this.prisma.personalVocabWord.count({
+        where: { userId, lapses: { gt: 0 } },
+      }),
+      this.prisma.personalWordReviewLog.findMany({
+        where: {
+          userId,
+          reviewedAt: { gte: sevenDaysAgoStart, lt: tomorrowStart },
+        },
+        select: { reviewedAt: true },
+      }),
+    ]);
 
     const days = enumerateDaysInTimeZone(now, effectiveTz, 7);
     const countsByDay = new Map<string, number>(days.map((d) => [d, 0]));
@@ -501,7 +575,22 @@ export class VocabPersonalService {
       new: newCount,
       dueTodayCount,
       struggledCount,
-      reviewsLast7Days: days.map((date) => ({ date, count: countsByDay.get(date) ?? 0 })),
+      reviewsLast7Days: days.map((date) => ({
+        date,
+        count: countsByDay.get(date) ?? 0,
+      })),
     };
+  }
+
+  // 2026-09-16 pricing relaunch — read fresh from the DB every call, exactly
+  // like UserService's SAFE_USER_SELECT derivation (subscription !== null &&
+  // expiresAt > now). isPro is never carried in the JWT (stateless-JWT
+  // design — see AuthModule), so this can never be a stale claim.
+  private async isUserPro(userId: string): Promise<boolean> {
+    const subscription = await this.prisma.subscription.findUnique({
+      where: { userId },
+      select: { expiresAt: true },
+    });
+    return subscription !== null && subscription.expiresAt > new Date();
   }
 }

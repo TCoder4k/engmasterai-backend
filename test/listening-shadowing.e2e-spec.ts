@@ -68,7 +68,8 @@ class FakeSpeechToText implements SpeechToTextProvider {
   transcribe(request: SpeechToTextRequest) {
     FakeSpeechToText.callCount += 1;
     FakeSpeechToText.seenRequests.push(request);
-    if (FakeSpeechToText.failWith) return Promise.reject(FakeSpeechToText.failWith);
+    if (FakeSpeechToText.failWith)
+      return Promise.reject(FakeSpeechToText.failWith);
     return Promise.resolve({ transcript: FakeSpeechToText.transcript });
   }
 }
@@ -130,7 +131,10 @@ describe('Listening Shadowing (e2e) — Sprint 11 Phase 4B', () => {
       .post('/auth/register')
       .send({ name: 'Phase 4B Student', email, password: 'password123' });
     const user = await prisma.user.findUniqueOrThrow({ where: { email } });
-    return { token: (res.body as { accessToken: string }).accessToken, id: user.id };
+    return {
+      token: (res.body as { accessToken: string }).accessToken,
+      id: user.id,
+    };
   };
 
   const publishRecording = async (
@@ -237,7 +241,11 @@ describe('Listening Shadowing (e2e) — Sprint 11 Phase 4B', () => {
     createdUserEmails.push(adminEmail);
     const adminRes = await request(app.getHttpServer())
       .post('/auth/register')
-      .send({ name: 'Phase 4B Admin', email: adminEmail, password: 'password123' });
+      .send({
+        name: 'Phase 4B Admin',
+        email: adminEmail,
+        password: 'password123',
+      });
     await prisma.user.update({
       where: { email: adminEmail },
       data: { role: 'ADMIN' },
@@ -300,7 +308,11 @@ describe('Listening Shadowing (e2e) — Sprint 11 Phase 4B', () => {
 
       expect(FakeSpeechToText.seenRequests).toHaveLength(1);
       const seen = FakeSpeechToText.seenRequests[0];
-      expect(Object.keys(seen).sort()).toEqual(['audio', 'languageCode', 'mimeType']);
+      expect(Object.keys(seen).sort()).toEqual([
+        'audio',
+        'languageCode',
+        'mimeType',
+      ]);
       // Serialised in full, so a reference smuggled inside any field is caught
       // rather than only a top-level `reference` property.
       const serialised = JSON.stringify({
@@ -396,7 +408,9 @@ describe('Listening Shadowing (e2e) — Sprint 11 Phase 4B', () => {
       // The transcript survives; the voice does not. There is no column that
       // could hold it, which is the guarantee — not a deletion step.
       expect(Object.keys(row)).not.toContain('audioUrl');
-      expect(JSON.stringify(row)).not.toContain(AUDIO.toString('base64').slice(0, 32));
+      expect(JSON.stringify(row)).not.toContain(
+        AUDIO.toString('base64').slice(0, 32),
+      );
       expect(row.durationMs).toBe(4200);
     });
   });
@@ -430,7 +444,10 @@ describe('Listening Shadowing (e2e) — Sprint 11 Phase 4B', () => {
     });
 
     it('surfaces per-sentence progress on the content read', async () => {
-      const { contentId, segmentIds } = await publishRecording([SENTENCE, 'Kelp is slippery']);
+      const { contentId, segmentIds } = await publishRecording([
+        SENTENCE,
+        'Kelp is slippery',
+      ]);
       FakeSpeechToText.transcript = SENTENCE;
       await submit(segmentIds[0]).expect(201);
 
@@ -445,7 +462,7 @@ describe('Listening Shadowing (e2e) — Sprint 11 Phase 4B', () => {
       expect(res.body.dictationProgress).toBeNull();
     });
 
-    it('keeps one student out of another student\'s progress', async () => {
+    it("keeps one student out of another student's progress", async () => {
       const { contentId, segmentIds } = await publishRecording([SENTENCE]);
       FakeSpeechToText.transcript = SENTENCE;
       await submit(segmentIds[0]).expect(201);
@@ -500,7 +517,7 @@ describe('Listening Shadowing (e2e) — Sprint 11 Phase 4B', () => {
       expect(res.body).toEqual([{ contentId, shadowing: null }]);
     });
 
-    it('keeps one student out of another student\'s progress', async () => {
+    it("keeps one student out of another student's progress", async () => {
       const { contentId, segmentIds } = await publishRecording([SENTENCE]);
       FakeSpeechToText.transcript = SENTENCE;
       await submit(segmentIds[0]).expect(201);
@@ -512,7 +529,15 @@ describe('Listening Shadowing (e2e) — Sprint 11 Phase 4B', () => {
         .expect(200);
 
       expect(res.body).toEqual([
-        { contentId, shadowing: { totalSegments: 1, completedSegments: 0, completed: false, lastActivityAt: null } },
+        {
+          contentId,
+          shadowing: {
+            totalSegments: 1,
+            completedSegments: 0,
+            completed: false,
+            lastActivityAt: null,
+          },
+        },
       ]);
     });
 
@@ -538,9 +563,9 @@ describe('Listening Shadowing (e2e) — Sprint 11 Phase 4B', () => {
         .set('Authorization', `Bearer ${studentToken}`)
         .expect(200);
 
-      expect((res.body as Array<{ contentId: string }>).map((row) => row.contentId)).toEqual([
-        contentId,
-      ]);
+      expect(
+        (res.body as Array<{ contentId: string }>).map((row) => row.contentId),
+      ).toEqual([contentId]);
     });
 
     it('401s without a token', async () => {
@@ -560,11 +585,15 @@ describe('Listening Shadowing (e2e) — Sprint 11 Phase 4B', () => {
       FakeSpeechToText.transcript = SENTENCE;
       const attemptId = randomUUID();
 
-      const first = await submit(segmentIds[0], { clientAttemptId: attemptId }).expect(201);
+      const first = await submit(segmentIds[0], {
+        clientAttemptId: attemptId,
+      }).expect(201);
       expect(FakeSpeechToText.callCount).toBe(1);
 
       FakeSpeechToText.transcript = 'completely different words';
-      const replay = await submit(segmentIds[0], { clientAttemptId: attemptId }).expect(201);
+      const replay = await submit(segmentIds[0], {
+        clientAttemptId: attemptId,
+      }).expect(201);
 
       expect(FakeSpeechToText.callCount).toBe(1);
       expect(replay.body.transcript).toBe(first.body.transcript);
@@ -584,9 +613,10 @@ describe('Listening Shadowing (e2e) — Sprint 11 Phase 4B', () => {
         where: { userId: studentId, clientAttemptId: attemptId },
       });
       expect(rows).toBe(1);
-      const progress = await prisma.listeningShadowingSegmentProgress.findFirstOrThrow({
-        where: { userId: studentId, segmentId: segmentIds[0] },
-      });
+      const progress =
+        await prisma.listeningShadowingSegmentProgress.findFirstOrThrow({
+          where: { userId: studentId, segmentId: segmentIds[0] },
+        });
       expect(progress.attemptCount).toBe(1);
     });
 
@@ -642,7 +672,9 @@ describe('Listening Shadowing (e2e) — Sprint 11 Phase 4B', () => {
       const { segmentIds } = await publishRecording([SENTENCE]);
       FakeSpeechToText.transcript = SENTENCE;
 
-      await submit(segmentIds[0], { mime: 'audio/webm;codecs=opus' }).expect(201);
+      await submit(segmentIds[0], { mime: 'audio/webm;codecs=opus' }).expect(
+        201,
+      );
       await submit(segmentIds[0], {
         mime: 'audio/mp4;codecs=mp4a.40.2',
         filename: 'take.m4a',
@@ -655,7 +687,10 @@ describe('Listening Shadowing (e2e) — Sprint 11 Phase 4B', () => {
       await request(app.getHttpServer())
         .post(`/listening/segments/${segmentIds[0]}/shadowing/attempts`)
         .set('Authorization', `Bearer ${studentToken}`)
-        .attach('audio', AUDIO, { filename: 'take.webm', contentType: 'audio/webm' })
+        .attach('audio', AUDIO, {
+          filename: 'take.webm',
+          contentType: 'audio/webm',
+        })
         .expect(400);
 
       expect(FakeSpeechToText.callCount).toBe(0);
@@ -686,14 +721,20 @@ describe('Listening Shadowing (e2e) — Sprint 11 Phase 4B', () => {
     // recovery is "record again" rather than "try again in a moment".
     it('reports undecodable audio as 400, not as an outage', async () => {
       const { segmentIds } = await publishRecording([SENTENCE]);
-      FakeSpeechToText.failWith = new SpeechToTextError('UNSUPPORTED_AUDIO', 'bad');
+      FakeSpeechToText.failWith = new SpeechToTextError(
+        'UNSUPPORTED_AUDIO',
+        'bad',
+      );
 
       await submit(segmentIds[0]).expect(400);
     });
 
-    it('treats a missing API key as an outage from the student\'s side', async () => {
+    it("treats a missing API key as an outage from the student's side", async () => {
       const { segmentIds } = await publishRecording([SENTENCE]);
-      FakeSpeechToText.failWith = new SpeechToTextError('NOT_CONFIGURED', 'no key');
+      FakeSpeechToText.failWith = new SpeechToTextError(
+        'NOT_CONFIGURED',
+        'no key',
+      );
 
       await submit(segmentIds[0]).expect(503);
     });
@@ -762,7 +803,10 @@ describe('Listening Shadowing (e2e) — Sprint 11 Phase 4B', () => {
       await request(app.getHttpServer())
         .post(`/listening/segments/${segmentIds[0]}/shadowing/attempts`)
         .field('clientAttemptId', randomUUID())
-        .attach('audio', AUDIO, { filename: 'take.webm', contentType: 'audio/webm' })
+        .attach('audio', AUDIO, {
+          filename: 'take.webm',
+          contentType: 'audio/webm',
+        })
         .expect(401);
     });
   });
@@ -835,7 +879,9 @@ describe('Listening Shadowing (e2e) — Sprint 11 Phase 4B', () => {
     it('returns coaching prose for an attempt the student made', async () => {
       const { segmentId, clientAttemptId } = await gradedAttempt();
 
-      const res = await requestFeedback(segmentId, { clientAttemptId }).expect(201);
+      const res = await requestFeedback(segmentId, { clientAttemptId }).expect(
+        201,
+      );
 
       expect(res.body).toEqual({
         feedback: FakePronunciationFeedback.feedback,
@@ -852,7 +898,9 @@ describe('Listening Shadowing (e2e) — Sprint 11 Phase 4B', () => {
     it('returns no score, rating or percentage of any kind', async () => {
       const { segmentId, clientAttemptId } = await gradedAttempt();
 
-      const res = await requestFeedback(segmentId, { clientAttemptId }).expect(201);
+      const res = await requestFeedback(segmentId, { clientAttemptId }).expect(
+        201,
+      );
 
       expect(Object.keys(res.body as object).sort()).toEqual([
         'cached',
@@ -865,8 +913,9 @@ describe('Listening Shadowing (e2e) — Sprint 11 Phase 4B', () => {
     // The ALLOWED direction. The transcriber must never be told the answer;
     // this one must be, or it cannot say which word went wrong.
     it('gives the engine the stored sentence and transcript, not the request', async () => {
-      const { segmentId, clientAttemptId } =
-        await gradedAttempt('The otter wraps her baby');
+      const { segmentId, clientAttemptId } = await gradedAttempt(
+        'The otter wraps her baby',
+      );
 
       await requestFeedback(segmentId, { clientAttemptId }).expect(201);
 
@@ -879,10 +928,15 @@ describe('Listening Shadowing (e2e) — Sprint 11 Phase 4B', () => {
 
     it('returns the same advice on a second press, without calling the engine again', async () => {
       const { segmentId, clientAttemptId } = await gradedAttempt();
-      const first = await requestFeedback(segmentId, { clientAttemptId }).expect(201);
+      const first = await requestFeedback(segmentId, {
+        clientAttemptId,
+      }).expect(201);
 
-      FakePronunciationFeedback.feedback = 'A completely different second opinion.';
-      const second = await requestFeedback(segmentId, { clientAttemptId }).expect(201);
+      FakePronunciationFeedback.feedback =
+        'A completely different second opinion.';
+      const second = await requestFeedback(segmentId, {
+        clientAttemptId,
+      }).expect(201);
 
       expect(FakePronunciationFeedback.callCount).toBe(1);
       expect((second.body as { feedback: string }).feedback).toBe(
@@ -897,7 +951,9 @@ describe('Listening Shadowing (e2e) — Sprint 11 Phase 4B', () => {
       await requestFeedback(segmentId, { clientAttemptId }).expect(201);
 
       const row = await prisma.listeningShadowingAttempt.findUniqueOrThrow({
-        where: { userId_clientAttemptId: { userId: studentId, clientAttemptId } },
+        where: {
+          userId_clientAttemptId: { userId: studentId, clientAttemptId },
+        },
         select: { aiFeedback: true, aiFeedbackAt: true, aiFeedbackModel: true },
       });
       expect(row.aiFeedback).toBe(FakePronunciationFeedback.feedback);
@@ -909,7 +965,9 @@ describe('Listening Shadowing (e2e) — Sprint 11 Phase 4B', () => {
     it('leaves the verdict and the progress row untouched', async () => {
       const { segmentId, clientAttemptId } = await gradedAttempt();
       const before = await prisma.listeningShadowingAttempt.findUniqueOrThrow({
-        where: { userId_clientAttemptId: { userId: studentId, clientAttemptId } },
+        where: {
+          userId_clientAttemptId: { userId: studentId, clientAttemptId },
+        },
         select: { accuracyPercent: true, passed: true, wordsCorrect: true },
       });
       const progressBefore =
@@ -925,7 +983,9 @@ describe('Listening Shadowing (e2e) — Sprint 11 Phase 4B', () => {
       await requestFeedback(segmentId, { clientAttemptId }).expect(201);
 
       const after = await prisma.listeningShadowingAttempt.findUniqueOrThrow({
-        where: { userId_clientAttemptId: { userId: studentId, clientAttemptId } },
+        where: {
+          userId_clientAttemptId: { userId: studentId, clientAttemptId },
+        },
         select: { accuracyPercent: true, passed: true, wordsCorrect: true },
       });
       const progressAfter =
@@ -944,7 +1004,9 @@ describe('Listening Shadowing (e2e) — Sprint 11 Phase 4B', () => {
     it('404s for an attempt key that does not exist', async () => {
       const { segmentId } = await gradedAttempt();
 
-      await requestFeedback(segmentId, { clientAttemptId: randomUUID() }).expect(404);
+      await requestFeedback(segmentId, {
+        clientAttemptId: randomUUID(),
+      }).expect(404);
       expect(FakePronunciationFeedback.callCount).toBe(0);
     });
 
@@ -953,7 +1015,9 @@ describe('Listening Shadowing (e2e) — Sprint 11 Phase 4B', () => {
       const { clientAttemptId } = await gradedAttempt();
       const other = await publishRecording([SENTENCE]);
 
-      await requestFeedback(other.segmentIds[0], { clientAttemptId }).expect(404);
+      await requestFeedback(other.segmentIds[0], { clientAttemptId }).expect(
+        404,
+      );
     });
 
     it('404s for an attempt made by another student rather than coaching on it', async () => {
@@ -970,7 +1034,9 @@ describe('Listening Shadowing (e2e) — Sprint 11 Phase 4B', () => {
     it('rejects a request with no audio before any paid work', async () => {
       const { segmentId, clientAttemptId } = await gradedAttempt();
 
-      await requestFeedback(segmentId, { clientAttemptId, audio: null }).expect(400);
+      await requestFeedback(segmentId, { clientAttemptId, audio: null }).expect(
+        400,
+      );
       expect(FakePronunciationFeedback.callCount).toBe(0);
     });
 
@@ -994,7 +1060,9 @@ describe('Listening Shadowing (e2e) — Sprint 11 Phase 4B', () => {
       await requestFeedback(segmentId, { clientAttemptId }).expect(503);
 
       const row = await prisma.listeningShadowingAttempt.findUniqueOrThrow({
-        where: { userId_clientAttemptId: { userId: studentId, clientAttemptId } },
+        where: {
+          userId_clientAttemptId: { userId: studentId, clientAttemptId },
+        },
         select: { accuracyPercent: true, aiFeedback: true },
       });
       expect(row.aiFeedback).toBeNull();
@@ -1028,8 +1096,89 @@ describe('Listening Shadowing (e2e) — Sprint 11 Phase 4B', () => {
       await request(app.getHttpServer())
         .post(`/listening/segments/${segmentId}/shadowing/feedback`)
         .field('clientAttemptId', clientAttemptId)
-        .attach('audio', AUDIO, { filename: 'take.webm', contentType: 'audio/webm' })
+        .attach('audio', AUDIO, {
+          filename: 'take.webm',
+          contentType: 'audio/webm',
+        })
         .expect(401);
+    });
+  });
+
+  // ---------------------------------------------------------------------
+  // 2026-09-16 pricing relaunch — the "aiGrading" usage quota (Free 2/month,
+  // PRO 30/month). Deliberately distinct from the EXISTING `aiFeedback`
+  // Redis rate-limit kind (10/600s) — hitting 403 on the 3rd call here
+  // proves THIS gate, not the pre-existing rate limiter, which would not
+  // trip until the 11th.
+  // ---------------------------------------------------------------------
+  describe('aiGrading usage quota (2026-09-16 pricing relaunch)', () => {
+    const gradedAttempt = async (
+      token: string,
+      transcript = 'The otter wraps her baby in kelp',
+    ): Promise<{ segmentId: string; clientAttemptId: string }> => {
+      const { segmentIds } = await publishRecording([SENTENCE]);
+      FakeSpeechToText.transcript = transcript;
+      const clientAttemptId = randomUUID();
+      await submit(segmentIds[0], { clientAttemptId, token }).expect(201);
+      return { segmentId: segmentIds[0], clientAttemptId };
+    };
+
+    const requestFeedback = (
+      segmentId: string,
+      options: { clientAttemptId: string; token?: string },
+    ) =>
+      request(app.getHttpServer())
+        .post(`/listening/segments/${segmentId}/shadowing/feedback`)
+        .set('Authorization', `Bearer ${options.token ?? studentToken}`)
+        .field('clientAttemptId', options.clientAttemptId)
+        .attach('audio', AUDIO, {
+          filename: 'take.webm',
+          contentType: 'audio/webm;codecs=opus',
+        });
+
+    it('a Free student can request feedback twice, the 3rd is blocked with the stable USAGE_QUOTA_EXCEEDED code', async () => {
+      const { token: freshToken } = await registerStudent();
+      const first = await gradedAttempt(freshToken);
+      const second = await gradedAttempt(freshToken);
+      const third = await gradedAttempt(freshToken);
+
+      await requestFeedback(first.segmentId, {
+        clientAttemptId: first.clientAttemptId,
+        token: freshToken,
+      }).expect(201);
+      await requestFeedback(second.segmentId, {
+        clientAttemptId: second.clientAttemptId,
+        token: freshToken,
+      }).expect(201);
+
+      const blocked = await requestFeedback(third.segmentId, {
+        clientAttemptId: third.clientAttemptId,
+        token: freshToken,
+      }).expect(403);
+      expect((blocked.body as { code: string }).code).toBe(
+        'USAGE_QUOTA_EXCEEDED',
+      );
+    });
+
+    it('a PRO student is not blocked at 3', async () => {
+      const { token: freshToken, id: freshId } = await registerStudent();
+      await prisma.subscription.create({
+        data: {
+          userId: freshId,
+          plan: 'PRO_MONTHLY',
+          startsAt: new Date(),
+          expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+          lastPaymentId: randomUUID(),
+        },
+      });
+
+      for (let i = 0; i < 3; i += 1) {
+        const attempt = await gradedAttempt(freshToken);
+        await requestFeedback(attempt.segmentId, {
+          clientAttemptId: attempt.clientAttemptId,
+          token: freshToken,
+        }).expect(201);
+      }
     });
   });
 });

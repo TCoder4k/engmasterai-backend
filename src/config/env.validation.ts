@@ -562,6 +562,14 @@ export const envValidationSchema = Joi.object({
       then: Joi.required(),
       otherwise: Joi.optional(),
     }),
+  // Optional "regular price" shown struck-through next to the real charge on
+  // CheckoutPage — a display-only marketing value, never itself charged.
+  // Unset by default; when unset, PaymentService.toDto returns
+  // compareAtAmount: null and the frontend renders no strikethrough.
+  PAYMENT_PRO_MONTHLY_COMPARE_AT_VND: Joi.number()
+    .integer()
+    .positive()
+    .optional(),
   // Countdown/reuse-window length shown to the payer and used by the
   // create-or-reuse decision (PaymentService.findLivePending) — NOT a
   // database expiry: a payment stays physically PENDING (and payable by a

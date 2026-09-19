@@ -110,9 +110,30 @@ const buildHarness = (options: HarnessOptions = {}) => {
   // Streak Together's onUserActivityDay hook (step 3.5) is exercised by its
   // own spec (streak.service.spec.ts); here it only needs to be callable and
   // is asserted not to disturb this test's own XP/achievement arithmetic.
-  const streakServiceStub = { onUserActivityDay: jest.fn(() => Promise.resolve()) };
-  const service = new GamificationService({} as never, streakServiceStub as never);
-  return { service, tx, calls, userUpdate, activityUpdate, insertedRows, streakServiceStub };
+  const streakServiceStub = {
+    onUserActivityDay: jest.fn(() => Promise.resolve()),
+  };
+  // 2026-09-16 pricing relaunch — the referral reward hook (also step 3.5)
+  // is exercised by its own spec (referral.service.spec.ts); same stub
+  // reasoning as streakServiceStub above.
+  const referralServiceStub = {
+    onUserActivityDay: jest.fn(() => Promise.resolve()),
+  };
+  const service = new GamificationService(
+    {} as never,
+    streakServiceStub as never,
+    referralServiceStub as never,
+  );
+  return {
+    service,
+    tx,
+    calls,
+    userUpdate,
+    activityUpdate,
+    insertedRows,
+    streakServiceStub,
+    referralServiceStub,
+  };
 };
 
 const record = (

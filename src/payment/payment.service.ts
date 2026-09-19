@@ -107,6 +107,30 @@ export class PaymentService {
     }
   }
 
+  // 2026-09-16 "Early Member" campaign — the struck-through "regular price"
+  // shown next to the real charge. Display-only; ignored (returns null,
+  // never a fake discount) whenever it isn't actually greater than the real
+  // price, including when it's simply unset.
+  private getPlanCompareAtPrice(
+    plan: SubscriptionPlan,
+    price: number,
+  ): number | null {
+    switch (plan) {
+      case 'PRO_MONTHLY': {
+        const raw = this.config.get<number>(
+          'PAYMENT_PRO_MONTHLY_COMPARE_AT_VND',
+        );
+        return typeof raw === 'number' && raw > price ? raw : null;
+      }
+      default: {
+        const exhaustive: never = plan;
+        throw new Error(
+          `No compare-at price handling for plan: ${exhaustive as string}`,
+        );
+      }
+    }
+  }
+
   private async findLivePending(
     userId: string,
     plan: SubscriptionPlan,
@@ -364,6 +388,7 @@ export class PaymentService {
       paymentId: payment.id,
       plan: payment.plan,
       amount: payment.amount,
+      compareAtAmount: this.getPlanCompareAtPrice(payment.plan, payment.amount),
       currency: payment.currency,
       paymentCode: payment.paymentCode,
       status,

@@ -28,8 +28,16 @@ interface HarnessOptions {
   shadowingActivity?: Date[];
   studySecondsToday?: number | null;
   recentAccuracyAttempts?: number[];
-  topStudentGroups?: { userId: string; _sum: { creditedSeconds: number | null } }[];
-  topStudentUsers?: { id: string; name: string; email: string; level: number }[];
+  topStudentGroups?: {
+    userId: string;
+    _sum: { creditedSeconds: number | null };
+  }[];
+  topStudentUsers?: {
+    id: string;
+    name: string;
+    email: string;
+    level: number;
+  }[];
   topStudentCompletions?: { userId: string; _count: number }[];
 }
 
@@ -101,14 +109,18 @@ const buildHarness = (options: HarnessOptions = {}) => {
     listeningDictationAttempt: {
       findMany: jest.fn(() =>
         resolve(
-          (options.dictationActivity ?? []).map((submittedAt) => ({ submittedAt })),
+          (options.dictationActivity ?? []).map((submittedAt) => ({
+            submittedAt,
+          })),
         ),
       ),
     },
     listeningShadowingAttempt: {
       findMany: jest.fn(() =>
         resolve(
-          (options.shadowingActivity ?? []).map((submittedAt) => ({ submittedAt })),
+          (options.shadowingActivity ?? []).map((submittedAt) => ({
+            submittedAt,
+          })),
         ),
       ),
     },
@@ -128,8 +140,18 @@ const buildHarness = (options: HarnessOptions = {}) => {
     },
   };
 
-  const service = new DashboardAnalyticsService(prisma as never);
-  return { service, prisma, calls, userUpdate };
+  // 2026-09-16 pricing relaunch — the lesson-milestone check
+  // (LessonMilestoneService.checkAndGrant) is fire-and-forget and
+  // exercised by its own spec; stubbed here so it never throws an
+  // unhandled rejection mid-test.
+  const lessonMilestoneStub = {
+    checkAndGrant: jest.fn(() => Promise.resolve()),
+  };
+  const service = new DashboardAnalyticsService(
+    prisma as never,
+    lessonMilestoneStub as never,
+  );
+  return { service, prisma, calls, userUpdate, lessonMilestoneStub };
 };
 
 // The `where` a mocked Prisma method was called with. Typed rather than reached
@@ -216,7 +238,9 @@ describe('DashboardAnalyticsService — day boundaries', () => {
     const result = await service.getDashboardAnalytics('user-1', VN);
 
     expect(result.today.date).toBe('2026-07-31');
-    const todayTile = result.activity.days.find((day) => day.date === '2026-07-31');
+    const todayTile = result.activity.days.find(
+      (day) => day.date === '2026-07-31',
+    );
     expect(todayTile).toBeDefined();
     expect(todayTile?.isFuture).toBe(false);
   });
@@ -469,9 +493,14 @@ describe('DashboardAnalyticsService — activity calendar and streak', () => {
       // 00:30 local on the first day of the window, then every day after.
       reviewActivity: [
         new Date('2026-07-24T17:30:00.000Z'), // 07-25 00:30 VN
-        ...['2026-07-26', '2026-07-27', '2026-07-28', '2026-07-29', '2026-07-30', '2026-07-31'].map(
-          (day) => new Date(`${day}T04:00:00.000Z`),
-        ),
+        ...[
+          '2026-07-26',
+          '2026-07-27',
+          '2026-07-28',
+          '2026-07-29',
+          '2026-07-30',
+          '2026-07-31',
+        ].map((day) => new Date(`${day}T04:00:00.000Z`)),
       ],
     });
 
@@ -492,7 +521,11 @@ describe('DashboardAnalyticsService — activity calendar and streak', () => {
     const { activity } = await service.getDashboardAnalytics('user-1', VN);
 
     const todayTile = activity.days.find((day) => day.date === '2026-07-31');
-    expect(todayTile).toEqual({ date: '2026-07-31', active: true, isFuture: false });
+    expect(todayTile).toEqual({
+      date: '2026-07-31',
+      active: true,
+      isFuture: false,
+    });
   });
 
   it('counts a shadowing-only day as active', async () => {
@@ -502,7 +535,11 @@ describe('DashboardAnalyticsService — activity calendar and streak', () => {
     const { activity } = await service.getDashboardAnalytics('user-1', VN);
 
     const todayTile = activity.days.find((day) => day.date === '2026-07-31');
-    expect(todayTile).toEqual({ date: '2026-07-31', active: true, isFuture: false });
+    expect(todayTile).toEqual({
+      date: '2026-07-31',
+      active: true,
+      isFuture: false,
+    });
   });
 });
 
@@ -686,7 +723,12 @@ describe('DashboardAnalyticsService — getTopStudents', () => {
       ],
       topStudentUsers: [
         { id: 'top', name: 'Top Student', email: 'top@example.com', level: 6 },
-        { id: 'runner-up', name: 'Runner Up', email: 'runner-up@example.com', level: 2 },
+        {
+          id: 'runner-up',
+          name: 'Runner Up',
+          email: 'runner-up@example.com',
+          level: 2,
+        },
       ],
       topStudentCompletions: [{ userId: 'top', _count: 10 }],
     });
@@ -708,7 +750,9 @@ describe('DashboardAnalyticsService — getTopStudents', () => {
   it('never includes an email field — the entire point of this method existing separately from the admin one', async () => {
     const { service } = buildHarness({
       topStudentGroups: [{ userId: 'top', _sum: { creditedSeconds: 100 } }],
-      topStudentUsers: [{ id: 'top', name: 'Top Student', email: 'top@example.com', level: 1 }],
+      topStudentUsers: [
+        { id: 'top', name: 'Top Student', email: 'top@example.com', level: 1 },
+      ],
       topStudentCompletions: [],
     });
 

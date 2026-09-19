@@ -8,6 +8,7 @@ import { FreeDictionaryApiProvider } from './free-dictionary-api.provider';
 import { VI_TRANSLATION_PROVIDER } from './vi-translation.provider';
 import { GeminiViTranslationProvider } from './gemini-vi-translation.provider';
 import { DictionaryRateLimitGuard } from './rate-limit/dictionary-rate-limit.guard';
+import { UsageModule } from '../usage/usage.module';
 
 // Floating Dictionary, Phase A. Wholly new, greenfield module — no reuse of
 // LessonModule/VocabWordModule beyond reading VocabWord through PrismaModule
@@ -19,7 +20,10 @@ import { DictionaryRateLimitGuard } from './rate-limit/dictionary-rate-limit.gua
 // latter — no need to import a whole other feature module just to reuse a
 // forty-line guard.
 @Module({
-  imports: [PrismaModule],
+  // 2026-09-16 pricing relaunch — UsageModule for the "aiQuery" quota gate
+  // on GET /dictionary/lookup. UsageModule imports only PrismaModule, same
+  // safe-one-way-edge reasoning as every other module import here.
+  imports: [PrismaModule, UsageModule],
   controllers: [DictionaryController],
   providers: [
     DictionaryService,
@@ -27,7 +31,10 @@ import { DictionaryRateLimitGuard } from './rate-limit/dictionary-rate-limit.gua
     // Token-bound, not a bare class — same reasoning as every other
     // external/AI provider in this codebase: e2e and unit tests substitute
     // a fake without a real network/paid call.
-    { provide: DICTIONARY_SOURCE_PROVIDER, useClass: FreeDictionaryApiProvider },
+    {
+      provide: DICTIONARY_SOURCE_PROVIDER,
+      useClass: FreeDictionaryApiProvider,
+    },
     { provide: VI_TRANSLATION_PROVIDER, useClass: GeminiViTranslationProvider },
     DictionaryRateLimitGuard,
   ],

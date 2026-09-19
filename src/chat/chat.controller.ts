@@ -13,6 +13,9 @@ import {
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { JwtAuthGuard } from '../auth/guards';
+import { PrismaService } from '../prisma/prisma.service';
+import { getProStatusAndTimeZone } from '../shared/subscription-status.util';
+import { UsageQuotaService } from '../usage/usage-quota.service';
 import { ChatRateLimitGuard } from './rate-limit/chat-rate-limit.guard';
 import { ChatRateLimit } from './rate-limit/chat-rate-limits.decorator';
 import { ChatService } from './chat.service';
@@ -28,10 +31,16 @@ interface RequestWithUser extends Request {
 // narrowed into ChatContextResolver's actual discriminated ChatContextInput.
 // `resourceId` is guaranteed present here for LESSON/VOCAB_WORD by the DTO's
 // own `@ValidateIf` — a request that lacked it never reaches this line.
-const toContextInput = (dto: SendChatMessageDto['context']): ChatContextInput => {
+const toContextInput = (
+  dto: SendChatMessageDto['context'],
+): ChatContextInput => {
   if (!dto || dto.type === 'GENERAL') return { type: 'GENERAL' };
   if (dto.type === 'LESSON') {
-    return { type: 'LESSON', resourceId: dto.resourceId as string, stage: dto.stage };
+    return {
+      type: 'LESSON',
+      resourceId: dto.resourceId as string,
+      stage: dto.stage,
+    };
   }
   return { type: 'VOCAB_WORD', resourceId: dto.resourceId as string };
 };
@@ -53,7 +62,11 @@ const sseFrame = (event: 'delta' | 'done' | 'error', data: unknown): string =>
 
 @Controller('chat')
 export class ChatController {
-  constructor(private readonly chatService: ChatService) {}
+  constructor(
+    private readonly chatService: ChatService,
+    private readonly usageQuota: UsageQuotaService,
+    private readonly prisma: PrismaService,
+  ) {}
 
   /**
    * Identity comes ONLY from the verified JWT (`req.user.userId`) — a
@@ -80,6 +93,27 @@ export class ChatController {
     @Body(bodyPipe) dto: SendChatMessageDto,
     @Res() res: Response,
   ): Promise<void> {
+    // 2026-09-16 pricing relaunch — gated by the "aiQuery" usage quota
+    // (shared with Dictionary lookup). Checked BEFORE prepareSend()'s own
+    // idempotency claim is taken, deliberately: prepareSend distinguishes a
+    // brand-new send from a REPLAY of an already-completed clientMessageId
+    // only once it runs, and throwing a quota exception AFTER a claim is
+    // taken but before it's released would leak that claim. The accepted
+    // cost is that a genuine retry-with-the-same-clientMessageId (rare — a
+    // network blip, not a normal user action) consumes one extra quota unit
+    // for a reply that doesn't call Gemini again; not worth the risk of
+    // restructuring ChatService's own claim/replay logic to avoid it.
+    const { isPro, timeZone } = await getProStatusAndTimeZone(
+      this.prisma,
+      req.user.userId,
+    );
+    await this.usageQuota.checkAndIncrement(
+      req.user.userId,
+      'aiQuery',
+      isPro,
+      timeZone,
+    );
+
     const prepared = await this.chatService.prepareSend(
       req.user.userId,
       dto.clientMessageId,
@@ -136,7 +170,9 @@ export class ChatController {
 
     if (outcome.kind === 'done') res.write(sseFrame('done', outcome.result));
     if (outcome.kind === 'error') {
-      res.write(sseFrame('error', { message: 'Engy is temporarily unavailable' }));
+      res.write(
+        sseFrame('error', { message: 'Engy is temporarily unavailable' }),
+      );
     }
     // outcome.kind === 'aborted' — the connection is already gone; nothing to write.
 

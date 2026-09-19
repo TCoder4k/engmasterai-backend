@@ -220,6 +220,20 @@ model User {
   // design) — the accepted gap is documented in docs/memory.md.
   isActive Boolean @default(true)
 
+  // 2026-09-16 pricing relaunch (Phase C) — set exactly once, the moment the
+  // roadmap-based lessons-completed milestone (10 lessons) is first crossed,
+  // so the +7-day PRO grant this triggers (SubscriptionGrantService) can
+  // never fire twice for the same account. NULL means "not yet earned."
+  lessonMilestoneRewardedAt DateTime?
+
+  // Lazily generated, persistent per-user referral code (same
+  // randomBytes(16).toString('base64url') idiom as streakInviteToken above
+  // — a DIFFERENT token for a DIFFERENT purpose: this one grants both sides
+  // +3 days PRO once the invitee genuinely studies, streakInviteToken pairs
+  // two people into a shared streak). Never expires, reusable for many
+  // different invitees.
+  referralCode String? @unique
+
   // Sprint 10 (Gamification) — BOTH OF THESE ARE CACHES, and that is the whole
   // point of the design. XpTransaction is the single source of truth:
   //
@@ -327,6 +341,11 @@ model User {
   // Payment/Subscription models below for the full design.
   payments     Payment[]
   subscription Subscription?
+
+  // 2026-09-16 pricing relaunch (Phase B/C).
+  usageCounters    UsageCounter[]
+  referralsSent    Referral[]     @relation("ReferralsSent")
+  referralReceived Referral?      @relation("ReferralsReceived")
 
   @@map("users") //users dùng cho query sql , còn User dùng cho code
 }
@@ -2386,11 +2405,76 @@ model Subscription {
   plan          SubscriptionPlan
   startsAt      DateTime // set once, at first-ever purchase; renewals never touch this
   expiresAt     DateTime // the only field a renewal ever changes
-  lastPaymentId String // most recent Payment.id that extended this row — audit/traceability only, never read for correctness
+  // Most recent Payment.id that extended this row — audit/traceability only,
+  // never read for correctness. NULLABLE (2026-09-16): a non-payment PRO
+  // grant (lessons-completed milestone, referral reward — see
+  // SubscriptionGrantService) extends this same row without ever creating a
+  // Payment, so there may be no payment to point at. Once any real payment
+  // extends the row, this is set and never cleared.
+  lastPaymentId String?
   createdAt     DateTime         @default(now())
   updatedAt     DateTime         @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("subscriptions")
+}
+
+// 2026-09-16 pricing relaunch (Phase B) — Postgres-backed usage quotas for
+// AI-cost-bearing features (Dictionary lookup + Engy Chat share one
+// "aiQuery" bucket, Shadowing AI pronunciation feedback is "aiGrading",
+// Speaking Partner attempt-starts are "speaking"). Deliberately NOT built on
+// the existing RateLimiterService/Redis fixed-window primitive that
+// abuse-prevention rate limits already use everywhere else in this
+// codebase — that primitive resets on a rolling seconds/minutes TTL and has
+// no month/day CALENDAR-period concept, and a product quota needs to be
+// durable and queryable for display ("17/20 used"), not just a throttle.
+// One row per user per kind per calendar period (month for aiQuery/
+// aiGrading, day for speaking — see UsageQuotaService.PERIOD_BY_KIND);
+// `periodKey` is a plain 'YYYY-MM' or 'YYYY-MM-DD' label, same
+// label-not-instant, per-user-timezone bucketing convention
+// formatDayInTimeZone already uses elsewhere (day-window.ts) — reused
+// directly, not reimplemented. Incremented via a single atomic
+// `INSERT ... ON CONFLICT DO UPDATE ... WHERE count < limit RETURNING count`
+// statement (UsageQuotaService.checkAndIncrement) — never a read-then-write,
+// so two concurrent requests at the last remaining unit of quota cannot both
+// succeed.
+model UsageCounter {
+  id        String   @id @default(uuid())
+  userId    String
+  kind      String
+  periodKey String
+  count     Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, kind, periodKey])
+  @@map("usage_counters")
+}
+
+// 2026-09-16 pricing relaunch (Phase C) — tracks a redeemed referral code so
+// both the "reward granted exactly once" guarantee and the inviter/invitee
+// relationship survive independent of Streak Together's own, unrelated
+// invite-link mechanism (that one pairs two people for a shared streak, this
+// one is a one-time mutual PRO-days reward — see SubscriptionGrantService).
+// `@@unique([inviteeId])`: one account can be referred by at most one other
+// account, ever — first redemption wins, never overwritten by a later one.
+model Referral {
+  id              String    @id @default(uuid())
+  inviterId       String
+  inviteeId       String    @unique
+  createdAt       DateTime  @default(now())
+  // Set once, the moment the invitee's first qualifying study-activity day
+  // is observed (never at redemption time — redeeming a code alone earns
+  // nothing, matching this campaign's "mời một người bạn HỌC THẬT" framing).
+  // NULL means "redeemed, reward not yet earned."
+  rewardGrantedAt DateTime?
+
+  inviter User @relation("ReferralsSent", fields: [inviterId], references: [id], onDelete: Cascade)
+  invitee User @relation("ReferralsReceived", fields: [inviteeId], references: [id], onDelete: Cascade)
+
+  @@index([inviterId])
+  @@map("referrals")
 }

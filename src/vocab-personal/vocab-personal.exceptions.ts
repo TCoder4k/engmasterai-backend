@@ -51,3 +51,25 @@ export class PersonalWordAlreadyExistsException extends HttpException {
     );
   }
 }
+
+// Free-tier personal-vocabulary save cap (2026-09-16 pricing relaunch) — the
+// one real, non-AI PRO gate that campaign adds. Unlike
+// PersonalWordAlreadyExistsException's 409 (retrying with different input
+// can succeed), this is a durable entitlement rule: retrying the identical
+// request never succeeds for a Free user at/over the cap — so 403, not 409.
+export class VocabWordLimitReachedException extends HttpException {
+  constructor(currentCount: number, attemptedCount: number, limit: number) {
+    const remaining = Math.max(0, limit - currentCount);
+    super(
+      {
+        statusCode: HttpStatus.FORBIDDEN,
+        code: 'VOCAB_WORD_LIMIT_REACHED',
+        message:
+          attemptedCount <= 1
+            ? `Free accounts can save up to ${limit} words (you have ${currentCount}). Upgrade to PRO for unlimited vocabulary.`
+            : `Free accounts can save up to ${limit} words. You have ${currentCount} and this would add ${attemptedCount} more (only ${remaining} would fit). Upgrade to PRO for unlimited vocabulary, or import ${remaining} or fewer.`,
+      },
+      HttpStatus.FORBIDDEN,
+    );
+  }
+}

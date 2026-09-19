@@ -31,15 +31,25 @@ describe('Vocab Personal (e2e)', () => {
     createdUserEmails.push(email);
     const register = await request(app.getHttpServer())
       .post('/auth/register')
-      .send({ name: `Vocab Personal ${label}`, email, password: 'password123' });
+      .send({
+        name: `Vocab Personal ${label}`,
+        email,
+        password: 'password123',
+      });
     const userId = (register.body as { user: { id: string } }).user.id;
     const login = await request(app.getHttpServer())
       .post('/auth/login')
       .send({ email, password: 'password123', role: 'USER' });
-    return { token: (login.body as { accessToken: string }).accessToken, userId };
+    return {
+      token: (login.body as { accessToken: string }).accessToken,
+      userId,
+    };
   };
 
-  const createWord = (token: string, text = `word-${randomUUID().slice(0, 8)}`) =>
+  const createWord = (
+    token: string,
+    text = `word-${randomUUID().slice(0, 8)}`,
+  ) =>
     request(app.getHttpServer())
       .post('/vocab-personal/words')
       .set('Authorization', `Bearer ${token}`)
@@ -60,14 +70,18 @@ describe('Vocab Personal (e2e)', () => {
 
   afterAll(async () => {
     if (createdUserEmails.length) {
-      await prisma.user.deleteMany({ where: { email: { in: createdUserEmails } } });
+      await prisma.user.deleteMany({
+        where: { email: { in: createdUserEmails } },
+      });
     }
     await app.close();
   });
 
   describe('authentication', () => {
     it('rejects an unauthenticated list request', async () => {
-      await request(app.getHttpServer()).get('/vocab-personal/words').expect(401);
+      await request(app.getHttpServer())
+        .get('/vocab-personal/words')
+        .expect(401);
     });
 
     it('rejects an unauthenticated create request', async () => {
@@ -89,9 +103,11 @@ describe('Vocab Personal (e2e)', () => {
         .get('/vocab-personal/words')
         .set('Authorization', `Bearer ${token}`)
         .expect(200);
-      expect((listed.body as { data: { id: string }[] }).data.some((w) => w.id === id)).toBe(
-        true,
-      );
+      expect(
+        (listed.body as { data: { id: string }[] }).data.some(
+          (w) => w.id === id,
+        ),
+      ).toBe(true);
 
       await request(app.getHttpServer())
         .patch(`/vocab-personal/words/${id}`)
@@ -99,7 +115,9 @@ describe('Vocab Personal (e2e)', () => {
         .send({ meaningVi: 'nghĩa mới' })
         .expect(200)
         .expect((res) => {
-          expect((res.body as { meaningVi: string }).meaningVi).toBe('nghĩa mới');
+          expect((res.body as { meaningVi: string }).meaningVi).toBe(
+            'nghĩa mới',
+          );
         });
 
       await request(app.getHttpServer())
@@ -112,7 +130,9 @@ describe('Vocab Personal (e2e)', () => {
         .set('Authorization', `Bearer ${token}`)
         .expect(200);
       expect(
-        (afterDelete.body as { data: { id: string }[] }).data.some((w) => w.id === id),
+        (afterDelete.body as { data: { id: string }[] }).data.some(
+          (w) => w.id === id,
+        ),
       ).toBe(false);
     });
 
@@ -198,7 +218,7 @@ describe('Vocab Personal (e2e)', () => {
         .expect(400);
     });
 
-    it('never reports another user\'s word as saved, even with an identical text', async () => {
+    it("never reports another user's word as saved, even with an identical text", async () => {
       const owner = await registerAndLogin('status-own-a');
       const viewer = await registerAndLogin('status-own-b');
       await createWord(owner.token, 'owner-status-word').expect(201);
@@ -249,7 +269,7 @@ describe('Vocab Personal (e2e)', () => {
   // The core ownership property (owner review point B): identical 404s,
   // never a 403 that would confirm another user's word exists.
   describe('ownership isolation', () => {
-    it('cannot PATCH another user\'s word — 404, not 403', async () => {
+    it("cannot PATCH another user's word — 404, not 403", async () => {
       const owner = await registerAndLogin('own-a');
       const attacker = await registerAndLogin('own-b');
       const created = await createWord(owner.token).expect(201);
@@ -262,7 +282,7 @@ describe('Vocab Personal (e2e)', () => {
         .expect(404);
     });
 
-    it('cannot DELETE another user\'s word — 404, not 403', async () => {
+    it("cannot DELETE another user's word — 404, not 403", async () => {
       const owner = await registerAndLogin('own-c');
       const attacker = await registerAndLogin('own-d');
       const created = await createWord(owner.token).expect(201);
@@ -279,11 +299,13 @@ describe('Vocab Personal (e2e)', () => {
         .set('Authorization', `Bearer ${owner.token}`)
         .expect(200);
       expect(
-        (stillListed.body as { data: { id: string }[] }).data.some((w) => w.id === id),
+        (stillListed.body as { data: { id: string }[] }).data.some(
+          (w) => w.id === id,
+        ),
       ).toBe(true);
     });
 
-    it('cannot submit a review against another user\'s word — 404, not 403', async () => {
+    it("cannot submit a review against another user's word — 404, not 403", async () => {
       const owner = await registerAndLogin('own-e');
       const attacker = await registerAndLogin('own-f');
       const created = await createWord(owner.token).expect(201);
@@ -296,10 +318,12 @@ describe('Vocab Personal (e2e)', () => {
         .expect(404);
     });
 
-    it('never lists another user\'s words', async () => {
+    it("never lists another user's words", async () => {
       const owner = await registerAndLogin('own-g');
       const viewer = await registerAndLogin('own-h');
-      const created = await createWord(owner.token, 'owner-only-word').expect(201);
+      const created = await createWord(owner.token, 'owner-only-word').expect(
+        201,
+      );
       const id = (created.body as { id: string }).id;
 
       const res = await request(app.getHttpServer())
@@ -307,9 +331,71 @@ describe('Vocab Personal (e2e)', () => {
         .set('Authorization', `Bearer ${viewer.token}`)
         .expect(200);
 
-      expect((res.body as { data: { id: string }[] }).data.some((w) => w.id === id)).toBe(
-        false,
-      );
+      expect(
+        (res.body as { data: { id: string }[] }).data.some((w) => w.id === id),
+      ).toBe(false);
     });
+  });
+
+  describe('Free-tier word cap (2026-09-16 pricing relaunch)', () => {
+    const fillWords = async (token: string, count: number) => {
+      for (let i = 0; i < count; i += 1) {
+        await createWord(
+          token,
+          `cap-filler-${i}-${randomUUID().slice(0, 6)}`,
+        ).expect(201);
+      }
+    };
+
+    it('403s the 51st word for a Free user, with the stable VOCAB_WORD_LIMIT_REACHED code', async () => {
+      const { token } = await registerAndLogin('cap-a');
+      await fillWords(token, 50);
+
+      const res = await createWord(token, 'one-too-many').expect(403);
+      expect((res.body as { code: string }).code).toBe(
+        'VOCAB_WORD_LIMIT_REACHED',
+      );
+    }, 30000);
+
+    it('a PRO user is not capped', async () => {
+      const { token, userId } = await registerAndLogin('cap-b');
+      await prisma.subscription.create({
+        data: {
+          userId,
+          plan: 'PRO_MONTHLY',
+          startsAt: new Date(),
+          expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+          lastPaymentId: randomUUID(),
+        },
+      });
+      await fillWords(token, 50);
+
+      await createWord(token, 'word-fifty-one').expect(201);
+    }, 30000);
+
+    it('rejects a bulk import that would exceed the cap, saving nothing', async () => {
+      const { token } = await registerAndLogin('cap-c');
+      await fillWords(token, 49);
+
+      const res = await request(app.getHttpServer())
+        .post('/vocab-personal/words/bulk')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          words: [
+            { text: 'bulk-a', meaningVi: 'x' },
+            { text: 'bulk-b', meaningVi: 'x' },
+          ],
+        })
+        .expect(403);
+      expect((res.body as { code: string }).code).toBe(
+        'VOCAB_WORD_LIMIT_REACHED',
+      );
+
+      const listed = await request(app.getHttpServer())
+        .get('/vocab-personal/words')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+      expect((listed.body as { meta: { total: number } }).meta.total).toBe(49);
+    }, 30000);
   });
 });

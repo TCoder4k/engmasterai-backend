@@ -9,6 +9,7 @@ import {
   PersonalReviewIdempotencyKeyReusedException,
   PersonalWordAlreadyExistsException,
   PersonalWordVersionConflictException,
+  VocabWordLimitReachedException,
 } from './vocab-personal.exceptions';
 
 // Integration coverage against the real Postgres instance, same convention
@@ -34,13 +35,17 @@ describe('VocabPersonalService (integration — real Postgres)', () => {
     return user.id;
   };
 
-  const baseWord = (overrides: Partial<{ text: string; meaningVi: string }> = {}) => ({
+  const baseWord = (
+    overrides: Partial<{ text: string; meaningVi: string }> = {},
+  ) => ({
     text: overrides.text ?? `word-${randomUUID().slice(0, 8)}`,
     meaningVi: overrides.meaningVi ?? 'nghĩa tiếng việt',
   });
 
   beforeAll(async () => {
-    moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
+    moduleRef = await Test.createTestingModule({
+      imports: [AppModule],
+    }).compile();
     const app = moduleRef.createNestApplication();
     // AppModule includes SpeakingLiveGateway — app.init() over the full
     // module graph needs an explicit WS adapter or it throws. Same
@@ -141,8 +146,99 @@ describe('VocabPersonalService (integration — real Postgres)', () => {
     });
   });
 
+  describe('Free-tier word cap (2026-09-16 pricing relaunch)', () => {
+    // Seeded via a direct bulk insert, not looped service.create() calls —
+    // the cap logic itself is what's under test, not the create path, and
+    // 50 sequential calls would needlessly slow this suite.
+    const fillWords = (userId: string, count: number) =>
+      prisma.personalVocabWord.createMany({
+        data: Array.from({ length: count }, (_, i) => {
+          const text = `filler-${i}-${randomUUID().slice(0, 6)}`;
+          return { userId, text, textNormalized: text, meaningVi: 'x' };
+        }),
+      });
+
+    const makeUserPro = (userId: string) =>
+      prisma.subscription.create({
+        data: {
+          userId,
+          plan: 'PRO_MONTHLY',
+          startsAt: new Date(),
+          expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+          lastPaymentId: randomUUID(),
+        },
+      });
+
+    it('rejects the 51st word for a Free user already at the cap', async () => {
+      const userId = await createUser();
+      await fillWords(userId, 50);
+
+      await expect(
+        service.create(userId, baseWord({ text: 'one-too-many' })),
+      ).rejects.toBeInstanceOf(VocabWordLimitReachedException);
+      await expect(
+        prisma.personalVocabWord.count({ where: { userId } }),
+      ).resolves.toBe(50);
+    });
+
+    it('a PRO user can go past 50 words', async () => {
+      const userId = await createUser();
+      await makeUserPro(userId);
+      await fillWords(userId, 50);
+
+      await expect(
+        service.create(userId, baseWord({ text: 'word-fifty-one' })),
+      ).resolves.toBeDefined();
+      await expect(
+        prisma.personalVocabWord.count({ where: { userId } }),
+      ).resolves.toBe(51);
+    });
+
+    it('grandfathers a Free user already over the cap — reads still work, new adds are still rejected', async () => {
+      const userId = await createUser();
+      await fillWords(userId, 55);
+
+      const list = await service.list(userId, {});
+      expect(list.meta.total).toBe(55);
+      await expect(
+        service.create(userId, baseWord({ text: 'still-blocked' })),
+      ).rejects.toBeInstanceOf(VocabWordLimitReachedException);
+    });
+
+    it('rejects a bulk import that would exceed the cap, with ZERO rows inserted (all-or-nothing)', async () => {
+      const userId = await createUser();
+      await fillWords(userId, 48);
+
+      await expect(
+        service.bulkCreate(userId, {
+          words: [
+            baseWord({ text: 'a' }),
+            baseWord({ text: 'b' }),
+            baseWord({ text: 'c' }),
+          ],
+        }),
+      ).rejects.toBeInstanceOf(VocabWordLimitReachedException);
+      await expect(
+        prisma.personalVocabWord.count({ where: { userId } }),
+      ).resolves.toBe(48);
+    });
+
+    it('a bulk import landing exactly at the cap succeeds', async () => {
+      const userId = await createUser();
+      await fillWords(userId, 48);
+
+      const result = await service.bulkCreate(userId, {
+        words: [baseWord({ text: 'a' }), baseWord({ text: 'b' })],
+      });
+      expect(result.createdCount).toBe(2);
+      await expect(
+        prisma.personalVocabWord.count({ where: { userId } }),
+      ).resolves.toBe(50);
+    });
+  });
+
   describe('ownership (owner review point B)', () => {
-    it('update() 404s on another user\'s word id rather than leaking it', async () => {
+    it("update() 404s on another user's word id rather than leaking it", async () => {
       const owner = await createUser();
       const attacker = await createUser();
       const word = await service.create(owner, baseWord());
@@ -157,7 +253,7 @@ describe('VocabPersonalService (integration — real Postgres)', () => {
       expect(untouched.meaningVi).toBe(word.meaningVi);
     });
 
-    it('remove() 404s on another user\'s word id and does not delete it', async () => {
+    it("remove() 404s on another user's word id and does not delete it", async () => {
       const owner = await createUser();
       const attacker = await createUser();
       const word = await service.create(owner, baseWord());
@@ -171,7 +267,7 @@ describe('VocabPersonalService (integration — real Postgres)', () => {
       ).resolves.toBeDefined();
     });
 
-    it('submitReview() 404s on another user\'s word id', async () => {
+    it("submitReview() 404s on another user's word id", async () => {
       const owner = await createUser();
       const attacker = await createUser();
       const word = await service.create(owner, baseWord());
@@ -234,14 +330,20 @@ describe('VocabPersonalService (integration — real Postgres)', () => {
       const wordB = await service.create(userId, baseWord());
       const clientReviewId = randomUUID();
 
-      await service.submitReview(userId, wordA.id, { rating: 'GOOD', clientReviewId });
+      await service.submitReview(userId, wordA.id, {
+        rating: 'GOOD',
+        clientReviewId,
+      });
 
       await expect(
-        service.submitReview(userId, wordB.id, { rating: 'GOOD', clientReviewId }),
+        service.submitReview(userId, wordB.id, {
+          rating: 'GOOD',
+          clientReviewId,
+        }),
       ).rejects.toBeInstanceOf(PersonalReviewIdempotencyKeyReusedException);
     });
 
-    it('two concurrent ratings computed from the SAME stale version: exactly one succeeds, the other gets an immediate version conflict (no retry, matching LearningService\'s update-race behaviour)', async () => {
+    it("two concurrent ratings computed from the SAME stale version: exactly one succeeds, the other gets an immediate version conflict (no retry, matching LearningService's update-race behaviour)", async () => {
       // A real HTTP race is two nearly-simultaneous requests each doing
       // their own fetch-then-write; on a fast local DB with no network
       // latency, two `service.submitReview()` calls fired via
@@ -268,21 +370,27 @@ describe('VocabPersonalService (integration — real Postgres)', () => {
       ).attemptReview.bind(service);
 
       const results = await Promise.allSettled([
-        attemptReview(userId, staleRow, { rating: 'GOOD', clientReviewId: randomUUID() }),
-        attemptReview(userId, staleRow, { rating: 'EASY', clientReviewId: randomUUID() }),
+        attemptReview(userId, staleRow, {
+          rating: 'GOOD',
+          clientReviewId: randomUUID(),
+        }),
+        attemptReview(userId, staleRow, {
+          rating: 'EASY',
+          clientReviewId: randomUUID(),
+        }),
       ]);
 
       const fulfilled = results.filter((r) => r.status === 'fulfilled');
       const rejected = results.filter((r) => r.status === 'rejected');
       expect(fulfilled).toHaveLength(1);
       expect(rejected).toHaveLength(1);
-      expect((rejected[0] as PromiseRejectedResult).reason).toBeInstanceOf(
+      expect(rejected[0].reason).toBeInstanceOf(
         PersonalWordVersionConflictException,
       );
     });
   });
 
-  describe('getSavedStatus — the universal save-star\'s read path', () => {
+  describe("getSavedStatus — the universal save-star's read path", () => {
     it('returns an empty object for an empty input, no query issued', async () => {
       const userId = await createUser();
       await expect(service.getSavedStatus(userId, [])).resolves.toEqual({});
@@ -290,9 +398,15 @@ describe('VocabPersonalService (integration — real Postgres)', () => {
 
     it('reports saved:true with the real id for a saved word, saved:false for an unsaved one', async () => {
       const userId = await createUser();
-      const saved = await service.create(userId, baseWord({ text: 'Persisted' }));
+      const saved = await service.create(
+        userId,
+        baseWord({ text: 'Persisted' }),
+      );
 
-      const status = await service.getSavedStatus(userId, ['Persisted', 'never-saved']);
+      const status = await service.getSavedStatus(userId, [
+        'Persisted',
+        'never-saved',
+      ]);
 
       expect(status['persisted']).toEqual({ saved: true, id: saved.id });
       expect(status['never-saved']).toEqual({ saved: false });
@@ -311,24 +425,30 @@ describe('VocabPersonalService (integration — real Postgres)', () => {
       const userId = await createUser();
       await service.create(userId, baseWord({ text: 'dupe-check' }));
 
-      const status = await service.getSavedStatus(userId, ['dupe-check', 'Dupe-Check', ' dupe-check ']);
+      const status = await service.getSavedStatus(userId, [
+        'dupe-check',
+        'Dupe-Check',
+        ' dupe-check ',
+      ]);
 
       expect(Object.keys(status)).toEqual(['dupe-check']);
     });
 
-    it('never reports another user\'s word as saved, even with an identical text', async () => {
+    it("never reports another user's word as saved, even with an identical text", async () => {
       const userA = await createUser();
       const userB = await createUser();
       await service.create(userA, baseWord({ text: 'shared-status-word' }));
 
-      const status = await service.getSavedStatus(userB, ['shared-status-word']);
+      const status = await service.getSavedStatus(userB, [
+        'shared-status-word',
+      ]);
 
       expect(status['shared-status-word']).toEqual({ saved: false });
     });
   });
 
   describe('list — dueOnly', () => {
-    it('matches getStats\' dueTodayCount exactly: includes never-reviewed words, excludes a word due tomorrow', async () => {
+    it("matches getStats' dueTodayCount exactly: includes never-reviewed words, excludes a word due tomorrow", async () => {
       const userId = await createUser();
       const dueNow = await service.create(userId, baseWord()); // NEW — due immediately
       const dueLater = await service.create(userId, baseWord());
@@ -338,7 +458,10 @@ describe('VocabPersonalService (integration — real Postgres)', () => {
       });
 
       const stats = await service.getStats(userId, 'UTC');
-      const dueOnlyList = await service.list(userId, { dueOnly: true, tz: 'UTC' });
+      const dueOnlyList = await service.list(userId, {
+        dueOnly: true,
+        tz: 'UTC',
+      });
 
       expect(dueOnlyList.meta.total).toBe(stats.dueTodayCount);
       expect(dueOnlyList.data.map((w) => w.id)).toContain(dueNow.id);
@@ -347,10 +470,17 @@ describe('VocabPersonalService (integration — real Postgres)', () => {
 
     it('composes correctly with a search query (AND, not a clobbered OR)', async () => {
       const userId = await createUser();
-      const match = await service.create(userId, baseWord({ text: 'duesearchmatch' }));
+      const match = await service.create(
+        userId,
+        baseWord({ text: 'duesearchmatch' }),
+      );
       await service.create(userId, baseWord({ text: 'nomatch' }));
 
-      const result = await service.list(userId, { dueOnly: true, q: 'duesearch', tz: 'UTC' });
+      const result = await service.list(userId, {
+        dueOnly: true,
+        q: 'duesearch',
+        tz: 'UTC',
+      });
 
       expect(result.data.map((w) => w.id)).toEqual([match.id]);
     });

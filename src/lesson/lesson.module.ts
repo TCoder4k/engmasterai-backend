@@ -26,6 +26,8 @@ import { LessonProgressController } from './progress/lesson-progress.controller'
 import { LessonProgressService } from './progress/lesson-progress.service';
 import { CourseProgressController } from './progress/course-progress.controller';
 import { CourseProgressService } from './progress/course-progress.service';
+import { LessonMilestoneService } from './progress/lesson-milestone.service';
+import { PaymentModule } from '../payment/payment.module';
 
 // Sprint 06B — the Lesson Quiz Engine lives inside the existing Lesson
 // module rather than a new top-level one (RateLimiterService/JwtAuthGuard
@@ -35,7 +37,10 @@ import { CourseProgressService } from './progress/course-progress.service';
   // Sprint 10 — GamificationModule imports only PrismaModule, so this
   // direction is safe. It must never import LessonModule back; that is why it
   // declares QuizRateLimitGuard as its own provider rather than importing here.
-  imports: [PrismaModule, GamificationModule],
+  // 2026-09-16 pricing relaunch — PaymentModule imports only PrismaModule
+  // (same "safe one-way edge" reasoning as GamificationModule above), needed
+  // here for LessonMilestoneService's SubscriptionGrantService dependency.
+  imports: [PrismaModule, GamificationModule, PaymentModule],
   controllers: [
     LessonController,
     LessonCourseController,
@@ -76,6 +81,7 @@ import { CourseProgressService } from './progress/course-progress.service';
     LessonStepService,
     LessonProgressService,
     CourseProgressService,
+    LessonMilestoneService,
     QuizRateLimitGuard,
   ],
   exports: [
@@ -86,6 +92,7 @@ import { CourseProgressService } from './progress/course-progress.service';
     LessonStepService,
     LessonProgressService,
     CourseProgressService,
+    LessonMilestoneService,
     // Sprint 09 — AnalyticsModule reuses this guard rather than declaring a
     // second provider for the same class. Both would work (it is stateless and
     // keyed in Redis), but one class with two instances is the kind of harmless
