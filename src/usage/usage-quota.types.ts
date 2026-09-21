@@ -17,9 +17,9 @@ export interface UsageQuotaConfig {
 // a normal learner should almost never touch the Free ceiling. These exist
 // to bound worst-case AI cost from genuine abuse, not to nudge every user.
 export const USAGE_QUOTA_CONFIG: Record<UsageKind, UsageQuotaConfig> = {
-  aiQuery: { free: 20, pro: 300, period: 'month' },
+  aiQuery: { free: 5, pro: 300, period: 'month' },
   aiGrading: { free: 2, pro: 30, period: 'month' },
-  speaking: { free: 3, pro: 30, period: 'day' },
+  speaking: { free: 2, pro: 30, period: 'day' },
 };
 
 export interface UsageQuotaStatus {

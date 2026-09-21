@@ -89,8 +89,8 @@ describe('UsageQuotaService (integration — real Postgres)', () => {
 
   it('exactly one request wins when two concurrent calls race the last remaining unit of quota', async () => {
     const userId = await createUser();
-    // Consume 19 of the 20 aiQuery units up front, leaving exactly 1.
-    for (let i = 0; i < 19; i += 1) {
+    // Consume 4 of the 5 aiQuery units up front, leaving exactly 1.
+    for (let i = 0; i < 4; i += 1) {
       await service.checkAndIncrement(userId, 'aiQuery', false, 'UTC');
     }
 
@@ -105,12 +105,12 @@ describe('UsageQuotaService (integration — real Postgres)', () => {
     expect(rejected).toHaveLength(1);
 
     const status = await service.getStatus(userId, false, 'UTC');
-    expect(status.find((s) => s.kind === 'aiQuery')?.used).toBe(20);
+    expect(status.find((s) => s.kind === 'aiQuery')?.used).toBe(5);
   });
 
   it('speaking is a DAILY quota, separate from the monthly kinds', async () => {
     const userId = await createUser();
-    for (let i = 0; i < 3; i += 1) {
+    for (let i = 0; i < 2; i += 1) {
       await service.checkAndIncrement(userId, 'speaking', false, 'UTC');
     }
 
