@@ -19,7 +19,7 @@ export interface UsageQuotaConfig {
 export const USAGE_QUOTA_CONFIG: Record<UsageKind, UsageQuotaConfig> = {
   aiQuery: { free: 5, pro: 300, period: 'month' },
   aiGrading: { free: 2, pro: 30, period: 'month' },
-  speaking: { free: 2, pro: 30, period: 'day' },
+  speaking: { free: 3, pro: 30, period: 'month' },
 };
 
 export interface UsageQuotaStatus {

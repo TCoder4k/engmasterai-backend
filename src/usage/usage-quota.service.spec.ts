@@ -108,9 +108,9 @@ describe('UsageQuotaService (integration — real Postgres)', () => {
     expect(status.find((s) => s.kind === 'aiQuery')?.used).toBe(5);
   });
 
-  it('speaking is a DAILY quota, separate from the monthly kinds', async () => {
+  it('speaking is now a MONTHLY quota (3 per month)', async () => {
     const userId = await createUser();
-    for (let i = 0; i < 2; i += 1) {
+    for (let i = 0; i < 3; i += 1) {
       await service.checkAndIncrement(userId, 'speaking', false, 'UTC');
     }
 
@@ -120,8 +120,8 @@ describe('UsageQuotaService (integration — real Postgres)', () => {
 
     const status = await service.getStatus(userId, false, 'UTC');
     const speaking = status.find((s) => s.kind === 'speaking');
-    expect(speaking?.period).toBe('day');
-    expect(speaking?.periodKey).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(speaking?.period).toBe('month');
+    expect(speaking?.periodKey).toMatch(/^\d{4}-\d{2}$/);
   });
 
   it('getStatus reports 0/limit for a user with no usage yet, for every kind', async () => {
