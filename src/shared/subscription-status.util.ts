@@ -19,6 +19,20 @@ export const isUserPro = async (
   return subscription !== null && subscription.expiresAt > new Date();
 };
 
+export const isUserPremium = async (
+  prisma: PrismaService,
+  userId: string,
+): Promise<boolean> => {
+  const subscription = await prisma.subscription.findUnique({
+    where: { userId },
+    select: { plan: true, expiresAt: true },
+  });
+  return (
+    subscription?.plan === 'PREMIUM_MONTHLY' &&
+    subscription.expiresAt > new Date()
+  );
+};
+
 /**
  * One combined query (a single JOIN, not two round-trips) for the two
  * pieces of context every UsageQuotaService.checkAndIncrement call needs —

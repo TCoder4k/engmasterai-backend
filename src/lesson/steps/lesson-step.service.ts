@@ -47,7 +47,7 @@ export class LessonStepService {
   // touched must not make it look touched, and the lesson page reads this on
   // every visit.
   async readSteps(lessonId: string, userId: string): Promise<LessonStepsDto> {
-    await assertLessonVisible(this.prisma, lessonId);
+    await assertLessonVisible(this.prisma, lessonId, userId);
     const byLesson = await this.collectSteps(
       { kind: 'lesson', lessonId },
       userId,
@@ -95,6 +95,7 @@ export class LessonStepService {
   ): Promise<StepWriteOutcome> {
     const lesson = await this.assertStepAvailable(
       lessonId,
+      userId,
       LessonStepKind.THEORY,
     );
     return this.upsertStep(userId, lesson.id, LessonStepKind.THEORY, {
@@ -113,6 +114,7 @@ export class LessonStepService {
   ): Promise<StepWriteOutcome> {
     const lesson = await this.assertStepAvailable(
       lessonId,
+      userId,
       LessonStepKind.THEORY,
     );
     return this.upsertStep(userId, lesson.id, LessonStepKind.THEORY, {
@@ -128,6 +130,7 @@ export class LessonStepService {
   ): Promise<StepWriteOutcome> {
     const lesson = await this.assertStepAvailable(
       lessonId,
+      userId,
       LessonStepKind.VIDEO,
     );
     return this.writeVideoProgress(lesson, userId, dto);
@@ -265,8 +268,12 @@ export class LessonStepService {
   // Same 404 whether the lesson is missing, unpublished, in an unpublished
   // course, or simply has no content for this step — the anti-probing rule the
   // quiz surface already follows (see lesson-visibility.ts).
-  private async assertStepAvailable(lessonId: string, step: LessonStepKind) {
-    await assertLessonVisible(this.prisma, lessonId);
+  private async assertStepAvailable(
+    lessonId: string,
+    userId: string,
+    step: LessonStepKind,
+  ) {
+    await assertLessonVisible(this.prisma, lessonId, userId);
     const lesson = await this.prisma.lesson.findUnique({
       where: { id: lessonId },
       select: {

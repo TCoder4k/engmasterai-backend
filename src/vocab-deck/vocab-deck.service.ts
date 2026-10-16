@@ -7,6 +7,10 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CreateVocabDeckDto } from './dto/create-vocab-deck.dto';
 import { UpdateVocabDeckDto } from './dto/update-vocab-deck.dto';
 import { AttachVocabDeckWordsDto } from './dto/attach-vocab-deck-words.dto';
+import { ConfigService } from '@nestjs/config';
+import { ForbiddenException } from '@nestjs/common';
+import { canAccessVocabularyDeck, isPremiumVocabularyDeck } from './premium-vocabulary-policy';
+import { isUserPremium } from '../shared/subscription-status.util';
 
 // Structural cap on every deck's word count (see the approved Phase 2 plan
 // §4/M1) — keeps the unpaginated student deck-word response bounded, not
@@ -40,7 +44,10 @@ const MANAGE_SELECT = {
 
 @Injectable()
 export class VocabDeckService {
-  constructor(private readonly prismaService: PrismaService) {}
+  constructor(
+    private readonly prismaService: PrismaService,
+    private readonly config: ConfigService,
+  ) {}
 
   // The Phase-1 scope-cut endpoint, now with its consumer (DeckDetailPage).
   // Single query with a nested library.isPublished check (Lesson's
@@ -57,6 +64,12 @@ export class VocabDeckService {
 
     if (!deck || !deck.isPublished || !deck.library.isPublished) {
       throw new NotFoundException(`Vocabulary deck with ID ${id} not found`);
+    }
+    if (!(await canAccessVocabularyDeck(this.prismaService, this.config, _user.userId, id))) {
+      throw new ForbiddenException({
+        code: 'PREMIUM_REQUIRED',
+        message: 'Premium subscription is required for this vocabulary deck.',
+      });
     }
 
     // isPublished/library are selected only to run the check above — the
@@ -235,7 +248,18 @@ export class VocabDeckService {
       select: USER_SELECT,
     });
 
-    return { data: decks };
+    const premium = await Promise.all(
+      decks.map((deck) =>
+        isPremiumVocabularyDeck(this.prismaService, this.config, deck.id),
+      ),
+    );
+    const hasPremium = await isUserPremium(this.prismaService, user.userId);
+    return {
+      data: decks.map((deck, index) => ({
+        ...deck,
+        isPremiumLocked: premium[index] && !hasPremium,
+      })),
+    };
   }
 
   async findAllByLibraryManage(libraryId: string) {
@@ -490,6 +514,19 @@ export class VocabDeckService {
       throw new NotFoundException(
         `Vocabulary deck with ID ${deckId} not found`,
       );
+    }
+    if (
+      !(await canAccessVocabularyDeck(
+        this.prismaService,
+        this.config,
+        _user.userId,
+        deckId,
+      ))
+    ) {
+      throw new ForbiddenException({
+        code: 'PREMIUM_REQUIRED',
+        message: 'Premium subscription is required for this vocabulary deck.',
+      });
     }
 
     return deck;

@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -7,6 +8,9 @@ import { LessonTaskType } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateLessonDto } from './dto/create-lesson.dto';
 import { UpdateLessonDto } from './dto/update-lesson.dto';
+import { isUserPremium } from '../shared/subscription-status.util';
+
+const FREE_LESSON_LIMIT = 3;
 
 const USER_SELECT = {
   id: true,
@@ -81,16 +85,24 @@ export class LessonService {
   async findPublishedByCourse(courseId: string, user: { userId: string }) {
     await this.assertCourseAccessibleToUser(courseId, user);
 
-    const lessons = await this.prismaService.lesson.findMany({
+    const [lessons, premium] = await Promise.all([
+      this.prismaService.lesson.findMany({
       where: { courseId, isPublished: true },
       orderBy: { orderIndex: 'asc' },
       select: USER_SELECT,
-    });
+      }),
+      isUserPremium(this.prismaService, user.userId),
+    ]);
 
-    return { data: lessons.map(withPublishedTaskTypes) };
+    return {
+      data: lessons.map((lesson) => ({
+        ...withPublishedTaskTypes(lesson),
+        isPremiumLocked: !premium && lesson.orderIndex >= FREE_LESSON_LIMIT,
+      })),
+    };
   }
 
-  async findOnePublished(id: string, _user: { userId: string }) {
+  async findOnePublished(id: string, user: { userId: string }) {
     const lesson = await this.prismaService.lesson.findUnique({
       where: { id },
       select: {
@@ -104,6 +116,15 @@ export class LessonService {
     // course is unpublished, so an authenticated caller can't probe for draft ids.
     if (!lesson || !lesson.isPublished || !lesson.course.isPublished) {
       throw new NotFoundException(`Lesson with ID ${id} not found`);
+    }
+    if (
+      lesson.orderIndex >= FREE_LESSON_LIMIT &&
+      !(await isUserPremium(this.prismaService, user.userId))
+    ) {
+      throw new ForbiddenException({
+        code: 'PREMIUM_REQUIRED',
+        message: 'Premium subscription is required for this lesson.',
+      });
     }
 
     const { isPublished: _isPublished, course: _course, ...publicLesson } = lesson;

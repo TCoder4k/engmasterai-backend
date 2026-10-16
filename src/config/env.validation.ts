@@ -562,14 +562,22 @@ export const envValidationSchema = Joi.object({
       then: Joi.required(),
       otherwise: Joi.optional(),
     }),
-  // Optional "regular price" shown struck-through next to the real charge on
-  // CheckoutPage — a display-only marketing value, never itself charged.
-  // Unset by default; when unset, PaymentService.toDto returns
-  // compareAtAmount: null and the frontend renders no strikethrough.
   PAYMENT_PRO_MONTHLY_COMPARE_AT_VND: Joi.number()
     .integer()
     .positive()
     .optional(),
+  PAYMENT_PREMIUM_MONTHLY_PRICE_VND: Joi.number()
+    .integer()
+    .positive()
+    .default(119000),
+  PAYMENT_PREMIUM_MONTHLY_COMPARE_AT_VND: Joi.number()
+    .integer()
+    .positive()
+    .optional(),
+  // Stable database relation for the Grammar vocabulary library. The policy
+  // takes the first two published decks by orderIndex; it never infers this
+  // from a display name.
+  PREMIUM_GRAMMAR_LIBRARY_ID: Joi.string().uuid().optional(),
   // Countdown/reuse-window length shown to the payer and used by the
   // create-or-reuse decision (PaymentService.findLivePending) — NOT a
   // database expiry: a payment stays physically PENDING (and payable by a

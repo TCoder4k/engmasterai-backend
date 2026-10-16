@@ -2352,6 +2352,7 @@ enum PaymentProvider {
 
 enum SubscriptionPlan {
   PRO_MONTHLY
+  PREMIUM_MONTHLY
 }
 
 // One row per purchase attempt. `paymentCode` is the short, unique,

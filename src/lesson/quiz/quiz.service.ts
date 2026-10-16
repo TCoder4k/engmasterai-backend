@@ -169,8 +169,8 @@ export class QuizService {
 
   // Delegates to the shared helper (Sprint 06C) — kept as a method so every
   // call site below reads unchanged.
-  private assertLessonVisible(lessonId: string): Promise<void> {
-    return assertLessonVisible(this.prisma, lessonId);
+  private assertLessonVisible(lessonId: string, userId: string): Promise<void> {
+    return assertLessonVisible(this.prisma, lessonId, userId);
   }
 
   private async assertLessonExists(lessonId: string): Promise<void> {
@@ -251,7 +251,7 @@ export class QuizService {
     userId: string,
     taskType: LessonTaskType,
   ): Promise<GetQuizResponseDto> {
-    await this.assertLessonVisible(lessonId);
+    await this.assertLessonVisible(lessonId, userId);
     const task = await this.resolveStudentTask(lessonId, taskType);
     const progress = await this.prisma.lessonTaskProgress.findUnique({
       where: { userId_taskId: { userId, taskId: task.id } },
@@ -268,7 +268,7 @@ export class QuizService {
     userId: string,
     taskType: LessonTaskType,
   ): Promise<GetQuizResponseDto> {
-    await this.assertLessonVisible(lessonId);
+    await this.assertLessonVisible(lessonId, userId);
     const task = await this.resolveStudentTask(lessonId, taskType);
 
     const now = new Date();
@@ -420,7 +420,7 @@ export class QuizService {
     taskType: LessonTaskType,
     dto: AnswerQuestionDto,
   ): Promise<AnswerQuestionResponseDto> {
-    await this.assertLessonVisible(lessonId);
+    await this.assertLessonVisible(lessonId, userId);
 
     const task = await this.prisma.lessonTask.findFirst({
       where: { lessonId, type: taskType, isPublished: true },
@@ -536,7 +536,7 @@ export class QuizService {
     taskType: LessonTaskType,
     dto: SubmitQuizDto,
   ): Promise<TaskSubmitOutcome> {
-    await this.assertLessonVisible(lessonId);
+    await this.assertLessonVisible(lessonId, userId);
 
     const task = await this.prisma.lessonTask.findFirst({
       where: { lessonId, type: taskType, isPublished: true },

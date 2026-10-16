@@ -1,5 +1,8 @@
-import { NotFoundException } from '@nestjs/common';
+import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { isUserPremium } from '../../shared/subscription-status.util';
+
+const FREE_LESSON_LIMIT = 3;
 
 // The anti-probing visibility check shared by QuizService and
 // TrapHunterService.
@@ -16,13 +19,24 @@ import { PrismaService } from '../../prisma/prisma.service';
 export const assertLessonVisible = async (
   prisma: PrismaService,
   lessonId: string,
+  userId: string,
 ): Promise<void> => {
   const lesson = await prisma.lesson.findUnique({
     where: { id: lessonId },
-    select: { isPublished: true, course: { select: { isPublished: true } } },
+    select: {
+      isPublished: true,
+      orderIndex: true,
+      course: { select: { isPublished: true } },
+    },
   });
   if (!lesson || !lesson.isPublished || !lesson.course.isPublished) {
     throw new NotFoundException(`Quiz for lesson ${lessonId} not found`);
+  }
+  if (lesson.orderIndex >= FREE_LESSON_LIMIT && !(await isUserPremium(prisma, userId))) {
+    throw new ForbiddenException({
+      code: 'PREMIUM_REQUIRED',
+      message: 'Premium subscription is required for this lesson.',
+    });
   }
 };
 

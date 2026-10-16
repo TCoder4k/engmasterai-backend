@@ -60,7 +60,7 @@ export class ChatService {
     // the client. See assessment-lock.service.ts's header comment.
     await this.assessmentLock.assertNotInPlacementAttempt(userId);
 
-    const contextText = await this.contextResolver.resolve(context);
+    const contextText = await this.contextResolver.resolve(context, userId);
 
     const claim = await this.idempotency.claim(userId, clientMessageId, this.pendingClaimTtlSeconds());
     if (claim.outcome === 'done') {

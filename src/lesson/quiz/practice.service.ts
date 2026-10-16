@@ -112,7 +112,7 @@ export class PracticeService {
     lessonId: string,
     userId: string,
   ): Promise<GetPracticeResponseDto> {
-    await assertLessonVisible(this.prisma, lessonId);
+    await assertLessonVisible(this.prisma, lessonId, userId);
 
     const task = await this.findPracticeTask(lessonId);
     if (!task) {
@@ -172,7 +172,7 @@ export class PracticeService {
     lessonId: string,
     userId: string,
   ): Promise<StartPracticeResponseDto> {
-    await assertLessonVisible(this.prisma, lessonId);
+    await assertLessonVisible(this.prisma, lessonId, userId);
     this.assertPrerequisitesMet(
       await this.resolvePrerequisites(lessonId, userId),
     );
@@ -201,7 +201,7 @@ export class PracticeService {
     userId: string,
     dto: AnswerQuestionDto,
   ): Promise<AnswerQuestionResponseDto> {
-    await assertLessonVisible(this.prisma, lessonId);
+    await assertLessonVisible(this.prisma, lessonId, userId);
     this.assertPrerequisitesMet(
       await this.resolvePrerequisites(lessonId, userId),
     );
@@ -222,7 +222,7 @@ export class PracticeService {
     userId: string,
     dto: SubmitQuizDto,
   ): Promise<TaskSubmitOutcome> {
-    await assertLessonVisible(this.prisma, lessonId);
+    await assertLessonVisible(this.prisma, lessonId, userId);
     this.assertPrerequisitesMet(
       await this.resolvePrerequisites(lessonId, userId),
     );

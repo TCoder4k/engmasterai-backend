@@ -128,11 +128,14 @@ describe('ChatService.prepareSend', () => {
       stage: 'theory',
     });
 
-    expect(contextResolver.resolve).toHaveBeenCalledWith({
-      type: 'LESSON',
-      resourceId: 'lesson-1',
-      stage: 'theory',
-    });
+    expect(contextResolver.resolve).toHaveBeenCalledWith(
+      {
+        type: 'LESSON',
+        resourceId: 'lesson-1',
+        stage: 'theory',
+      },
+      'user-1',
+    );
     expect(prepared).toEqual({
       kind: 'claimed',
       contextText: 'The student is viewing lesson "Present Perfect".',

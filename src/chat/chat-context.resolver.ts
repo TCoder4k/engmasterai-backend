@@ -32,10 +32,10 @@ export const MAX_THEORY_EXCERPT_CHARS = 4000;
 export class ChatContextResolver {
   constructor(private readonly prisma: PrismaService) {}
 
-  async resolve(context: ChatContextInput): Promise<string | null> {
+  async resolve(context: ChatContextInput, userId?: string): Promise<string | null> {
     if (context.type === 'GENERAL') return null;
     if (context.type === 'LESSON') {
-      return formatLessonContext(await this.resolveLesson(context.resourceId, context.stage));
+      return formatLessonContext(await this.resolveLesson(context.resourceId, context.stage, userId));
     }
     return formatVocabWordContext(await this.resolveVocabWord(context.resourceId));
   }
@@ -43,11 +43,22 @@ export class ChatContextResolver {
   private async resolveLesson(
     lessonId: string,
     stage: LessonContextStage | undefined,
+    userId?: string,
   ): Promise<LessonContextProjection> {
     // Same anti-probing policy as GET /lessons/:id and the quiz/practice
     // endpoints — a lesson that is missing, unpublished, or in an
     // unpublished course all 404 identically.
-    await assertLessonVisible(this.prisma, lessonId);
+    if (userId) {
+      await assertLessonVisible(this.prisma, lessonId, userId);
+    } else {
+      const lesson = await this.prisma.lesson.findUnique({
+        where: { id: lessonId },
+        select: { isPublished: true, course: { select: { isPublished: true } } },
+      });
+      if (!lesson || !lesson.isPublished || !lesson.course.isPublished) {
+        throw new NotFoundException(`Lesson for context ${lessonId} not found`);
+      }
+    }
 
     const lesson = await this.prisma.lesson.findUniqueOrThrow({
       where: { id: lessonId },

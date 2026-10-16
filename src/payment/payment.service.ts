@@ -27,6 +27,7 @@ import {
 // value in this codebase.
 const DURATION_DAYS: Record<SubscriptionPlan, number> = {
   PRO_MONTHLY: 30,
+  PREMIUM_MONTHLY: 365,
 };
 
 // Excludes visually-ambiguous characters (0/O, 1/I/L) — a payment code is
@@ -95,10 +96,15 @@ export class PaymentService {
         return this.config.get<number>(
           'PAYMENT_PRO_MONTHLY_PRICE_VND',
         ) as number;
+      case 'PREMIUM_MONTHLY':
+        return this.config.get<number>(
+          'PAYMENT_PREMIUM_MONTHLY_PRICE_VND',
+          119000,
+        ) as number;
       default: {
-        // Exhaustiveness guard — SubscriptionPlan has exactly one member
-        // today; a new plan added to the enum without a price here is a
-        // compile error via this `never` assignment, not a silent $0 charge.
+        // Exhaustiveness guard — SubscriptionPlan members; a new plan added
+        // to the enum without a price here is a compile error via this `never`
+        // assignment, not a silent $0 charge.
         const exhaustive: never = plan;
         throw new Error(
           `No configured price for plan: ${exhaustive as string}`,
@@ -119,6 +125,12 @@ export class PaymentService {
       case 'PRO_MONTHLY': {
         const raw = this.config.get<number>(
           'PAYMENT_PRO_MONTHLY_COMPARE_AT_VND',
+        );
+        return typeof raw === 'number' && raw > price ? raw : null;
+      }
+      case 'PREMIUM_MONTHLY': {
+        const raw = this.config.get<number>(
+          'PAYMENT_PREMIUM_MONTHLY_COMPARE_AT_VND',
         );
         return typeof raw === 'number' && raw > price ? raw : null;
       }

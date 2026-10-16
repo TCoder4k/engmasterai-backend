@@ -191,8 +191,11 @@ export class TrapHunterService {
   // Resolves the published quiz task for a lesson. Same 404 as the quiz
   // endpoints, via the shared helper, so Trap Hunter cannot be used to probe
   // for unpublished content the quiz surface already hides.
-  private async findQuizTask(lessonId: string): Promise<{ id: string }> {
-    await assertLessonVisible(this.prisma, lessonId);
+  private async findQuizTask(
+    lessonId: string,
+    userId: string,
+  ): Promise<{ id: string }> {
+    await assertLessonVisible(this.prisma, lessonId, userId);
     const task = await this.prisma.lessonTask.findFirst({
       where: { lessonId, type: 'QUIZ', isPublished: true },
       select: { id: true },
@@ -272,7 +275,7 @@ export class TrapHunterService {
     lessonId: string,
     userId: string,
   ): Promise<GetTrapHunterResponseDto> {
-    const task = await this.findQuizTask(lessonId);
+    const task = await this.findQuizTask(lessonId, userId);
     const loaded = await this.loadTraps(task.id, userId);
 
     if (!loaded) {
@@ -336,7 +339,7 @@ export class TrapHunterService {
     userId: string,
     dto: AnswerTrapDto,
   ): Promise<AnswerTrapResponseDto> {
-    const task = await this.findQuizTask(lessonId);
+    const task = await this.findQuizTask(lessonId, userId);
     const loaded = await this.loadTraps(task.id, userId);
     if (!loaded) throw new TrapHunterNotAvailableException();
 
@@ -454,7 +457,7 @@ export class TrapHunterService {
     userId: string,
     dto: RequestTrapHintDto,
   ): Promise<TrapHintResponseDto> {
-    const task = await this.findQuizTask(lessonId);
+    const task = await this.findQuizTask(lessonId, userId);
     const loaded = await this.loadTraps(task.id, userId);
     if (!loaded) throw new TrapHunterNotAvailableException();
 

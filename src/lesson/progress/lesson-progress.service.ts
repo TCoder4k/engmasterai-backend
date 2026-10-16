@@ -47,7 +47,7 @@ export class LessonProgressService {
     userId: string,
   ): Promise<LessonProgressDto> {
     // Checked ONCE here; the collectors below deliberately do not repeat it.
-    await assertLessonVisible(this.prisma, lessonId);
+    await assertLessonVisible(this.prisma, lessonId, userId);
 
     const scope: ProgressScope = { kind: 'lesson', lessonId };
     const [quizRows, trapRows, practiceRows, stepsByLesson] = await Promise.all(
