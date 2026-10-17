@@ -30,9 +30,9 @@ export class QueryUserDto {
   // ignored by the plain GET /users list. FREE/PRO derived the same way as
   // the response's own isPro (Subscription.expiresAt vs now), never a
   // stored status.
-  @IsIn(['FREE', 'PRO'])
+  @IsIn(['FREE', 'PRO', 'HOC_TAP'])
   @IsOptional()
-  plan?: 'FREE' | 'PRO';
+  plan?: 'FREE' | 'PRO' | 'HOC_TAP';
 
   // Admin student list only, same scoping as `plan` above — filters on the
   // real User.isActive gate (see AuthService), never a display-only label.

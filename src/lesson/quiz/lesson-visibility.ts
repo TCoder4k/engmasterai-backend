@@ -32,7 +32,10 @@ export const assertLessonVisible = async (
   if (!lesson || !lesson.isPublished || !lesson.course.isPublished) {
     throw new NotFoundException(`Quiz for lesson ${lessonId} not found`);
   }
-  if (lesson.orderIndex >= FREE_LESSON_LIMIT && !(await isUserPremium(prisma, userId))) {
+  if (
+    lesson.orderIndex >= FREE_LESSON_LIMIT &&
+    !(await isUserPremium(prisma, userId))
+  ) {
     throw new ForbiddenException({
       code: 'PREMIUM_REQUIRED',
       message: 'Premium subscription is required for this lesson.',

@@ -17,7 +17,11 @@ describe('FIXTURE_MARKER', () => {
 
 describe('rowContainsFixtureMarker', () => {
   it('is false for a clean row', () => {
-    const row: ContentRow = { id: '1', title: 'Present Simple', description: 'A grammar course' };
+    const row: ContentRow = {
+      id: '1',
+      title: 'Present Simple',
+      description: 'A grammar course',
+    };
     expect(rowContainsFixtureMarker(row)).toBe(false);
   });
 
@@ -40,7 +44,11 @@ describe('rowContainsFixtureMarker', () => {
   });
 
   it('is false when null/undefined fields are present', () => {
-    const row: ContentRow = { id: '1', description: null, thumbnail: undefined };
+    const row: ContentRow = {
+      id: '1',
+      description: null,
+      thumbnail: undefined,
+    };
     expect(rowContainsFixtureMarker(row)).toBe(false);
   });
 });
@@ -51,11 +59,15 @@ describe('findFixtureMarkerHits', () => {
       { id: 'clean-1', title: 'Real course' },
       { id: 'dirty-1', title: '__test__ course' },
     ];
-    expect(findFixtureMarkerHits('Course', rows)).toEqual([{ modelName: 'Course', id: 'dirty-1' }]);
+    expect(findFixtureMarkerHits('Course', rows)).toEqual([
+      { modelName: 'Course', id: 'dirty-1' },
+    ]);
   });
 
   it('returns an empty array when nothing is contaminated', () => {
-    expect(findFixtureMarkerHits('Course', [{ id: '1', title: 'Real' }])).toEqual([]);
+    expect(
+      findFixtureMarkerHits('Course', [{ id: '1', title: 'Real' }]),
+    ).toEqual([]);
   });
 });
 

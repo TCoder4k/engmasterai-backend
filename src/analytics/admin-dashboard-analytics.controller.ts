@@ -16,7 +16,9 @@ import { AdminDashboardAnalyticsService } from './admin-dashboard-analytics.serv
 // admin-dashboard-analytics.service.ts for exact definitions and null rules.
 @Controller('analytics')
 export class AdminDashboardAnalyticsController {
-  constructor(private readonly adminAnalytics: AdminDashboardAnalyticsService) {}
+  constructor(
+    private readonly adminAnalytics: AdminDashboardAnalyticsService,
+  ) {}
 
   @UseGuards(JwtAuthGuard, RolesGuard, QuizRateLimitGuard)
   @Roles(UserRole.ADMIN)

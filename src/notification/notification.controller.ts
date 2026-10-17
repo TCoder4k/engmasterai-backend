@@ -1,4 +1,13 @@
-import { Controller, Get, Param, Post, Query, Req, UseGuards, ValidationPipe } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Param,
+  Post,
+  Query,
+  Req,
+  UseGuards,
+  ValidationPipe,
+} from '@nestjs/common';
 import type { Request } from 'express';
 import { JwtAuthGuard } from '../auth/guards';
 import { NotificationRateLimitGuard } from './rate-limit/notification-rate-limit.guard';
@@ -21,15 +30,24 @@ export class NotificationController {
   @UseGuards(JwtAuthGuard, NotificationRateLimitGuard)
   @NotificationRateLimit({ kind: 'read', max: 60, windowSeconds: 60 })
   @Get()
-  async list(@Req() req: RequestWithUser, @Query(queryPipe) query: QueryNotificationsDto) {
-    return this.notificationService.list(req.user.userId, query.before, query.limit);
+  async list(
+    @Req() req: RequestWithUser,
+    @Query(queryPipe) query: QueryNotificationsDto,
+  ) {
+    return this.notificationService.list(
+      req.user.userId,
+      query.before,
+      query.limit,
+    );
   }
 
   @UseGuards(JwtAuthGuard, NotificationRateLimitGuard)
   @NotificationRateLimit({ kind: 'read', max: 60, windowSeconds: 60 })
   @Get('unread-count')
   async unreadCount(@Req() req: RequestWithUser) {
-    return { count: await this.notificationService.unreadCount(req.user.userId) };
+    return {
+      count: await this.notificationService.unreadCount(req.user.userId),
+    };
   }
 
   @UseGuards(JwtAuthGuard, NotificationRateLimitGuard)

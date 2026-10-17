@@ -36,7 +36,11 @@ describe('validateRoadmapPlan', () => {
       plan(
         [
           { resourceType: 'COURSE', resourceId: 'c1', reason: 'Fits.' },
-          { resourceType: 'VOCAB_LIBRARY', resourceId: 'c2', reason: 'Also fits.' },
+          {
+            resourceType: 'VOCAB_LIBRARY',
+            resourceId: 'c2',
+            reason: 'Also fits.',
+          },
         ],
         'Whole-plan rationale.',
       ),
@@ -44,8 +48,20 @@ describe('validateRoadmapPlan', () => {
     );
     expect(result).toEqual({
       items: [
-        { phase: 1, pillar: 'GRAMMAR', resourceType: 'COURSE', resourceId: 'c1', reason: 'Fits.' },
-        { phase: 2, pillar: 'VOCABULARY', resourceType: 'VOCAB_LIBRARY', resourceId: 'c2', reason: 'Also fits.' },
+        {
+          phase: 1,
+          pillar: 'GRAMMAR',
+          resourceType: 'COURSE',
+          resourceId: 'c1',
+          reason: 'Fits.',
+        },
+        {
+          phase: 2,
+          pillar: 'VOCABULARY',
+          resourceType: 'VOCAB_LIBRARY',
+          resourceId: 'c2',
+          reason: 'Also fits.',
+        },
       ],
       overallReason: 'Whole-plan rationale.',
     });
@@ -58,7 +74,9 @@ describe('validateRoadmapPlan', () => {
   it('derives pillar/resourceType from the CANDIDATE, never from anything the model might have said', () => {
     const candidates = [candidate('c1', 'LISTENING_CATEGORY', 'LISTENING')];
     const result = validateRoadmapPlan(
-      plan([{ resourceType: 'LISTENING_CATEGORY', resourceId: 'c1', reason: 'x' }]),
+      plan([
+        { resourceType: 'LISTENING_CATEGORY', resourceId: 'c1', reason: 'x' },
+      ]),
       candidates,
     );
     expect(result!.items[0].pillar).toBe('LISTENING');
@@ -70,7 +88,11 @@ describe('validateRoadmapPlan', () => {
     const result = validateRoadmapPlan(
       plan([
         { resourceType: 'COURSE', resourceId: 'c1', reason: 'Fits.' },
-        { resourceType: 'COURSE', resourceId: 'not-a-candidate', reason: 'Hallucinated.' },
+        {
+          resourceType: 'COURSE',
+          resourceId: 'not-a-candidate',
+          reason: 'Hallucinated.',
+        },
       ]),
       candidates,
     );

@@ -4,7 +4,8 @@
 export const CHAT_SESSION_PREFIX = 'chat:session:';
 export const CHAT_CLAIM_PREFIX = 'chat:claim:';
 
-export const chatSessionKey = (userId: string): string => `${CHAT_SESSION_PREFIX}${userId}`;
+export const chatSessionKey = (userId: string): string =>
+  `${CHAT_SESSION_PREFIX}${userId}`;
 
 /** Per-message idempotency claim — see chat-idempotency.store.ts's header comment. */
 export const chatClaimKey = (userId: string, clientMessageId: string): string =>

@@ -12,7 +12,9 @@ import { dayKeyToDate } from '../gamification/day-key';
  * formatDayInTimeZone's job).
  */
 export const daysBetweenLabels = (from: string, to: string): number =>
-  Math.round((dayKeyToDate(to).getTime() - dayKeyToDate(from).getTime()) / 86_400_000);
+  Math.round(
+    (dayKeyToDate(to).getTime() - dayKeyToDate(from).getTime()) / 86_400_000,
+  );
 
 /**
  * Sort two user ids into a stable (low, high) pair. Arbitrary ordering
@@ -20,4 +22,5 @@ export const daysBetweenLabels = (from: string, to: string): number =>
  * is the SAME ordering every time, so A-inviting-B and B-inviting-A can
  * never create two StreakPair rows for the same pair.
  */
-export const canonicalPair = (a: string, b: string): [string, string] => (a < b ? [a, b] : [b, a]);
+export const canonicalPair = (a: string, b: string): [string, string] =>
+  a < b ? [a, b] : [b, a];

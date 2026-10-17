@@ -195,11 +195,11 @@ describe('Auth (e2e) — Sprint 01A: Redis sessions, strict single-use refresh r
       const [a, b] = await Promise.all([
         request(app.getHttpServer())
           .post('/auth/refresh')
-        .set('Origin', TRUSTED_ORIGIN)
+          .set('Origin', TRUSTED_ORIGIN)
           .set('Cookie', `${REFRESH_COOKIE_NAME}=${cookie}`),
         request(app.getHttpServer())
           .post('/auth/refresh')
-        .set('Origin', TRUSTED_ORIGIN)
+          .set('Origin', TRUSTED_ORIGIN)
           .set('Cookie', `${REFRESH_COOKIE_NAME}=${cookie}`),
       ]);
 
@@ -219,7 +219,8 @@ describe('Auth (e2e) — Sprint 01A: Redis sessions, strict single-use refresh r
     });
 
     it('malformed or absent refresh cookie returns a clean 401, not a 500', async () => {
-      const noCookie = await request(app.getHttpServer()).post('/auth/refresh')
+      const noCookie = await request(app.getHttpServer())
+        .post('/auth/refresh')
         .set('Origin', TRUSTED_ORIGIN);
       expect(noCookie.status).toBe(401);
 

@@ -15,7 +15,9 @@ const score = (reference: string, typed: string, revealed = 0) =>
 describe('scoreDictationAttempt', () => {
   describe('the solved rule', () => {
     it('solves only at 100%', () => {
-      expect(score('the otter wraps her baby', 'the otter wraps her baby')).toMatchObject({
+      expect(
+        score('the otter wraps her baby', 'the otter wraps her baby'),
+      ).toMatchObject({
         accuracyPercent: 100,
         solved: true,
         wordsCorrect: 5,
@@ -26,7 +28,10 @@ describe('scoreDictationAttempt', () => {
     // Transcription with one word wrong is not transcription. This is why
     // there is no configurable threshold here, unlike the quiz.
     it('does not solve at 80%', () => {
-      const result = score('the otter wraps her baby', 'the otter wraps her puppy');
+      const result = score(
+        'the otter wraps her baby',
+        'the otter wraps her puppy',
+      );
 
       expect(result.accuracyPercent).toBe(80);
       expect(result.solved).toBe(false);
@@ -49,7 +54,9 @@ describe('scoreDictationAttempt', () => {
     // characters, so they are now different — and the hyphenated form is the
     // correct one.
     it('keeps a hyphen inside a compound word', () => {
-      expect(normalizeReferenceText('a well-known fact')).toBe('a well-known fact');
+      expect(normalizeReferenceText('a well-known fact')).toBe(
+        'a well-known fact',
+      );
       expect(score('a well-known fact', 'a well-known fact').solved).toBe(true);
       expect(score('a well-known fact', 'a wellknown fact').solved).toBe(false);
     });
@@ -67,7 +74,9 @@ describe('scoreDictationAttempt', () => {
     });
 
     it('collapses extra whitespace', () => {
-      expect(score('one two three', '  one   two \n three  ').solved).toBe(true);
+      expect(score('one two three', '  one   two \n three  ').solved).toBe(
+        true,
+      );
     });
   });
 

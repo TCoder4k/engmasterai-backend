@@ -28,7 +28,8 @@
 // one. Prose that a learner can act on is the honest ceiling here.
 
 /** DI token. A string token because the interface is a type and erases at runtime. */
-export const PRONUNCIATION_FEEDBACK_PROVIDER = 'PRONUNCIATION_FEEDBACK_PROVIDER';
+export const PRONUNCIATION_FEEDBACK_PROVIDER =
+  'PRONUNCIATION_FEEDBACK_PROVIDER';
 
 export interface PronunciationFeedbackRequest {
   /** The recording, re-uploaded for this request. In memory only; never written anywhere. */

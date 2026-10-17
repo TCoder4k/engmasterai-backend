@@ -17,7 +17,8 @@ const buildService = (overrides: {
 }) => {
   const prisma = {
     vocabWord: {
-      findFirst: overrides.vocabWordFindFirst ?? jest.fn().mockResolvedValue(null),
+      findFirst:
+        overrides.vocabWordFindFirst ?? jest.fn().mockResolvedValue(null),
       findMany: overrides.vocabWordFindMany ?? jest.fn().mockResolvedValue([]),
     },
   };
@@ -77,7 +78,13 @@ describe('DictionaryService.lookup', () => {
       normalizedWord: 'hello',
       ipa: '/hɛˈloʊ/',
       audioUrl: null,
-      meanings: [{ partOfSpeech: 'interjection', definitionEn: 'A greeting.', exampleEn: null }],
+      meanings: [
+        {
+          partOfSpeech: 'interjection',
+          definitionEn: 'A greeting.',
+          exampleEn: null,
+        },
+      ],
       synonyms: ['hi'],
       viTranslation: 'Xin chào',
       viTranslationSource: 'AI' as const,
@@ -102,7 +109,13 @@ describe('DictionaryService.lookup', () => {
       sourceLookup: jest.fn().mockResolvedValue({
         word: 'hello',
         ipa: '/hɛˈloʊ/',
-        meanings: [{ partOfSpeech: 'interjection', definitionEn: 'A greeting.', exampleEn: null }],
+        meanings: [
+          {
+            partOfSpeech: 'interjection',
+            definitionEn: 'A greeting.',
+            exampleEn: null,
+          },
+        ],
         synonyms: ['hi'],
         sourceUrl: 'https://en.wiktionary.org/wiki/hello',
       }),
@@ -119,7 +132,10 @@ describe('DictionaryService.lookup', () => {
     // ever translates the FIRST definition, into the top-level viTranslation
     // above.
     expect(result.meanings[0].definitionVi).toBeNull();
-    expect(cache.set).toHaveBeenCalledWith('hello', expect.objectContaining({ source: 'EXTERNAL' }));
+    expect(cache.set).toHaveBeenCalledWith(
+      'hello',
+      expect.objectContaining({ source: 'EXTERNAL' }),
+    );
   });
 
   it('a translation failure degrades to a 200 with no Vietnamese line, not a 503', async () => {
@@ -127,11 +143,19 @@ describe('DictionaryService.lookup', () => {
       sourceLookup: jest.fn().mockResolvedValue({
         word: 'hello',
         ipa: null,
-        meanings: [{ partOfSpeech: 'interjection', definitionEn: 'A greeting.', exampleEn: null }],
+        meanings: [
+          {
+            partOfSpeech: 'interjection',
+            definitionEn: 'A greeting.',
+            exampleEn: null,
+          },
+        ],
         synonyms: [],
         sourceUrl: null,
       }),
-      translate: jest.fn().mockRejectedValue(new ViTranslationError('UNAVAILABLE', 'down')),
+      translate: jest
+        .fn()
+        .mockRejectedValue(new ViTranslationError('UNAVAILABLE', 'down')),
     });
 
     const result = await service.lookup('hello');
@@ -151,7 +175,9 @@ describe('DictionaryService.lookup', () => {
         .mockRejectedValue(new DictionarySourceError('NOT_FOUND', 'no entry')),
     });
 
-    await expect(service.lookup('asdfghjkl')).rejects.toBeInstanceOf(NotFoundException);
+    await expect(service.lookup('asdfghjkl')).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
   });
 
   it('an external source outage is a 503, not a fabricated definition', async () => {
@@ -161,7 +187,9 @@ describe('DictionaryService.lookup', () => {
         .mockRejectedValue(new DictionarySourceError('UNAVAILABLE', 'down')),
     });
 
-    await expect(service.lookup('hello')).rejects.toBeInstanceOf(ServiceUnavailableException);
+    await expect(service.lookup('hello')).rejects.toBeInstanceOf(
+      ServiceUnavailableException,
+    );
   });
 });
 
@@ -200,7 +228,9 @@ describe('DictionaryService.suggest', () => {
 
     await service.suggest('a', 10);
 
-    expect(findMany).toHaveBeenCalledWith(expect.objectContaining({ take: 10 }));
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ take: 10 }),
+    );
   });
 
   it('a word with no curated meaning yet returns a null shortMeaningVi, not a fabricated one', async () => {
@@ -216,7 +246,9 @@ describe('DictionaryService.suggest', () => {
   });
 
   it('no matches is an empty list, not an error', async () => {
-    const { service } = buildService({ vocabWordFindMany: jest.fn().mockResolvedValue([]) });
+    const { service } = buildService({
+      vocabWordFindMany: jest.fn().mockResolvedValue([]),
+    });
 
     await expect(service.suggest('zzzz', 6)).resolves.toEqual([]);
   });

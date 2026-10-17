@@ -34,7 +34,11 @@ export class NotificationRateLimitGuard implements CanActivate {
     if (!userId) return true;
 
     const key = `notification:${policy.kind}:${userId}`;
-    const result = await this.rateLimiter.checkAndIncrement(key, policy.max, policy.windowSeconds);
+    const result = await this.rateLimiter.checkAndIncrement(
+      key,
+      policy.max,
+      policy.windowSeconds,
+    );
     if (!result.allowed) {
       throw new RateLimitExceededException();
     }

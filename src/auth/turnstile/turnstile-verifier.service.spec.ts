@@ -19,7 +19,11 @@ const enabledConfig = (overrides: Record<string, unknown> = {}) =>
   });
 
 const okResponse = (body: unknown): Response =>
-  ({ ok: true, status: 200, json: () => Promise.resolve(body) }) as unknown as Response;
+  ({
+    ok: true,
+    status: 200,
+    json: () => Promise.resolve(body),
+  }) as unknown as Response;
 
 afterEach(() => {
   jest.restoreAllMocks();
@@ -28,9 +32,13 @@ afterEach(() => {
 describe('TurnstileVerifierService', () => {
   it('is a no-op and never calls fetch when TURNSTILE_ENABLED is false', async () => {
     const fetchSpy = jest.spyOn(global, 'fetch');
-    const service = new TurnstileVerifierService(config({ TURNSTILE_ENABLED: false }));
+    const service = new TurnstileVerifierService(
+      config({ TURNSTILE_ENABLED: false }),
+    );
 
-    await expect(service.verify('some-token', '1.2.3.4')).resolves.toBeUndefined();
+    await expect(
+      service.verify('some-token', '1.2.3.4'),
+    ).resolves.toBeUndefined();
 
     expect(fetchSpy).not.toHaveBeenCalled();
   });
@@ -56,7 +64,9 @@ describe('TurnstileVerifierService', () => {
   });
 
   it('rejects when Cloudflare responds 200 with success:false', async () => {
-    jest.spyOn(global, 'fetch').mockResolvedValue(okResponse({ success: false }));
+    jest
+      .spyOn(global, 'fetch')
+      .mockResolvedValue(okResponse({ success: false }));
     const service = new TurnstileVerifierService(enabledConfig());
 
     await expect(service.verify('token', '1.2.3.4')).rejects.toBeInstanceOf(
@@ -65,7 +75,9 @@ describe('TurnstileVerifierService', () => {
   });
 
   it('resolves when Cloudflare responds 200 with success:true', async () => {
-    jest.spyOn(global, 'fetch').mockResolvedValue(okResponse({ success: true }));
+    jest
+      .spyOn(global, 'fetch')
+      .mockResolvedValue(okResponse({ success: true }));
     const service = new TurnstileVerifierService(enabledConfig());
 
     await expect(service.verify('token', '1.2.3.4')).resolves.toBeUndefined();

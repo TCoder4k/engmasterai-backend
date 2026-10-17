@@ -45,7 +45,10 @@ describe('Listening Dictation (e2e) — Sprint 11 Phase 4A', () => {
       .post('/auth/register')
       .send({ name: 'Phase 4A Student', email, password: 'password123' });
     const user = await prisma.user.findUniqueOrThrow({ where: { email } });
-    return { token: (res.body as { accessToken: string }).accessToken, id: user.id };
+    return {
+      token: (res.body as { accessToken: string }).accessToken,
+      id: user.id,
+    };
   };
 
   /** A published recording with the given sentences, ready to practise. */
@@ -245,8 +248,12 @@ describe('Listening Dictation (e2e) — Sprint 11 Phase 4A', () => {
     it('never lowers bestAccuracyPercent on a worse retry', async () => {
       const { segmentIds } = await publishRecording(['one two three four']);
 
-      await submit(segmentIds[0], { typedText: 'one two three four' }).expect(201);
-      const worse = await submit(segmentIds[0], { typedText: 'one' }).expect(201);
+      await submit(segmentIds[0], { typedText: 'one two three four' }).expect(
+        201,
+      );
+      const worse = await submit(segmentIds[0], { typedText: 'one' }).expect(
+        201,
+      );
 
       expect(worse.body.accuracyPercent).toBe(25);
       expect(worse.body.segment.bestAccuracyPercent).toBe(100);
@@ -284,13 +291,21 @@ describe('Listening Dictation (e2e) — Sprint 11 Phase 4A', () => {
       const first = await request(app.getHttpServer())
         .post(`/listening/segments/${segmentIds[0]}/dictation/attempts`)
         .set('Authorization', `Bearer ${studentToken}`)
-        .send({ clientAttemptId, typedText: 'stable sentence here', revealedWordCount: 0 })
+        .send({
+          clientAttemptId,
+          typedText: 'stable sentence here',
+          revealedWordCount: 0,
+        })
         .expect(201);
 
       const replay = await request(app.getHttpServer())
         .post(`/listening/segments/${segmentIds[0]}/dictation/attempts`)
         .set('Authorization', `Bearer ${studentToken}`)
-        .send({ clientAttemptId, typedText: 'stable sentence here', revealedWordCount: 0 })
+        .send({
+          clientAttemptId,
+          typedText: 'stable sentence here',
+          revealedWordCount: 0,
+        })
         .expect(201);
 
       expect(replay.body.accuracyPercent).toBe(first.body.accuracyPercent);
@@ -305,13 +320,19 @@ describe('Listening Dictation (e2e) — Sprint 11 Phase 4A', () => {
     });
 
     it('replays the ORIGINAL score even after the sentence was edited', async () => {
-      const { contentId, segmentIds } = await publishRecording(['first wording here']);
+      const { contentId, segmentIds } = await publishRecording([
+        'first wording here',
+      ]);
       const clientAttemptId = randomUUID();
 
       await request(app.getHttpServer())
         .post(`/listening/segments/${segmentIds[0]}/dictation/attempts`)
         .set('Authorization', `Bearer ${studentToken}`)
-        .send({ clientAttemptId, typedText: 'first wording here', revealedWordCount: 0 })
+        .send({
+          clientAttemptId,
+          typedText: 'first wording here',
+          revealedWordCount: 0,
+        })
         .expect(201);
 
       // Admin fixes a typo on live content — allowed by design.
@@ -322,7 +343,11 @@ describe('Listening Dictation (e2e) — Sprint 11 Phase 4A', () => {
       const replay = await request(app.getHttpServer())
         .post(`/listening/segments/${segmentIds[0]}/dictation/attempts`)
         .set('Authorization', `Bearer ${studentToken}`)
-        .send({ clientAttemptId, typedText: 'first wording here', revealedWordCount: 0 })
+        .send({
+          clientAttemptId,
+          typedText: 'first wording here',
+          revealedWordCount: 0,
+        })
         .expect(201);
 
       // Re-grading here would hand the student two different results for one
@@ -339,7 +364,11 @@ describe('Listening Dictation (e2e) — Sprint 11 Phase 4A', () => {
       await request(app.getHttpServer())
         .post(`/listening/segments/${segmentIds[0]}/dictation/attempts`)
         .set('Authorization', `Bearer ${studentToken}`)
-        .send({ clientAttemptId, typedText: 'shared key sentence', revealedWordCount: 0 })
+        .send({
+          clientAttemptId,
+          typedText: 'shared key sentence',
+          revealedWordCount: 0,
+        })
         .expect(201);
 
       // The SAME key from a different student is a different attempt — one
@@ -347,16 +376,24 @@ describe('Listening Dictation (e2e) — Sprint 11 Phase 4A', () => {
       const second = await request(app.getHttpServer())
         .post(`/listening/segments/${segmentIds[0]}/dictation/attempts`)
         .set('Authorization', `Bearer ${other.token}`)
-        .send({ clientAttemptId, typedText: 'wrong wrong wrong', revealedWordCount: 0 })
+        .send({
+          clientAttemptId,
+          typedText: 'wrong wrong wrong',
+          revealedWordCount: 0,
+        })
         .expect(201);
 
       expect(second.body.accuracyPercent).toBe(0);
     });
 
     it('stores the reference text as it was when graded', async () => {
-      const { contentId, segmentIds } = await publishRecording(['snapshot me please']);
+      const { contentId, segmentIds } = await publishRecording([
+        'snapshot me please',
+      ]);
 
-      await submit(segmentIds[0], { typedText: 'snapshot me please' }).expect(201);
+      await submit(segmentIds[0], { typedText: 'snapshot me please' }).expect(
+        201,
+      );
       await putSegments(contentId, [
         { id: segmentIds[0], text: 'edited afterwards entirely' },
       ]).expect(200);
@@ -375,8 +412,12 @@ describe('Listening Dictation (e2e) — Sprint 11 Phase 4A', () => {
 
   describe('completion is derived, never stored', () => {
     it('drops a finished recording back to in-progress when a sentence is added', async () => {
-      const { contentId, segmentIds } = await publishRecording(['only sentence here']);
-      await submit(segmentIds[0], { typedText: 'only sentence here' }).expect(201);
+      const { contentId, segmentIds } = await publishRecording([
+        'only sentence here',
+      ]);
+      await submit(segmentIds[0], { typedText: 'only sentence here' }).expect(
+        201,
+      );
 
       const before = await request(app.getHttpServer())
         .get(`/listening/contents/${contentId}`)
@@ -406,7 +447,10 @@ describe('Listening Dictation (e2e) — Sprint 11 Phase 4A', () => {
     });
 
     it('completes a recording when the unfinished sentence is removed', async () => {
-      const { contentId, segmentIds } = await publishRecording(['done one', 'not done two']);
+      const { contentId, segmentIds } = await publishRecording([
+        'done one',
+        'not done two',
+      ]);
       await submit(segmentIds[0], { typedText: 'done one' }).expect(201);
 
       await putSegments(contentId, [
@@ -443,7 +487,10 @@ describe('Listening Dictation (e2e) — Sprint 11 Phase 4A', () => {
     });
 
     it('rehydrates per-sentence progress on the content read', async () => {
-      const { contentId, segmentIds } = await publishRecording(['alpha one', 'beta two']);
+      const { contentId, segmentIds } = await publishRecording([
+        'alpha one',
+        'beta two',
+      ]);
       await submit(segmentIds[0], { typedText: 'alpha one' }).expect(201);
 
       const res = await request(app.getHttpServer())
@@ -480,7 +527,9 @@ describe('Listening Dictation (e2e) — Sprint 11 Phase 4A', () => {
 
   describe('visibility on the write path', () => {
     it('404s for a sentence in a DRAFT recording', async () => {
-      const { contentId, segmentIds } = await publishRecording(['draft me now']);
+      const { contentId, segmentIds } = await publishRecording([
+        'draft me now',
+      ]);
       await request(app.getHttpServer())
         .patch(`/listening/manage/contents/${contentId}/unpublish`)
         .set('Authorization', `Bearer ${adminToken}`)
@@ -516,16 +565,22 @@ describe('Listening Dictation (e2e) — Sprint 11 Phase 4A', () => {
         })
         .expect(201);
       const hiddenId = (created.body as { id: string }).id;
-      await putSegments(hiddenId, [{ text: 'hidden sentence here' }]).expect(200);
+      await putSegments(hiddenId, [{ text: 'hidden sentence here' }]).expect(
+        200,
+      );
 
       const segment = await prisma.listeningSegment.findFirstOrThrow({
         where: { contentId: hiddenId },
       });
 
-      await submit(segment.id, { typedText: 'hidden sentence here' }).expect(404);
+      await submit(segment.id, { typedText: 'hidden sentence here' }).expect(
+        404,
+      );
 
       await prisma.listeningContent.deleteMany({ where: { id: hiddenId } });
-      await prisma.listeningCategory.deleteMany({ where: { id: draftCategory.id } });
+      await prisma.listeningCategory.deleteMany({
+        where: { id: draftCategory.id },
+      });
     });
 
     it('404s when the recording does not enable DICTATION', async () => {
@@ -533,7 +588,9 @@ describe('Listening Dictation (e2e) — Sprint 11 Phase 4A', () => {
         supportedModes: ['SHADOWING'],
       });
 
-      await submit(segmentIds[0], { typedText: 'shadow sentence only' }).expect(404);
+      await submit(segmentIds[0], { typedText: 'shadow sentence only' }).expect(
+        404,
+      );
     });
 
     it('404s for a sentence that does not exist', async () => {
@@ -544,7 +601,11 @@ describe('Listening Dictation (e2e) — Sprint 11 Phase 4A', () => {
       const { segmentIds } = await publishRecording(['auth please now']);
       await request(app.getHttpServer())
         .post(`/listening/segments/${segmentIds[0]}/dictation/attempts`)
-        .send({ clientAttemptId: randomUUID(), typedText: 'x', revealedWordCount: 0 })
+        .send({
+          clientAttemptId: randomUUID(),
+          typedText: 'x',
+          revealedWordCount: 0,
+        })
         .expect(401);
     });
 
@@ -564,7 +625,9 @@ describe('Listening Dictation (e2e) — Sprint 11 Phase 4A', () => {
     it('returns one entry per visible id and omits the rest', async () => {
       const a = await publishRecording(['batch one sentence']);
       const b = await publishRecording(['batch two sentence']);
-      await submit(a.segmentIds[0], { typedText: 'batch one sentence' }).expect(201);
+      await submit(a.segmentIds[0], { typedText: 'batch one sentence' }).expect(
+        201,
+      );
 
       const res = await request(app.getHttpServer())
         .get('/listening/progress')
@@ -572,12 +635,19 @@ describe('Listening Dictation (e2e) — Sprint 11 Phase 4A', () => {
         .set('Authorization', `Bearer ${studentToken}`)
         .expect(200);
 
-      const rows = res.body as { contentId: string; dictation: { completed: boolean } }[];
+      const rows = res.body as {
+        contentId: string;
+        dictation: { completed: boolean };
+      }[];
       // A stale id is absent, not an error — one bad id must never fail a
       // whole catalog page.
       expect(rows).toHaveLength(2);
-      expect(rows.find((r) => r.contentId === a.contentId)?.dictation.completed).toBe(true);
-      expect(rows.find((r) => r.contentId === b.contentId)?.dictation.completed).toBe(false);
+      expect(
+        rows.find((r) => r.contentId === a.contentId)?.dictation.completed,
+      ).toBe(true);
+      expect(
+        rows.find((r) => r.contentId === b.contentId)?.dictation.completed,
+      ).toBe(false);
     });
 
     it('is read-only — it writes no progress row', async () => {
@@ -620,8 +690,12 @@ describe('Listening Dictation (e2e) — Sprint 11 Phase 4A', () => {
     // since Phase 1. The Restrict relations added in Phase 4A are the first
     // thing that can actually make it fire.
     it('refuses with a reason rather than a 500', async () => {
-      const { contentId, segmentIds } = await publishRecording(['do not delete me']);
-      await submit(segmentIds[0], { typedText: 'do not delete me' }).expect(201);
+      const { contentId, segmentIds } = await publishRecording([
+        'do not delete me',
+      ]);
+      await submit(segmentIds[0], { typedText: 'do not delete me' }).expect(
+        201,
+      );
 
       const res = await request(app.getHttpServer())
         .delete(`/listening/manage/contents/${contentId}`)
@@ -646,7 +720,10 @@ describe('Listening Dictation (e2e) — Sprint 11 Phase 4A', () => {
     // A segment must stay editable on live content — that is why the segment
     // relation is Cascade while the content relation is Restrict.
     it('lets an admin delete a practised SENTENCE, taking its progress with it', async () => {
-      const { contentId, segmentIds } = await publishRecording(['keep me', 'remove me']);
+      const { contentId, segmentIds } = await publishRecording([
+        'keep me',
+        'remove me',
+      ]);
       await submit(segmentIds[1], { typedText: 'remove me' }).expect(201);
 
       await putSegments(contentId, [

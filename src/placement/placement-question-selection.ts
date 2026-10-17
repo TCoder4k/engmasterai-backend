@@ -72,7 +72,11 @@ export const sampleQuestionIds = (
           bucket.length,
         );
       }
-      ids.push(...shuffle(bucket).slice(0, required).map((q) => q.id));
+      ids.push(
+        ...shuffle(bucket)
+          .slice(0, required)
+          .map((q) => q.id),
+      );
     }
   }
   return ids;

@@ -91,7 +91,10 @@ export const enumerateDaysInTimeZone = (
  * own day start" technique enumerateDaysInTimeZone already relies on, rather
  * than day-of-month arithmetic.
  */
-export const enumerateCalendarWeekInTimeZone = (instant: Date, timeZone: string): string[] => {
+export const enumerateCalendarWeekInTimeZone = (
+  instant: Date,
+  timeZone: string,
+): string[] => {
   const todayStart = startOfDayInTimeZone(instant, timeZone);
   const todayLabel = formatDayInTimeZone(todayStart, timeZone);
 
@@ -104,7 +107,10 @@ export const enumerateCalendarWeekInTimeZone = (instant: Date, timeZone: string)
 
   let monday = todayStart;
   for (let i = 0; i < daysSinceMonday; i += 1) {
-    monday = startOfDayInTimeZone(new Date(monday.getTime() - 12 * 60 * 60 * 1000), timeZone);
+    monday = startOfDayInTimeZone(
+      new Date(monday.getTime() - 12 * 60 * 60 * 1000),
+      timeZone,
+    );
   }
 
   const days: string[] = [];
@@ -115,7 +121,10 @@ export const enumerateCalendarWeekInTimeZone = (instant: Date, timeZone: string)
     // a day start always lands within the NEXT calendar day regardless of a
     // ±1h DST shift (a 23h day's next day starts at +23h, so +36h is 13h
     // into it; a 25h day's next day starts at +25h, so +36h is 11h into it).
-    cursor = startOfDayInTimeZone(new Date(cursor.getTime() + 36 * 60 * 60 * 1000), timeZone);
+    cursor = startOfDayInTimeZone(
+      new Date(cursor.getTime() + 36 * 60 * 60 * 1000),
+      timeZone,
+    );
   }
   return days;
 };

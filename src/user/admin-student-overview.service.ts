@@ -39,7 +39,7 @@ export class AdminStudentOverviewService {
     page?: number,
     limit?: number,
     search?: string,
-    plan?: 'FREE' | 'PRO',
+    plan?: 'FREE' | 'PRO' | 'HOC_TAP',
     status?: 'ACTIVE' | 'BLOCKED',
   ): Promise<AdminStudentListResult> {
     const take = Math.min(limit || DEFAULT_LIST_LIMIT, LIST_MAX_LIMIT);
@@ -47,7 +47,7 @@ export class AdminStudentOverviewService {
     const now = new Date();
 
     const trimmed = search?.trim();
-    // Same PRO/FREE derivation as the response's own isPro field
+    // Same PRO/FREE/HOC_TAP derivation as the response's own fields
     // (Subscription.expiresAt vs now) — never a persisted status, so the
     // filter and the displayed badge can never disagree.
     const filters: Prisma.UserWhereInput[] = [];
@@ -61,13 +61,24 @@ export class AdminStudentOverviewService {
       });
     }
     if (plan === 'PRO') {
-      filters.push({ subscription: { expiresAt: { gt: now } } });
+      filters.push({
+        subscriptions: {
+          some: { plan: 'PRO_MONTHLY', expiresAt: { gt: now } },
+        },
+      });
+    } else if (plan === 'HOC_TAP') {
+      filters.push({
+        subscriptions: {
+          some: { plan: 'PREMIUM_MONTHLY', expiresAt: { gt: now } },
+        },
+      });
     } else if (plan === 'FREE') {
       filters.push({
-        OR: [
-          { subscription: null },
-          { subscription: { expiresAt: { lte: now } } },
-        ],
+        NOT: {
+          subscriptions: {
+            some: { expiresAt: { gt: now } },
+          },
+        },
       });
     }
     if (status === 'ACTIVE') {
@@ -95,7 +106,7 @@ export class AdminStudentOverviewService {
           learningGoal: true,
           isActive: true,
           createdAt: true,
-          subscription: { select: { expiresAt: true } },
+          subscriptions: { select: { plan: true, expiresAt: true } },
         },
       }),
       this.prisma.user.count({ where }),
@@ -115,6 +126,12 @@ export class AdminStudentOverviewService {
     const data = users.map((user) => {
       const progress = progressById.get(user.id)!;
       const scores = scoresByUser.get(user.id)!;
+      const proSub = user.subscriptions?.find(
+        (s) => s.plan === 'PRO_MONTHLY' && s.expiresAt > now,
+      );
+      const hocTapSub = user.subscriptions?.find(
+        (s) => s.plan === 'PREMIUM_MONTHLY' && s.expiresAt > now,
+      );
       return {
         id: user.id,
         name: user.name,
@@ -128,8 +145,10 @@ export class AdminStudentOverviewService {
         totalLessons: progress.totalLessons,
         averageTestScore: scores.averageTestScore,
         completedTestCount: scores.completedTestCount,
-        isPro: user.subscription !== null && user.subscription.expiresAt > now,
-        proExpiresAt: user.subscription?.expiresAt ?? null,
+        isPro: proSub !== undefined,
+        proExpiresAt: proSub?.expiresAt ?? null,
+        isHocTap: hocTapSub !== undefined,
+        hocTapExpiresAt: hocTapSub?.expiresAt ?? null,
         isActive: user.isActive,
         createdAt: user.createdAt,
       };
@@ -158,7 +177,7 @@ export class AdminStudentOverviewService {
         learningGoal: true,
         createdAt: true,
         isActive: true,
-        subscription: { select: { plan: true, expiresAt: true } },
+        subscriptions: { select: { plan: true, expiresAt: true } },
       },
     });
     if (!user) {
@@ -222,9 +241,21 @@ export class AdminStudentOverviewService {
     ]);
 
     const now = new Date();
-    const isPro =
-      user.subscription !== null && user.subscription.expiresAt > now;
-    const proExpiresAt = user.subscription?.expiresAt ?? null;
+    const proSub = user.subscriptions?.find(
+      (s) => s.plan === 'PRO_MONTHLY' && s.expiresAt > now,
+    );
+    const hocTapSub = user.subscriptions?.find(
+      (s) => s.plan === 'PREMIUM_MONTHLY' && s.expiresAt > now,
+    );
+    const isPro = proSub !== undefined;
+    const proExpiresAt = proSub?.expiresAt ?? null;
+    const isHocTap = hocTapSub !== undefined;
+    const hocTapExpiresAt = hocTapSub?.expiresAt ?? null;
+    const activePlan = hocTapSub
+      ? hocTapSub.plan
+      : proSub
+        ? proSub.plan
+        : null;
 
     return {
       profile: {
@@ -238,6 +269,8 @@ export class AdminStudentOverviewService {
         isActive: user.isActive,
         isPro,
         proExpiresAt,
+        isHocTap,
+        hocTapExpiresAt,
       },
       progress: {
         ...progress,
@@ -259,9 +292,11 @@ export class AdminStudentOverviewService {
         speakingSessionsCompleted,
       },
       billing: {
-        plan: user.subscription?.plan ?? null,
+        plan: activePlan,
         isPro,
         proExpiresAt,
+        isHocTap,
+        hocTapExpiresAt,
         payments,
         paymentsTotal,
       },

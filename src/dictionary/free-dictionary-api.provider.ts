@@ -33,7 +33,8 @@ import {
 // of the data source, not a design choice — `audioUrl` stays null for every
 // lookup that reaches this tier (see dictionary.service.ts).
 
-const FREE_DICTIONARY_API_BASE = 'https://freedictionaryapi.com/api/v1/entries/en';
+const FREE_DICTIONARY_API_BASE =
+  'https://freedictionaryapi.com/api/v1/entries/en';
 
 const MAX_MEANINGS = 3;
 const MAX_SYNONYMS = 10;
@@ -91,14 +92,18 @@ export class FreeDictionaryApiProvider implements DictionarySourceProvider {
       );
       throw new DictionarySourceError(
         aborted ? 'TIMEOUT' : 'UNAVAILABLE',
-        aborted ? 'Dictionary source timed out' : 'Dictionary source is unavailable',
+        aborted
+          ? 'Dictionary source timed out'
+          : 'Dictionary source is unavailable',
       );
     } finally {
       clearTimeout(timer);
     }
 
     if (!response.ok) {
-      this.logger.warn(`freedictionaryapi.com returned HTTP ${response.status}`);
+      this.logger.warn(
+        `freedictionaryapi.com returned HTTP ${response.status}`,
+      );
       throw new DictionarySourceError(
         'UNAVAILABLE',
         `Dictionary source failed with status ${response.status}`,
@@ -119,7 +124,10 @@ export class FreeDictionaryApiProvider implements DictionarySourceProvider {
     // The verified "not found" signal — an empty array on a 200, never a 404
     // from the upstream service itself.
     if (entries.length === 0) {
-      throw new DictionarySourceError('NOT_FOUND', `No dictionary entry for "${word}"`);
+      throw new DictionarySourceError(
+        'NOT_FOUND',
+        `No dictionary entry for "${word}"`,
+      );
     }
 
     return {
@@ -146,7 +154,9 @@ export const extractIpa = (entries: RawEntry[]): string | null => {
 };
 
 /** Exported for tests. */
-export const extractMeanings = (entries: RawEntry[]): DictionarySourceMeaning[] => {
+export const extractMeanings = (
+  entries: RawEntry[],
+): DictionarySourceMeaning[] => {
   const meanings: DictionarySourceMeaning[] = [];
   for (const entry of entries) {
     const sense = entry.senses?.find((s) => typeof s.definition === 'string');

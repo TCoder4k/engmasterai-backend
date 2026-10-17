@@ -6,8 +6,14 @@ import {
   SpeechToTextRequest,
   SpeechToTextResult,
 } from './speech-to-text.provider';
-import { DEFAULT_GEMINI_MODEL_CHAIN, parseGeminiModelList } from '../../shared/gemini-models';
-import { fetchGeminiWithFallback, isGeminiTimeout } from '../../shared/gemini-fetch-with-fallback';
+import {
+  DEFAULT_GEMINI_MODEL_CHAIN,
+  parseGeminiModelList,
+} from '../../shared/gemini-models';
+import {
+  fetchGeminiWithFallback,
+  isGeminiTimeout,
+} from '../../shared/gemini-fetch-with-fallback';
 
 // Sprint 11 Phase 4B — transcription via the Gemini REST API.
 //
@@ -28,7 +34,8 @@ import { fetchGeminiWithFallback, isGeminiTimeout } from '../../shared/gemini-fe
 // real learner speech is UNMEASURED — the pass threshold cannot be trusted
 // until it has been.
 
-const GEMINI_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models';
+const GEMINI_ENDPOINT =
+  'https://generativelanguage.googleapis.com/v1beta/models';
 
 /**
  * Deliberately terse and negative.
@@ -86,7 +93,10 @@ export class GeminiSpeechToTextProvider implements SpeechToTextProvider {
       );
     }
 
-    const timeoutMs = this.config.get<number>('SHADOWING_STT_TIMEOUT_MS', 20000);
+    const timeoutMs = this.config.get<number>(
+      'SHADOWING_STT_TIMEOUT_MS',
+      20000,
+    );
 
     let response: Response;
     try {
@@ -142,7 +152,9 @@ export class GeminiSpeechToTextProvider implements SpeechToTextProvider {
       );
       throw new SpeechToTextError(
         aborted ? 'TIMEOUT' : 'UNAVAILABLE',
-        aborted ? 'Speech recognition timed out' : 'Speech recognition is unavailable',
+        aborted
+          ? 'Speech recognition timed out'
+          : 'Speech recognition is unavailable',
       );
     }
 
@@ -160,7 +172,10 @@ export class GeminiSpeechToTextProvider implements SpeechToTextProvider {
     try {
       payload = (await response.json()) as GeminiResponseShape;
     } catch {
-      throw new SpeechToTextError('UNAVAILABLE', 'Speech recognition returned no data');
+      throw new SpeechToTextError(
+        'UNAVAILABLE',
+        'Speech recognition returned no data',
+      );
     }
 
     // A safety block is not an outage and not a bad recording. It is rare on

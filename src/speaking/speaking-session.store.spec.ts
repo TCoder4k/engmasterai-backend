@@ -14,7 +14,8 @@ const TEST_REDIS_DB = 12;
 
 const config = (values: Record<string, unknown> = {}): ConfigService =>
   ({
-    get: (key: string, fallback?: unknown) => (key in values ? values[key] : fallback),
+    get: (key: string, fallback?: unknown) =>
+      key in values ? values[key] : fallback,
   }) as unknown as ConfigService;
 
 describe('SpeakingSessionStore (integration — real Redis, atomic bounded append)', () => {
@@ -31,7 +32,10 @@ describe('SpeakingSessionStore (integration — real Redis, atomic bounded appen
 
   beforeEach(async () => {
     await redis.flushdb();
-    store = new SpeakingSessionStore(redis, config({ SPEAKING_SESSION_TTL_SECONDS: 1800 }));
+    store = new SpeakingSessionStore(
+      redis,
+      config({ SPEAKING_SESSION_TTL_SECONDS: 1800 }),
+    );
   });
 
   afterAll(async () => {
@@ -54,14 +58,22 @@ describe('SpeakingSessionStore (integration — real Redis, atomic bounded appen
 
   it('bounds history to 24 turns (12 exchanges), dropping the OLDEST pair first', async () => {
     for (let i = 1; i <= 13; i += 1) {
-      await store.appendTurn('user-1', 'attempt-1', `question ${i}`, `answer ${i}`);
+      await store.appendTurn(
+        'user-1',
+        'attempt-1',
+        `question ${i}`,
+        `answer ${i}`,
+      );
     }
 
     const turns = await store.getTurns('user-1', 'attempt-1');
     expect(turns).toHaveLength(24);
     // Exchange 1 was dropped; exchange 2 is now the oldest surviving pair.
     expect(turns[0]).toMatchObject({ role: 'user', text: 'question 2' });
-    expect(turns[turns.length - 1]).toMatchObject({ role: 'assistant', text: 'answer 13' });
+    expect(turns[turns.length - 1]).toMatchObject({
+      role: 'assistant',
+      text: 'answer 13',
+    });
   });
 
   it('refreshes the TTL on every append (sliding window)', async () => {
@@ -85,7 +97,9 @@ describe('SpeakingSessionStore (integration — real Redis, atomic bounded appen
     const turns = await store.getTurns('user-1', 'attempt-1');
     expect(turns).toHaveLength(4);
     const texts = turns.map((t) => t.text).sort();
-    expect(texts).toEqual(['answer A', 'answer B', 'question A', 'question B'].sort());
+    expect(texts).toEqual(
+      ['answer A', 'answer B', 'question A', 'question B'].sort(),
+    );
   });
 
   it('clear() removes the session, idempotently', async () => {
@@ -130,9 +144,9 @@ describe('SpeakingSessionStore (integration — real Redis, atomic bounded appen
       const broken = brokenClient();
       const brokenStore = new SpeakingSessionStore(broken, config());
 
-      await expect(brokenStore.getTurns('user-1', 'attempt-1')).rejects.toBeInstanceOf(
-        ServiceUnavailableException,
-      );
+      await expect(
+        brokenStore.getTurns('user-1', 'attempt-1'),
+      ).rejects.toBeInstanceOf(ServiceUnavailableException);
       broken.disconnect();
     });
 
@@ -140,9 +154,9 @@ describe('SpeakingSessionStore (integration — real Redis, atomic bounded appen
       const broken = brokenClient();
       const brokenStore = new SpeakingSessionStore(broken, config());
 
-      await expect(brokenStore.clear('user-1', 'attempt-1')).rejects.toBeInstanceOf(
-        ServiceUnavailableException,
-      );
+      await expect(
+        brokenStore.clear('user-1', 'attempt-1'),
+      ).rejects.toBeInstanceOf(ServiceUnavailableException);
       broken.disconnect();
     });
   });

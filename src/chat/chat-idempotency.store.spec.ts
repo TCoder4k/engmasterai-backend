@@ -31,7 +31,13 @@ describe('ChatIdempotencyStore', () => {
     await store.claim('user-1', 'msg-1', 120);
     // Simulates the winner committing its result WHILE the racer is still
     // in its poll loop.
-    await store.commit('user-1', 'msg-1', 'Hello!', '2026-01-01T00:00:00.000Z', 1800);
+    await store.commit(
+      'user-1',
+      'msg-1',
+      'Hello!',
+      '2026-01-01T00:00:00.000Z',
+      1800,
+    );
 
     const racer = await store.claim('user-1', 'msg-1', 120);
 
@@ -44,7 +50,13 @@ describe('ChatIdempotencyStore', () => {
 
   it('a replay AFTER the original already committed returns the same reply, without re-claiming', async () => {
     await store.claim('user-1', 'msg-1', 120);
-    await store.commit('user-1', 'msg-1', 'Xin chào!', '2026-01-01T00:00:00.000Z', 1800);
+    await store.commit(
+      'user-1',
+      'msg-1',
+      'Xin chào!',
+      '2026-01-01T00:00:00.000Z',
+      1800,
+    );
 
     const replay = await store.claim('user-1', 'msg-1', 120);
 
@@ -93,7 +105,13 @@ describe('ChatIdempotencyStore', () => {
     jest.spyOn(redis, 'set').mockRejectedValue(new Error('connection lost'));
 
     await expect(
-      store.commit('user-1', 'msg-1', 'reply', '2026-01-01T00:00:00.000Z', 1800),
+      store.commit(
+        'user-1',
+        'msg-1',
+        'reply',
+        '2026-01-01T00:00:00.000Z',
+        1800,
+      ),
     ).rejects.toBeInstanceOf(ServiceUnavailableException);
   });
 

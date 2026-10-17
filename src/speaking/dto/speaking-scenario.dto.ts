@@ -1,4 +1,13 @@
-import { IsBoolean, IsEnum, IsInt, IsOptional, IsString, Min, MaxLength, MinLength } from 'class-validator';
+import {
+  IsBoolean,
+  IsEnum,
+  IsInt,
+  IsOptional,
+  IsString,
+  Min,
+  MaxLength,
+  MinLength,
+} from 'class-validator';
 import { CefrLevel } from '@prisma/client';
 
 // Speaking Partner — admin scenario authoring.

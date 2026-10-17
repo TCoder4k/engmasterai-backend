@@ -1,11 +1,18 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { CourseType, Prisma, QuestionDifficulty } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { validateQuestionContent } from '../lesson/quiz/grade-question';
 import { CreatePlacementQuestionDto } from './dto/create-placement-question.dto';
 import { UpdatePlacementQuestionDto } from './dto/update-placement-question.dto';
 import { QueryPlacementQuestionDto } from './dto/query-placement-question.dto';
-import { DIFFICULTY_REQUIREMENTS, PLACEMENT_SECTIONS } from './placement.constants';
+import {
+  DIFFICULTY_REQUIREMENTS,
+  PLACEMENT_SECTIONS,
+} from './placement.constants';
 
 // Admin select — everything, including correctAnswer/explanation. There is
 // deliberately no student-facing select in this file: the STUDENT-safe shape
@@ -142,7 +149,9 @@ export class PlacementQuestionService {
         ? dto.options
         : ((existing.options as unknown) ?? null);
     const resolvedCorrectAnswer =
-      dto.correctAnswer !== undefined ? dto.correctAnswer : existing.correctAnswer;
+      dto.correctAnswer !== undefined
+        ? dto.correctAnswer
+        : existing.correctAnswer;
 
     const error = validateQuestionContent({
       type: resolvedType,

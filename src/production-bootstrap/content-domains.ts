@@ -65,7 +65,12 @@ export const CONTENT_MODELS: readonly ContentModelDefinition[] = [
     domain: 'vocabulary',
     foreignKeys: [{ field: 'libraryId', referencesModel: 'VocabLibrary' }],
   },
-  { name: 'VocabWord', delegate: 'vocabWord', domain: 'vocabulary', foreignKeys: [] },
+  {
+    name: 'VocabWord',
+    delegate: 'vocabWord',
+    domain: 'vocabulary',
+    foreignKeys: [],
+  },
   {
     name: 'VocabWordMeaning',
     delegate: 'vocabWordMeaning',
@@ -98,7 +103,9 @@ export const CONTENT_MODELS: readonly ContentModelDefinition[] = [
     name: 'ListeningContent',
     delegate: 'listeningContent',
     domain: 'listening',
-    foreignKeys: [{ field: 'categoryId', referencesModel: 'ListeningCategory' }],
+    foreignKeys: [
+      { field: 'categoryId', referencesModel: 'ListeningCategory' },
+    ],
   },
   {
     name: 'ListeningSegment',
@@ -160,7 +167,9 @@ const EXCLUDED_MODEL_NAMES: ReadonlySet<string> = new Set([
 export const assertAllowlistExcludesUserData = (
   models: readonly ContentModelDefinition[] = CONTENT_MODELS,
 ): void => {
-  const overlap = models.filter((model) => EXCLUDED_MODEL_NAMES.has(model.name));
+  const overlap = models.filter((model) =>
+    EXCLUDED_MODEL_NAMES.has(model.name),
+  );
   if (overlap.length > 0) {
     throw new Error(
       `CONTENT_MODELS accidentally includes excluded model(s): ${overlap

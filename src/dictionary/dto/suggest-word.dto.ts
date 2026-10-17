@@ -1,5 +1,13 @@
 import { Transform, Type } from 'class-transformer';
-import { IsInt, IsOptional, IsString, Length, Matches, Max, Min } from 'class-validator';
+import {
+  IsInt,
+  IsOptional,
+  IsString,
+  Length,
+  Matches,
+  Max,
+  Min,
+} from 'class-validator';
 
 // A prefix, not a lookup key: deliberately looser than LookupWordQueryDto's
 // "1-3 complete words" pattern — the student is mid-word ("giv") or mid-phrase

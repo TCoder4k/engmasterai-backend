@@ -6,7 +6,10 @@ import {
   EngyChatRequest,
   EngyChatResult,
 } from './engy-chat.provider';
-import { DEFAULT_GEMINI_MODEL_CHAIN, parseGeminiModelList } from '../shared/gemini-models';
+import {
+  DEFAULT_GEMINI_MODEL_CHAIN,
+  parseGeminiModelList,
+} from '../shared/gemini-models';
 import {
   fetchGeminiWithFallback,
   GeminiFetchError,
@@ -32,7 +35,8 @@ import { consumeSseStream } from '../shared/sse-frame-reader';
 // roadmap analysis: conversational prose worded slightly differently between
 // two calls is simply prose, not a correctness bug.
 
-const GEMINI_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models';
+const GEMINI_ENDPOINT =
+  'https://generativelanguage.googleapis.com/v1beta/models';
 
 /**
  * The cap on what comes back, in characters — this is a chat bubble a
@@ -140,7 +144,8 @@ export class GeminiEngyChatProvider implements EngyChatProvider {
 
     const contents: GeminiContent[] = [
       ...request.history.map((turn) => ({
-        role: turn.role === 'assistant' ? ('model' as const) : ('user' as const),
+        role:
+          turn.role === 'assistant' ? ('model' as const) : ('user' as const),
         parts: [{ text: turn.text }],
       })),
       { role: 'user', parts: latestTurnParts },
@@ -155,7 +160,8 @@ export class GeminiEngyChatProvider implements EngyChatProvider {
         // `alt=sse` (2026-09-12): streamed generation, so the reply can be
         // relayed to the client progressively instead of only once fully
         // generated — see docs/CLAUDE.md's Engy Chat streaming note.
-        (m) => `${GEMINI_ENDPOINT}/${encodeURIComponent(m)}:streamGenerateContent?alt=sse`,
+        (m) =>
+          `${GEMINI_ENDPOINT}/${encodeURIComponent(m)}:streamGenerateContent?alt=sse`,
         (_m, fetchSignal) => ({
           method: 'POST',
           signal: fetchSignal,
@@ -202,10 +208,15 @@ export class GeminiEngyChatProvider implements EngyChatProvider {
         // up; this is not a Gemini failure to log/report as one. The exact
         // message never reaches anyone — chat.service.ts's streamReply
         // checks `signal.aborted` itself and never surfaces this text.
-        throw new EngyChatError('UNAVAILABLE', 'Engy chat request was cancelled');
+        throw new EngyChatError(
+          'UNAVAILABLE',
+          'Engy chat request was cancelled',
+        );
       }
       const failedModel =
-        caught instanceof GeminiFetchError ? caught.model : this.models[this.models.length - 1];
+        caught instanceof GeminiFetchError
+          ? caught.model
+          : this.models[this.models.length - 1];
       const aborted = isGeminiTimeout(caught);
       // Chat content is NEVER logged, here or anywhere — only the shape of
       // the failure is (docs/CLAUDE.md's logging policy for this feature).
@@ -219,8 +230,13 @@ export class GeminiEngyChatProvider implements EngyChatProvider {
     }
 
     if (!response.ok) {
-      this.logger.warn(`Engy chat returned HTTP ${response.status} (model=${model})`);
-      throw new EngyChatError('UNAVAILABLE', `Engy failed with status ${response.status}`);
+      this.logger.warn(
+        `Engy chat returned HTTP ${response.status} (model=${model})`,
+      );
+      throw new EngyChatError(
+        'UNAVAILABLE',
+        `Engy failed with status ${response.status}`,
+      );
     }
     if (!response.body) {
       throw new EngyChatError('UNAVAILABLE', 'Engy returned no data');
@@ -239,11 +255,14 @@ export class GeminiEngyChatProvider implements EngyChatProvider {
           return; // a malformed/keep-alive frame — never worth aborting the whole reply over
         }
 
-        if (chunk.promptFeedback?.blockReason) blockReason = chunk.promptFeedback.blockReason;
+        if (chunk.promptFeedback?.blockReason)
+          blockReason = chunk.promptFeedback.blockReason;
         const candidate = chunk.candidates?.[0];
         if (candidate?.finishReason) finishReason = candidate.finishReason;
 
-        const deltaText = candidate?.content?.parts?.map((part) => part.text ?? '').join('') ?? '';
+        const deltaText =
+          candidate?.content?.parts?.map((part) => part.text ?? '').join('') ??
+          '';
         if (!deltaText) return;
 
         // Clip BEFORE emitting, never after — a chunk that pushes fullText
@@ -253,7 +272,10 @@ export class GeminiEngyChatProvider implements EngyChatProvider {
         // overflow to whoever already received that write).
         const remaining = MAX_ENGY_REPLY_CHARS - fullText.length;
         if (remaining <= 0) return false;
-        const clipped = deltaText.length > remaining ? deltaText.slice(0, remaining) : deltaText;
+        const clipped =
+          deltaText.length > remaining
+            ? deltaText.slice(0, remaining)
+            : deltaText;
         fullText += clipped;
         if (clipped) onDelta(clipped);
         if (clipped.length < deltaText.length) return false; // hit the cap inside this very frame
@@ -292,7 +314,9 @@ export class GeminiEngyChatProvider implements EngyChatProvider {
     // passes through untouched.
     const hitOwnCap = fullText.length >= MAX_ENGY_REPLY_CHARS;
     if (!hitOwnCap && finishReason !== 'STOP') {
-      this.logger.warn(`Engy chat reply did not finish normally (finishReason=${finishReason ?? 'none'})`);
+      this.logger.warn(
+        `Engy chat reply did not finish normally (finishReason=${finishReason ?? 'none'})`,
+      );
       throw new EngyChatError('UNAVAILABLE', 'Engy reply was cut off');
     }
 

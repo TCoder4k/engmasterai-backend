@@ -587,10 +587,14 @@ export class VocabPersonalService {
   // expiresAt > now). isPro is never carried in the JWT (stateless-JWT
   // design — see AuthModule), so this can never be a stale claim.
   private async isUserPro(userId: string): Promise<boolean> {
-    const subscription = await this.prisma.subscription.findUnique({
-      where: { userId },
+    const subscription = await this.prisma.subscription.findFirst({
+      where: {
+        userId,
+        expiresAt: { gt: new Date() },
+      },
+      orderBy: { expiresAt: 'desc' },
       select: { expiresAt: true },
     });
-    return subscription !== null && subscription.expiresAt > new Date();
+    return subscription !== null;
   }
 }

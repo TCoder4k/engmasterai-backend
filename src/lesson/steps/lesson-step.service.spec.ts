@@ -71,9 +71,12 @@ const build = (options: BuildOptions = {}) => {
   });
 
   return {
-    service: new LessonStepService(prisma as never, {
-      recordProgress,
-    } as never),
+    service: new LessonStepService(
+      prisma as never,
+      {
+        recordProgress,
+      } as never,
+    ),
     write,
     recordProgress,
   };

@@ -91,7 +91,11 @@ describe('generateRoadmap', () => {
       listeningCategory('l1', 'B1'),
     ];
     const items = generateRoadmap(beginnerInput(), candidates);
-    expect(items.map((i) => i.pillar)).toEqual(['GRAMMAR', 'VOCABULARY', 'LISTENING']);
+    expect(items.map((i) => i.pillar)).toEqual([
+      'GRAMMAR',
+      'VOCABULARY',
+      'LISTENING',
+    ]);
     expect(items.map((i) => i.phase)).toEqual([1, 2, 3]);
   });
 
@@ -124,7 +128,11 @@ describe('generateRoadmap', () => {
     );
     // VOCABULARY (25%) is weakest -> phase 1, then LISTENING (50%), then
     // GRAMMAR (75%) last.
-    expect(items.map((i) => i.pillar)).toEqual(['VOCABULARY', 'LISTENING', 'GRAMMAR']);
+    expect(items.map((i) => i.pillar)).toEqual([
+      'VOCABULARY',
+      'LISTENING',
+      'GRAMMAR',
+    ]);
     expect(items[0].reason).toContain('Phần yếu nhất');
   });
 
@@ -180,7 +188,10 @@ describe('generateRoadmap', () => {
 
   it('omits a pillar entirely when no eligible resource for it exists — never crashes, never substitutes', () => {
     const candidates = [course('g1', 'A1', new Date())];
-    const items = generateRoadmap(gradedInput({ estimatedLevel: 'A1' }), candidates);
+    const items = generateRoadmap(
+      gradedInput({ estimatedLevel: 'A1' }),
+      candidates,
+    );
     expect(items).toHaveLength(1);
     expect(items[0].pillar).toBe('GRAMMAR');
   });
@@ -190,7 +201,10 @@ describe('generateRoadmap', () => {
       course('g1', 'A1', new Date()),
       listeningCategory('l1', 'A1'),
     ];
-    const items = generateRoadmap(gradedInput({ estimatedLevel: 'A1' }), candidates);
+    const items = generateRoadmap(
+      gradedInput({ estimatedLevel: 'A1' }),
+      candidates,
+    );
     expect(items.map((i) => i.phase)).toEqual([1, 2]);
   });
 
@@ -211,9 +225,15 @@ describe('generateRoadmap', () => {
     expect(new Set(items.map((i) => i.pillar))).toEqual(
       new Set(['GRAMMAR', 'VOCABULARY', 'LISTENING']),
     );
-    expect(items.find((i) => i.pillar === 'GRAMMAR')?.resourceType).toBe('COURSE');
-    expect(items.find((i) => i.pillar === 'VOCABULARY')?.resourceType).toBe('VOCAB_LIBRARY');
-    expect(items.find((i) => i.pillar === 'LISTENING')?.resourceType).toBe('LISTENING_CATEGORY');
+    expect(items.find((i) => i.pillar === 'GRAMMAR')?.resourceType).toBe(
+      'COURSE',
+    );
+    expect(items.find((i) => i.pillar === 'VOCABULARY')?.resourceType).toBe(
+      'VOCAB_LIBRARY',
+    );
+    expect(items.find((i) => i.pillar === 'LISTENING')?.resourceType).toBe(
+      'LISTENING_CATEGORY',
+    );
   });
 
   describe('consolidation phase', () => {
@@ -285,7 +305,9 @@ describe('generateRoadmap', () => {
       // "Củng cố" alone also appears in ordinary phase>1 reinforcement text
       // ("Củng cố từ vựng (25%)."); the consolidation-specific phrase is
       // "nâng trình độ" ("level up"), which must be entirely absent here.
-      expect(items.every((i) => !i.reason.includes('nâng trình độ'))).toBe(true);
+      expect(items.every((i) => !i.reason.includes('nâng trình độ'))).toBe(
+        true,
+      );
     });
 
     it('generalizes to a non-Course pillar as the weakest — consolidation revisits Listening', () => {

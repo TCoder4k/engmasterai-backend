@@ -33,7 +33,10 @@ export class LearningController {
   @UseGuards(JwtAuthGuard, LearningRateLimitGuard)
   @LearningRateLimit({ kind: 'queue', max: 60, windowSeconds: 60 })
   @Get('reviews/due')
-  async getDueReviews(@Query(queryPipe) query: QueryDueReviewsDto, @Req() req: AuthenticatedRequest) {
+  async getDueReviews(
+    @Query(queryPipe) query: QueryDueReviewsDto,
+    @Req() req: AuthenticatedRequest,
+  ) {
     return this.learningService.getDueReviews(req.user.userId, query);
   }
 

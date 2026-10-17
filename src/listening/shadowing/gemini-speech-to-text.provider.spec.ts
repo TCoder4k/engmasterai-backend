@@ -19,7 +19,11 @@ const config = (values: Record<string, unknown> = {}): ConfigService =>
   }) as unknown as ConfigService;
 
 const okResponse = (body: unknown): Response =>
-  ({ ok: true, status: 200, json: () => Promise.resolve(body) }) as unknown as Response;
+  ({
+    ok: true,
+    status: 200,
+    json: () => Promise.resolve(body),
+  }) as unknown as Response;
 
 const audioRequest = {
   audio: Buffer.from('fake-audio'),
@@ -36,12 +40,16 @@ describe('GeminiSpeechToTextProvider', () => {
   // returns the expected sentence, every student scores 100%, and the
   // transcripts look perfect while the feature measures nothing.
   it('sends the audio and the prompt, and nothing that could reveal the answer', async () => {
-    const fetchSpy = jest
-      .spyOn(global, 'fetch')
-      .mockResolvedValue(okResponse({
-        candidates: [{ content: { parts: [{ text: '{"transcript":"hello"}' }] } }],
-      }));
-    const provider = new GeminiSpeechToTextProvider(config({ GEMINI_API_KEY: 'k' }));
+    const fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValue(
+      okResponse({
+        candidates: [
+          { content: { parts: [{ text: '{"transcript":"hello"}' }] } },
+        ],
+      }),
+    );
+    const provider = new GeminiSpeechToTextProvider(
+      config({ GEMINI_API_KEY: 'k' }),
+    );
 
     await provider.transcribe(audioRequest);
 
@@ -59,9 +67,11 @@ describe('GeminiSpeechToTextProvider', () => {
   });
 
   it('sends the API key as a header, never in the URL', async () => {
-    const fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValue(
-      okResponse({ candidates: [{ content: { parts: [{ text: 'hi' }] } }] }),
-    );
+    const fetchSpy = jest
+      .spyOn(global, 'fetch')
+      .mockResolvedValue(
+        okResponse({ candidates: [{ content: { parts: [{ text: 'hi' }] } }] }),
+      );
     const provider = new GeminiSpeechToTextProvider(
       config({ GEMINI_API_KEY: 'secret-key' }),
     );
@@ -71,33 +81,41 @@ describe('GeminiSpeechToTextProvider', () => {
     // A key in a query string ends up in access logs, proxy logs and error
     // reports — all places nobody intends to store a credential.
     expect(fetchSpy.mock.calls[0][0] as string).not.toContain('secret-key');
-    const headers = (fetchSpy.mock.calls[0][1] as RequestInit).headers as Record<
-      string,
-      string
-    >;
+    const headers = (fetchSpy.mock.calls[0][1] as RequestInit)
+      .headers as Record<string, string>;
     expect(headers['x-goog-api-key']).toBe('secret-key');
   });
 
   it('asks for a deterministic answer, so one recording cannot get two scores', async () => {
-    const fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValue(
-      okResponse({ candidates: [{ content: { parts: [{ text: 'hi' }] } }] }),
+    const fetchSpy = jest
+      .spyOn(global, 'fetch')
+      .mockResolvedValue(
+        okResponse({ candidates: [{ content: { parts: [{ text: 'hi' }] } }] }),
+      );
+    const provider = new GeminiSpeechToTextProvider(
+      config({ GEMINI_API_KEY: 'k' }),
     );
-    const provider = new GeminiSpeechToTextProvider(config({ GEMINI_API_KEY: 'k' }));
 
     await provider.transcribe(audioRequest);
 
     const body = JSON.parse(
       (fetchSpy.mock.calls[0][1] as RequestInit).body as string,
-    ) as { generationConfig: { temperature: number; responseMimeType: string } };
+    ) as {
+      generationConfig: { temperature: number; responseMimeType: string };
+    };
     expect(body.generationConfig.temperature).toBe(0);
     expect(body.generationConfig.responseMimeType).toBe('application/json');
   });
 
   it('strips codec parameters the inference API will not accept', async () => {
-    const fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValue(
-      okResponse({ candidates: [{ content: { parts: [{ text: 'hi' }] } }] }),
+    const fetchSpy = jest
+      .spyOn(global, 'fetch')
+      .mockResolvedValue(
+        okResponse({ candidates: [{ content: { parts: [{ text: 'hi' }] } }] }),
+      );
+    const provider = new GeminiSpeechToTextProvider(
+      config({ GEMINI_API_KEY: 'k' }),
     );
-    const provider = new GeminiSpeechToTextProvider(config({ GEMINI_API_KEY: 'k' }));
 
     await provider.transcribe(audioRequest);
 
@@ -108,11 +126,15 @@ describe('GeminiSpeechToTextProvider', () => {
     expect(inline?.inline_data?.mime_type).toBe('audio/webm');
   });
 
-  it('targets the default chain\'s first model when GEMINI_STT_MODEL is unset', async () => {
+  it("targets the default chain's first model when GEMINI_STT_MODEL is unset", async () => {
     const fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValue(
-      okResponse({ candidates: [{ content: { parts: [{ text: '{"transcript":"hi"}' }] } }] }),
+      okResponse({
+        candidates: [{ content: { parts: [{ text: '{"transcript":"hi"}' }] } }],
+      }),
     );
-    const provider = new GeminiSpeechToTextProvider(config({ GEMINI_API_KEY: 'k' }));
+    const provider = new GeminiSpeechToTextProvider(
+      config({ GEMINI_API_KEY: 'k' }),
+    );
 
     await provider.transcribe(audioRequest);
 
@@ -124,7 +146,11 @@ describe('GeminiSpeechToTextProvider', () => {
       .spyOn(global, 'fetch')
       .mockResolvedValueOnce({ ok: false, status: 503 } as unknown as Response)
       .mockResolvedValueOnce(
-        okResponse({ candidates: [{ content: { parts: [{ text: '{"transcript":"hi"}' }] } }] }),
+        okResponse({
+          candidates: [
+            { content: { parts: [{ text: '{"transcript":"hi"}' }] } },
+          ],
+        }),
       );
     const provider = new GeminiSpeechToTextProvider(
       config({ GEMINI_API_KEY: 'k', GEMINI_STT_MODEL: 'model-a,model-b' }),
@@ -152,7 +178,9 @@ describe('GeminiSpeechToTextProvider', () => {
   });
 
   it('reports a 400 as bad audio and a 500 as an outage', async () => {
-    const provider = new GeminiSpeechToTextProvider(config({ GEMINI_API_KEY: 'k' }));
+    const provider = new GeminiSpeechToTextProvider(
+      config({ GEMINI_API_KEY: 'k' }),
+    );
 
     jest
       .spyOn(global, 'fetch')
@@ -173,7 +201,9 @@ describe('GeminiSpeechToTextProvider', () => {
     const abort = new Error('aborted');
     abort.name = 'AbortError';
     jest.spyOn(global, 'fetch').mockRejectedValue(abort);
-    const provider = new GeminiSpeechToTextProvider(config({ GEMINI_API_KEY: 'k' }));
+    const provider = new GeminiSpeechToTextProvider(
+      config({ GEMINI_API_KEY: 'k' }),
+    );
 
     await expect(provider.transcribe(audioRequest)).rejects.toMatchObject({
       kind: 'TIMEOUT',
@@ -183,8 +213,12 @@ describe('GeminiSpeechToTextProvider', () => {
   it('reports a safety block as unprocessable audio, not as an outage', async () => {
     jest
       .spyOn(global, 'fetch')
-      .mockResolvedValue(okResponse({ promptFeedback: { blockReason: 'SAFETY' } }));
-    const provider = new GeminiSpeechToTextProvider(config({ GEMINI_API_KEY: 'k' }));
+      .mockResolvedValue(
+        okResponse({ promptFeedback: { blockReason: 'SAFETY' } }),
+      );
+    const provider = new GeminiSpeechToTextProvider(
+      config({ GEMINI_API_KEY: 'k' }),
+    );
 
     await expect(provider.transcribe(audioRequest)).rejects.toBeInstanceOf(
       SpeechToTextError,
@@ -197,10 +231,14 @@ describe('GeminiSpeechToTextProvider', () => {
   // Silence is a RESULT, not a failure. "You were not heard" is something a
   // student can act on; an exception would hide it behind a retry prompt.
   it('returns an empty transcript for silence rather than raising', async () => {
-    jest.spyOn(global, 'fetch').mockResolvedValue(
-      okResponse({ candidates: [{ content: { parts: [{ text: '' }] } }] }),
+    jest
+      .spyOn(global, 'fetch')
+      .mockResolvedValue(
+        okResponse({ candidates: [{ content: { parts: [{ text: '' }] } }] }),
+      );
+    const provider = new GeminiSpeechToTextProvider(
+      config({ GEMINI_API_KEY: 'k' }),
     );
-    const provider = new GeminiSpeechToTextProvider(config({ GEMINI_API_KEY: 'k' }));
 
     await expect(provider.transcribe(audioRequest)).resolves.toEqual({
       transcript: '',

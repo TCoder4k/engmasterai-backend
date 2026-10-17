@@ -87,9 +87,9 @@ export class LessonService {
 
     const [lessons, premium] = await Promise.all([
       this.prismaService.lesson.findMany({
-      where: { courseId, isPublished: true },
-      orderBy: { orderIndex: 'asc' },
-      select: USER_SELECT,
+        where: { courseId, isPublished: true },
+        orderBy: { orderIndex: 'asc' },
+        select: USER_SELECT,
       }),
       isUserPremium(this.prismaService, user.userId),
     ]);
@@ -127,7 +127,11 @@ export class LessonService {
       });
     }
 
-    const { isPublished: _isPublished, course: _course, ...publicLesson } = lesson;
+    const {
+      isPublished: _isPublished,
+      course: _course,
+      ...publicLesson
+    } = lesson;
     return withPublishedTaskTypes(publicLesson);
   }
 

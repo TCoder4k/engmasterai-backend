@@ -58,7 +58,11 @@ export class VocabDeckGuessProgressController {
   // kept deliberately tight (a student has no legitimate reason to reset
   // the same deck more than a handful of times in ten minutes).
   @UseGuards(JwtAuthGuard, VocabDeckRateLimitGuard)
-  @VocabDeckRateLimit({ kind: 'guessProgressReset', max: 10, windowSeconds: 600 })
+  @VocabDeckRateLimit({
+    kind: 'guessProgressReset',
+    max: 10,
+    windowSeconds: 600,
+  })
   @Delete()
   @HttpCode(HttpStatus.NO_CONTENT)
   async resetGuessProgress(

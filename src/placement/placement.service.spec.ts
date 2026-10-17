@@ -28,9 +28,30 @@ const buildHarness = (
     userId: 'user-1',
     goal: 'FOUNDATION',
     questionIds: [
-      'g1', 'g2', 'g3', 'g4', 'g5', 'g6', 'g7', 'g8',
-      'v1', 'v2', 'v3', 'v4', 'v5', 'v6', 'v7', 'v8',
-      'l1', 'l2', 'l3', 'l4', 'l5', 'l6', 'l7', 'l8',
+      'g1',
+      'g2',
+      'g3',
+      'g4',
+      'g5',
+      'g6',
+      'g7',
+      'g8',
+      'v1',
+      'v2',
+      'v3',
+      'v4',
+      'v5',
+      'v6',
+      'v7',
+      'v8',
+      'l1',
+      'l2',
+      'l3',
+      'l4',
+      'l5',
+      'l6',
+      'l7',
+      'l8',
     ],
     startedAt: new Date(NOW.getTime() - 60_000),
     expiresAt: new Date(NOW.getTime() + 4 * 60_000), // 4 min remaining by default
@@ -145,7 +166,9 @@ const buildHarness = (
   // Phase 4 — requestRoadmapPlan's conditional write. Defaults to "the
   // condition matched" (count: 1); tests exercising the concurrency guard
   // override this to 0 to simulate a retake racing an in-flight AI call.
-  const roadmapUpdateMany = jest.fn(() => Promise.resolve({ count: 1 } as never));
+  const roadmapUpdateMany = jest.fn(() =>
+    Promise.resolve({ count: 1 } as never),
+  );
   const courseFindMany = jest.fn(() => Promise.resolve([] as never));
   // Multi-pillar: loadAvailableResources/joinLiveResources query all 3
   // tables in parallel. Empty by default, same as courseFindMany, so a test
@@ -160,7 +183,8 @@ const buildHarness = (
   // jest.fn() infers Parameters as `[]`, which TypeScript then refuses to
   // index into.
   const speakingScenarioFindMany = jest.fn(
-    (_args?: { where?: Record<string, unknown> }) => Promise.resolve([] as never),
+    (_args?: { where?: Record<string, unknown> }) =>
+      Promise.resolve([] as never),
   );
   // Backs getEstimatedMinutesByCourseId (shared/estimated-minutes.ts), called
   // by joinLiveResources. Empty by default -> totalEstimatedMinutes falls
@@ -187,7 +211,11 @@ const buildHarness = (
   // success/rejection/failure paths.
   const roadmapPlannerPlan = jest.fn(() =>
     Promise.resolve({
-      phases: [] as { resourceType: string; resourceId: string; reason: string }[],
+      phases: [] as {
+        resourceType: string;
+        resourceId: string;
+        reason: string;
+      }[],
       overallReason: '',
       model: 'fake-planner-model',
     }),
@@ -409,13 +437,17 @@ describe('PlacementService.submit', () => {
   // 8-question fixture the harness already seeds (g1-g8).
   it('returns authoritative per-section correct/total counts alongside the rounded score (5/8 -> 63%)', async () => {
     const { service, placementAnswerFindMany } = buildHarness();
-    const fiveCorrectGrammarAnswers = ['g1', 'g2', 'g3', 'g4', 'g5'].map((questionId) => ({
-      questionId,
-      submitted: { value: true },
-    }));
+    const fiveCorrectGrammarAnswers = ['g1', 'g2', 'g3', 'g4', 'g5'].map(
+      (questionId) => ({
+        questionId,
+        submitted: { value: true },
+      }),
+    );
     // finalizeNow and toResultDto each re-fetch answers independently (see
     // toResultDto's own comment) — both calls must see the same data.
-    placementAnswerFindMany.mockResolvedValue(fiveCorrectGrammarAnswers as never);
+    placementAnswerFindMany.mockResolvedValue(
+      fiveCorrectGrammarAnswers as never,
+    );
 
     const result = await service.submit('user-1', 'attempt-1');
 
@@ -508,9 +540,30 @@ describe('PlacementService.getAttemptReview', () => {
     // Ordered by the attempt's own questionIds — the order the student
     // actually saw them in — never DB/insertion order.
     expect(review.items.map((i) => i.questionId)).toEqual([
-      'g1', 'g2', 'g3', 'g4', 'g5', 'g6', 'g7', 'g8',
-      'v1', 'v2', 'v3', 'v4', 'v5', 'v6', 'v7', 'v8',
-      'l1', 'l2', 'l3', 'l4', 'l5', 'l6', 'l7', 'l8',
+      'g1',
+      'g2',
+      'g3',
+      'g4',
+      'g5',
+      'g6',
+      'g7',
+      'g8',
+      'v1',
+      'v2',
+      'v3',
+      'v4',
+      'v5',
+      'v6',
+      'v7',
+      'v8',
+      'l1',
+      'l2',
+      'l3',
+      'l4',
+      'l5',
+      'l6',
+      'l7',
+      'l8',
     ]);
 
     const g1 = review.items.find((i) => i.questionId === 'g1')!;
@@ -532,7 +585,9 @@ describe('PlacementService.getAttemptReview', () => {
     const { service, placementQuestionFindMany } = buildHarness({
       completedAt: new Date('2026-08-11T09:59:00.000Z'),
     });
-    placementQuestionFindMany.mockImplementationOnce(() => Promise.resolve([] as never));
+    placementQuestionFindMany.mockImplementationOnce(() =>
+      Promise.resolve([] as never),
+    );
 
     const review = await service.getAttemptReview('user-1', 'attempt-1');
 
@@ -580,8 +635,12 @@ describe('PlacementService.startBeginner', () => {
   });
 
   it("loads candidates through loadAvailableResources, across all 3 pillar tables, with the caller's own goal", async () => {
-    const { service, courseFindMany, vocabLibraryFindMany, listeningCategoryFindMany } =
-      buildHarness({}, { learningGoal: 'FOUNDATION' });
+    const {
+      service,
+      courseFindMany,
+      vocabLibraryFindMany,
+      listeningCategoryFindMany,
+    } = buildHarness({}, { learningGoal: 'FOUNDATION' });
     await service.startBeginner('user-1');
     const goalFilter = {
       OR: [
@@ -591,14 +650,22 @@ describe('PlacementService.startBeginner', () => {
     };
     expect(courseFindMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: expect.objectContaining({ isPublished: true, type: 'GRAMMAR', ...goalFilter }),
+        where: expect.objectContaining({
+          isPublished: true,
+          type: 'GRAMMAR',
+          ...goalFilter,
+        }),
       }),
     );
     expect(vocabLibraryFindMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: expect.objectContaining({ isPublished: true, ...goalFilter }) }),
+      expect.objectContaining({
+        where: expect.objectContaining({ isPublished: true, ...goalFilter }),
+      }),
     );
     expect(listeningCategoryFindMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: expect.objectContaining({ isPublished: true, ...goalFilter }) }),
+      expect.objectContaining({
+        where: expect.objectContaining({ isPublished: true, ...goalFilter }),
+      }),
     );
   });
 
@@ -732,8 +799,13 @@ describe('PlacementService.getRoadmap', () => {
   });
 
   it('joins items against LIVE Course/VocabLibrary/ListeningCategory rows — never the stored snapshot', async () => {
-    const { service, roadmapFindUnique, courseFindMany, vocabLibraryFindMany, listeningCategoryFindMany } =
-      buildHarness();
+    const {
+      service,
+      roadmapFindUnique,
+      courseFindMany,
+      vocabLibraryFindMany,
+      listeningCategoryFindMany,
+    } = buildHarness();
     roadmapFindUnique.mockResolvedValueOnce({
       goal: 'TOEIC_450',
       estimatedLevel: 'B1',
@@ -760,13 +832,19 @@ describe('PlacementService.getRoadmap', () => {
     expect(result.items[0].resourceThumbnail).toBe('thumb.png');
     // Only published resources are ever queried for the join.
     expect(courseFindMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: expect.objectContaining({ isPublished: true }) }),
+      expect.objectContaining({
+        where: expect.objectContaining({ isPublished: true }),
+      }),
     );
     expect(vocabLibraryFindMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: expect.objectContaining({ isPublished: true }) }),
+      expect.objectContaining({
+        where: expect.objectContaining({ isPublished: true }),
+      }),
     );
     expect(listeningCategoryFindMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: expect.objectContaining({ isPublished: true }) }),
+      expect.objectContaining({
+        where: expect.objectContaining({ isPublished: true }),
+      }),
     );
   });
 
@@ -807,8 +885,13 @@ describe('PlacementService.getRoadmap', () => {
   });
 
   it('includes totalEstimatedMinutes per course, from the shared estimated-minutes helper — always 0 for VocabLibrary/ListeningCategory items', async () => {
-    const { service, roadmapFindUnique, courseFindMany, vocabLibraryFindMany, lessonGroupBy } =
-      buildHarness();
+    const {
+      service,
+      roadmapFindUnique,
+      courseFindMany,
+      vocabLibraryFindMany,
+      lessonGroupBy,
+    } = buildHarness();
     roadmapFindUnique.mockResolvedValueOnce({
       goal: 'TOEIC_450',
       estimatedLevel: 'B1',
@@ -816,8 +899,20 @@ describe('PlacementService.getRoadmap', () => {
       generatedAt: NOW,
       aiSummary: null,
       items: [
-        { phase: 1, pillar: 'GRAMMAR', resourceType: 'COURSE', resourceId: 'c1', reason: 'x' },
-        { phase: 2, pillar: 'VOCABULARY', resourceType: 'VOCAB_LIBRARY', resourceId: 'v1', reason: 'y' },
+        {
+          phase: 1,
+          pillar: 'GRAMMAR',
+          resourceType: 'COURSE',
+          resourceId: 'c1',
+          reason: 'x',
+        },
+        {
+          phase: 2,
+          pillar: 'VOCABULARY',
+          resourceType: 'VOCAB_LIBRARY',
+          resourceId: 'v1',
+          reason: 'y',
+        },
       ],
     } as never);
     courseFindMany.mockResolvedValueOnce([
@@ -832,8 +927,12 @@ describe('PlacementService.getRoadmap', () => {
 
     const result = await service.getRoadmap('user-1');
 
-    expect(result.items.find((i) => i.resourceId === 'c1')?.totalEstimatedMinutes).toBe(240);
-    expect(result.items.find((i) => i.resourceId === 'v1')?.totalEstimatedMinutes).toBe(0);
+    expect(
+      result.items.find((i) => i.resourceId === 'c1')?.totalEstimatedMinutes,
+    ).toBe(240);
+    expect(
+      result.items.find((i) => i.resourceId === 'v1')?.totalEstimatedMinutes,
+    ).toBe(0);
   });
 
   it('surfaces aiSummary verbatim (null until AI planning populates it)', async () => {
@@ -865,7 +964,12 @@ describe('PlacementService.getRoadmap', () => {
       generatedAt: NOW,
       aiSummary: null,
       items: [
-        { phase: 1, courseType: 'GRAMMAR', courseId: 'c1', reason: 'Old-shape reason.' },
+        {
+          phase: 1,
+          courseType: 'GRAMMAR',
+          courseId: 'c1',
+          reason: 'Old-shape reason.',
+        },
       ],
     } as never);
     courseFindMany.mockResolvedValueOnce([
@@ -1177,7 +1281,13 @@ describe('PlacementService.requestRoadmapPlan', () => {
         aiPlanningModel: 'fake-planner-model',
         aiSummary: 'Ưu tiên ngữ pháp trước vì phù hợp trình độ hiện tại.',
         items: [
-          { phase: 1, pillar: 'GRAMMAR', resourceType: 'COURSE', resourceId: 'foundation-grammar', reason: 'Fits.' },
+          {
+            phase: 1,
+            pillar: 'GRAMMAR',
+            resourceType: 'COURSE',
+            resourceId: 'foundation-grammar',
+            reason: 'Fits.',
+          },
         ],
       },
     );
@@ -1185,7 +1295,13 @@ describe('PlacementService.requestRoadmapPlan', () => {
     // re-validate against the latest catalog after Gemini responds.
     courseFindMany.mockResolvedValue([CANDIDATE_ROW] as never);
     roadmapPlannerPlan.mockResolvedValueOnce({
-      phases: [{ resourceType: 'COURSE', resourceId: 'foundation-grammar', reason: 'Fits your level.' }],
+      phases: [
+        {
+          resourceType: 'COURSE',
+          resourceId: 'foundation-grammar',
+          reason: 'Fits your level.',
+        },
+      ],
       overallReason: 'Ưu tiên ngữ pháp trước vì phù hợp trình độ hiện tại.',
       model: 'fake-planner-model',
     });
@@ -1193,10 +1309,20 @@ describe('PlacementService.requestRoadmapPlan', () => {
     const result = await service.requestRoadmapPlan('user-1');
 
     expect(roadmapUpdateMany).toHaveBeenCalledWith({
-      where: { userId: 'user-1', generatedAt: GENERATED_AT, aiPlanningUsedAt: null },
+      where: {
+        userId: 'user-1',
+        generatedAt: GENERATED_AT,
+        aiPlanningUsedAt: null,
+      },
       data: expect.objectContaining({
         items: [
-          { phase: 1, pillar: 'GRAMMAR', resourceType: 'COURSE', resourceId: 'foundation-grammar', reason: 'Fits your level.' },
+          {
+            phase: 1,
+            pillar: 'GRAMMAR',
+            resourceType: 'COURSE',
+            resourceId: 'foundation-grammar',
+            reason: 'Fits your level.',
+          },
         ],
         aiSummary: 'Ưu tiên ngữ pháp trước vì phù hợp trình độ hiện tại.',
         aiPlanningModel: 'fake-planner-model',
@@ -1216,7 +1342,13 @@ describe('PlacementService.requestRoadmapPlan', () => {
     queueRoadmapReads(roadmapFindUnique, {}, {});
     courseFindMany.mockResolvedValue([CANDIDATE_ROW] as never);
     roadmapPlannerPlan.mockResolvedValueOnce({
-      phases: [{ resourceType: 'COURSE', resourceId: 'not-a-real-candidate', reason: 'x' }],
+      phases: [
+        {
+          resourceType: 'COURSE',
+          resourceId: 'not-a-real-candidate',
+          reason: 'x',
+        },
+      ],
       overallReason: 'x',
     });
 
@@ -1238,10 +1370,19 @@ describe('PlacementService.requestRoadmapPlan', () => {
     queueRoadmapReads(roadmapFindUnique, {}, {});
     courseFindMany.mockResolvedValue([] as never);
     vocabLibraryFindMany.mockResolvedValue([
-      { id: 'vocab-lib-1', level: 'A1', orderIndex: 0, name: '1000 Từ Tiếng Anh Thông Dụng', description: '', suitableGoals: [] },
+      {
+        id: 'vocab-lib-1',
+        level: 'A1',
+        orderIndex: 0,
+        name: '1000 Từ Tiếng Anh Thông Dụng',
+        description: '',
+        suitableGoals: [],
+      },
     ] as never);
     roadmapPlannerPlan.mockResolvedValueOnce({
-      phases: [{ resourceType: 'COURSE', resourceId: 'vocab-lib-1', reason: 'x' }],
+      phases: [
+        { resourceType: 'COURSE', resourceId: 'vocab-lib-1', reason: 'x' },
+      ],
       overallReason: 'y',
     });
 
@@ -1262,7 +1403,10 @@ describe('PlacementService.requestRoadmapPlan', () => {
     queueRoadmapReads(roadmapFindUnique, {}, {});
     courseFindMany.mockResolvedValue([CANDIDATE_ROW] as never);
     roadmapPlannerPlan.mockRejectedValueOnce(
-      new RoadmapPlanningError('UNAVAILABLE', 'AI roadmap planning is unavailable'),
+      new RoadmapPlanningError(
+        'UNAVAILABLE',
+        'AI roadmap planning is unavailable',
+      ),
     );
 
     await expect(service.requestRoadmapPlan('user-1')).resolves.toMatchObject({
@@ -1285,12 +1429,24 @@ describe('PlacementService.requestRoadmapPlan', () => {
       roadmapUpdateMany,
       courseFindMany,
     } = buildHarness();
-    queueRoadmapReads(roadmapFindUnique, {}, {
-      // The "already correct, fresher" roadmap the retake itself wrote —
-      // this is what getRoadmap's own later read returns, proving the
-      // AI-selected items from below never got persisted over it.
-      items: [{ phase: 1, pillar: 'GRAMMAR', resourceType: 'COURSE', resourceId: 'retake-winner', reason: 'From the retake.' }],
-    });
+    queueRoadmapReads(
+      roadmapFindUnique,
+      {},
+      {
+        // The "already correct, fresher" roadmap the retake itself wrote —
+        // this is what getRoadmap's own later read returns, proving the
+        // AI-selected items from below never got persisted over it.
+        items: [
+          {
+            phase: 1,
+            pillar: 'GRAMMAR',
+            resourceType: 'COURSE',
+            resourceId: 'retake-winner',
+            reason: 'From the retake.',
+          },
+        ],
+      },
+    );
     // Includes 'retake-winner' too, so the final getRoadmap's join actually
     // keeps that item rather than silently dropping it as "unpublished" —
     // which would make the assertion below vacuously true on an empty array.
@@ -1307,7 +1463,13 @@ describe('PlacementService.requestRoadmapPlan', () => {
       },
     ] as never);
     roadmapPlannerPlan.mockResolvedValueOnce({
-      phases: [{ resourceType: 'COURSE', resourceId: 'foundation-grammar', reason: 'Stale — computed before the retake.' }],
+      phases: [
+        {
+          resourceType: 'COURSE',
+          resourceId: 'foundation-grammar',
+          reason: 'Stale — computed before the retake.',
+        },
+      ],
       overallReason: 'Stale rationale.',
     });
     // Simulates Postgres reporting 0 rows matched: a retake already bumped
@@ -1318,14 +1480,20 @@ describe('PlacementService.requestRoadmapPlan', () => {
 
     expect(roadmapUpdateMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { userId: 'user-1', generatedAt: GENERATED_AT, aiPlanningUsedAt: null },
+        where: {
+          userId: 'user-1',
+          generatedAt: GENERATED_AT,
+          aiPlanningUsedAt: null,
+        },
       }),
     );
     // The retake's own, fresher item survives untouched...
     expect(result.items).toHaveLength(1);
     expect(result.items[0].resourceId).toBe('retake-winner');
     // ...and the stale AI plan's resourceId must NOT appear anywhere.
-    expect(result.items.every((i) => i.resourceId !== 'foundation-grammar')).toBe(true);
+    expect(
+      result.items.every((i) => i.resourceId !== 'foundation-grammar'),
+    ).toBe(true);
     expect(result.aiPlanningUsed).toBe(false);
   });
 
@@ -1374,7 +1542,10 @@ describe('PlacementService.requestRoadmapPlan', () => {
     queueRoadmapReads(roadmapFindUnique, {}, {});
     courseFindMany.mockResolvedValue([CANDIDATE_ROW] as never);
     roadmapPlannerPlan.mockRejectedValue(
-      new RoadmapPlanningError('UNAVAILABLE', 'AI roadmap planning is unavailable'),
+      new RoadmapPlanningError(
+        'UNAVAILABLE',
+        'AI roadmap planning is unavailable',
+      ),
     );
 
     await service.requestRoadmapPlan('user-1');
@@ -1390,13 +1561,32 @@ describe('PlacementService.requestRoadmapPlan', () => {
   // first writer's result can persist. Modeled here via roadmapUpdateMany
   // reporting count:1 then count:0.
   it('a race between two calls for the same generation is guarded by the WHERE clause, not just the read-time check', async () => {
-    const { service, roadmapFindUnique, roadmapPlannerPlan, roadmapUpdateMany, courseFindMany } =
-      buildHarness();
-    queueRoadmapReads(roadmapFindUnique, {}, { aiPlanningModel: 'fake-planner-model' });
-    queueRoadmapReads(roadmapFindUnique, {}, { aiPlanningModel: 'fake-planner-model' });
+    const {
+      service,
+      roadmapFindUnique,
+      roadmapPlannerPlan,
+      roadmapUpdateMany,
+      courseFindMany,
+    } = buildHarness();
+    queueRoadmapReads(
+      roadmapFindUnique,
+      {},
+      { aiPlanningModel: 'fake-planner-model' },
+    );
+    queueRoadmapReads(
+      roadmapFindUnique,
+      {},
+      { aiPlanningModel: 'fake-planner-model' },
+    );
     courseFindMany.mockResolvedValue([CANDIDATE_ROW] as never);
     roadmapPlannerPlan.mockResolvedValue({
-      phases: [{ resourceType: 'COURSE', resourceId: 'foundation-grammar', reason: 'x' }],
+      phases: [
+        {
+          resourceType: 'COURSE',
+          resourceId: 'foundation-grammar',
+          reason: 'x',
+        },
+      ],
       overallReason: 'y',
     });
     roadmapUpdateMany
@@ -1409,11 +1599,15 @@ describe('PlacementService.requestRoadmapPlan', () => {
     expect(roadmapPlannerPlan).toHaveBeenCalledTimes(2); // both raced past the read-time check
     expect(roadmapUpdateMany).toHaveBeenNthCalledWith(
       1,
-      expect.objectContaining({ where: expect.objectContaining({ aiPlanningUsedAt: null }) }),
+      expect.objectContaining({
+        where: expect.objectContaining({ aiPlanningUsedAt: null }),
+      }),
     );
     expect(roadmapUpdateMany).toHaveBeenNthCalledWith(
       2,
-      expect.objectContaining({ where: expect.objectContaining({ aiPlanningUsedAt: null }) }),
+      expect.objectContaining({
+        where: expect.objectContaining({ aiPlanningUsedAt: null }),
+      }),
     );
   });
 });

@@ -1,5 +1,8 @@
 import * as fsp from 'fs/promises';
-import { isAudioDebugDumpEnabled, SpeakingLiveAudioDiagnostics } from './speaking-live-audio-diagnostics';
+import {
+  isAudioDebugDumpEnabled,
+  SpeakingLiveAudioDiagnostics,
+} from './speaking-live-audio-diagnostics';
 
 // Temporary diagnostic tool (docs/sprints/sprint-13-speaking-partner.md
 // §16/§17) — this spec pins the two properties that matter for a debugging
@@ -28,7 +31,8 @@ const encodeChunk = (samples: number[]): string => {
 describe('isAudioDebugDumpEnabled', () => {
   const original = process.env.SPEAKING_LIVE_AUDIO_DEBUG_DUMP;
   afterEach(() => {
-    if (original === undefined) delete process.env.SPEAKING_LIVE_AUDIO_DEBUG_DUMP;
+    if (original === undefined)
+      delete process.env.SPEAKING_LIVE_AUDIO_DEBUG_DUMP;
     else process.env.SPEAKING_LIVE_AUDIO_DEBUG_DUMP = original;
   });
 
@@ -126,9 +130,14 @@ describe('SpeakingLiveAudioDiagnostics — enabled', () => {
 
     const report = await diagnostics.finalize('turn');
 
-    expect(mockedMkdir).toHaveBeenCalledWith(expect.any(String), { recursive: true });
+    expect(mockedMkdir).toHaveBeenCalledWith(expect.any(String), {
+      recursive: true,
+    });
     expect(mockedWriteFile).toHaveBeenCalledTimes(1);
-    const [writtenPath, writtenBuffer] = mockedWriteFile.mock.calls[0] as [string, Buffer];
+    const [writtenPath, writtenBuffer] = mockedWriteFile.mock.calls[0] as [
+      string,
+      Buffer,
+    ];
     expect(report!.wavPath).toBe(writtenPath);
     expect(writtenPath.endsWith('.wav')).toBe(true);
 

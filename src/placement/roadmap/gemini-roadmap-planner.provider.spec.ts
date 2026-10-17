@@ -7,7 +7,10 @@ import {
   truncateOverallReason,
   truncateReason,
 } from './gemini-roadmap-planner.provider';
-import { RoadmapPlanningError, RoadmapPlanningRequest } from './roadmap-planner.provider';
+import {
+  RoadmapPlanningError,
+  RoadmapPlanningRequest,
+} from './roadmap-planner.provider';
 
 // `fetch` is stubbed throughout: this suite is about the shape of the
 // request we send and how we interpret what comes back, and a real call
@@ -21,7 +24,11 @@ const config = (values: Record<string, unknown> = {}): ConfigService =>
   }) as unknown as ConfigService;
 
 const okResponse = (body: unknown): Response =>
-  ({ ok: true, status: 200, json: () => Promise.resolve(body) }) as unknown as Response;
+  ({
+    ok: true,
+    status: 200,
+    json: () => Promise.resolve(body),
+  }) as unknown as Response;
 
 const okPlan = (
   phases: { resourceType: string; resourceId: string; reason: string }[],
@@ -29,7 +36,11 @@ const okPlan = (
 ) =>
   okResponse({
     candidates: [
-      { content: { parts: [{ text: JSON.stringify({ phases, overallReason }) }] } },
+      {
+        content: {
+          parts: [{ text: JSON.stringify({ phases, overallReason }) }],
+        },
+      },
     ],
   });
 
@@ -80,24 +91,34 @@ describe('GeminiRoadmapPlannerProvider', () => {
   it('sends only the given candidate ids/titles across all 3 pillars, and the anti-fabrication constraints', async () => {
     const fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValue(
       okPlan([
-        { resourceType: 'COURSE', resourceId: 'foundation-grammar', reason: 'Fits your level.' },
+        {
+          resourceType: 'COURSE',
+          resourceId: 'foundation-grammar',
+          reason: 'Fits your level.',
+        },
       ]),
     );
-    const provider = new GeminiRoadmapPlannerProvider(config({ GEMINI_API_KEY: 'k' }));
+    const provider = new GeminiRoadmapPlannerProvider(
+      config({ GEMINI_API_KEY: 'k' }),
+    );
 
     await provider.plan(planningRequest);
 
     const body = JSON.parse(
       (fetchSpy.mock.calls[0][1] as RequestInit).body as string,
     ) as { contents: { parts: { text?: string }[] }[] };
-    const textParts = body.contents[0].parts.map((p) => p.text ?? '').join('\n');
+    const textParts = body.contents[0].parts
+      .map((p) => p.text ?? '')
+      .join('\n');
     expect(textParts).toContain('foundation-grammar');
     expect(textParts).toContain('foundation-vocab');
     expect(textParts).toContain('daily-conversations');
     expect(textParts).toContain('COURSE');
     expect(textParts).toContain('VOCAB_LIBRARY');
     expect(textParts).toContain('LISTENING_CATEGORY');
-    expect(textParts).toContain('never invent, rename, or reference any resource');
+    expect(textParts).toContain(
+      'never invent, rename, or reference any resource',
+    );
     expect(textParts).toMatch(
       /score, percentage, CEFR level, duration, lesson count, deck count, word count, or recording count/,
     );
@@ -106,10 +127,16 @@ describe('GeminiRoadmapPlannerProvider', () => {
   it('the prompt describes SPEAKING_SCENARIO and instructs the model to always place it last', async () => {
     const fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValue(
       okPlan([
-        { resourceType: 'COURSE', resourceId: 'foundation-grammar', reason: 'Fits your level.' },
+        {
+          resourceType: 'COURSE',
+          resourceId: 'foundation-grammar',
+          reason: 'Fits your level.',
+        },
       ]),
     );
-    const provider = new GeminiRoadmapPlannerProvider(config({ GEMINI_API_KEY: 'k' }));
+    const provider = new GeminiRoadmapPlannerProvider(
+      config({ GEMINI_API_KEY: 'k' }),
+    );
 
     await provider.plan(planningRequest);
 
@@ -124,10 +151,16 @@ describe('GeminiRoadmapPlannerProvider', () => {
   it('the prompt asks for a short, bolded-keyword overallReason written directly to the student', async () => {
     const fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValue(
       okPlan([
-        { resourceType: 'COURSE', resourceId: 'foundation-grammar', reason: 'Fits your level.' },
+        {
+          resourceType: 'COURSE',
+          resourceId: 'foundation-grammar',
+          reason: 'Fits your level.',
+        },
       ]),
     );
-    const provider = new GeminiRoadmapPlannerProvider(config({ GEMINI_API_KEY: 'k' }));
+    const provider = new GeminiRoadmapPlannerProvider(
+      config({ GEMINI_API_KEY: 'k' }),
+    );
 
     await provider.plan(planningRequest);
 
@@ -142,7 +175,13 @@ describe('GeminiRoadmapPlannerProvider', () => {
 
   it('sends the API key as a header, never in the URL', async () => {
     const fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValue(
-      okPlan([{ resourceType: 'COURSE', resourceId: 'foundation-grammar', reason: 'x' }]),
+      okPlan([
+        {
+          resourceType: 'COURSE',
+          resourceId: 'foundation-grammar',
+          reason: 'x',
+        },
+      ]),
     );
     const provider = new GeminiRoadmapPlannerProvider(
       config({ GEMINI_API_KEY: 'secret-key' }),
@@ -151,18 +190,24 @@ describe('GeminiRoadmapPlannerProvider', () => {
     await provider.plan(planningRequest);
 
     expect(fetchSpy.mock.calls[0][0] as string).not.toContain('secret-key');
-    const headers = (fetchSpy.mock.calls[0][1] as RequestInit).headers as Record<
-      string,
-      string
-    >;
+    const headers = (fetchSpy.mock.calls[0][1] as RequestInit)
+      .headers as Record<string, string>;
     expect(headers['x-goog-api-key']).toBe('secret-key');
   });
 
   it('asks for a deterministic, schema-shaped answer covering phases AND overallReason', async () => {
     const fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValue(
-      okPlan([{ resourceType: 'COURSE', resourceId: 'foundation-grammar', reason: 'x' }]),
+      okPlan([
+        {
+          resourceType: 'COURSE',
+          resourceId: 'foundation-grammar',
+          reason: 'x',
+        },
+      ]),
     );
-    const provider = new GeminiRoadmapPlannerProvider(config({ GEMINI_API_KEY: 'k' }));
+    const provider = new GeminiRoadmapPlannerProvider(
+      config({ GEMINI_API_KEY: 'k' }),
+    );
 
     await provider.plan(planningRequest);
 
@@ -183,16 +228,24 @@ describe('GeminiRoadmapPlannerProvider', () => {
     expect(body.generationConfig.responseSchema.required).toEqual(
       expect.arrayContaining(['phases', 'overallReason']),
     );
-    expect(body.generationConfig.responseSchema.properties.phases.items.required).toEqual(
-      expect.arrayContaining(['resourceType', 'resourceId', 'reason']),
-    );
+    expect(
+      body.generationConfig.responseSchema.properties.phases.items.required,
+    ).toEqual(expect.arrayContaining(['resourceType', 'resourceId', 'reason']));
   });
 
-  it('targets the default chain\'s first model when GEMINI_ROADMAP_PLANNER_MODEL is unset', async () => {
+  it("targets the default chain's first model when GEMINI_ROADMAP_PLANNER_MODEL is unset", async () => {
     const fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValue(
-      okPlan([{ resourceType: 'COURSE', resourceId: 'foundation-grammar', reason: 'x' }]),
+      okPlan([
+        {
+          resourceType: 'COURSE',
+          resourceId: 'foundation-grammar',
+          reason: 'x',
+        },
+      ]),
     );
-    const provider = new GeminiRoadmapPlannerProvider(config({ GEMINI_API_KEY: 'k' }));
+    const provider = new GeminiRoadmapPlannerProvider(
+      config({ GEMINI_API_KEY: 'k' }),
+    );
 
     await provider.plan(planningRequest);
 
@@ -204,10 +257,19 @@ describe('GeminiRoadmapPlannerProvider', () => {
       .spyOn(global, 'fetch')
       .mockResolvedValueOnce({ ok: false, status: 503 } as unknown as Response)
       .mockResolvedValueOnce(
-        okPlan([{ resourceType: 'COURSE', resourceId: 'foundation-grammar', reason: 'x' }]),
+        okPlan([
+          {
+            resourceType: 'COURSE',
+            resourceId: 'foundation-grammar',
+            reason: 'x',
+          },
+        ]),
       );
     const provider = new GeminiRoadmapPlannerProvider(
-      config({ GEMINI_API_KEY: 'k', GEMINI_ROADMAP_PLANNER_MODEL: 'model-a,model-b' }),
+      config({
+        GEMINI_API_KEY: 'k',
+        GEMINI_ROADMAP_PLANNER_MODEL: 'model-a,model-b',
+      }),
     );
 
     await provider.plan(planningRequest);
@@ -231,7 +293,9 @@ describe('GeminiRoadmapPlannerProvider', () => {
     jest
       .spyOn(global, 'fetch')
       .mockResolvedValue({ ok: false, status: 500 } as unknown as Response);
-    const provider = new GeminiRoadmapPlannerProvider(config({ GEMINI_API_KEY: 'k' }));
+    const provider = new GeminiRoadmapPlannerProvider(
+      config({ GEMINI_API_KEY: 'k' }),
+    );
 
     await expect(provider.plan(planningRequest)).rejects.toMatchObject({
       kind: 'UNAVAILABLE',
@@ -242,7 +306,9 @@ describe('GeminiRoadmapPlannerProvider', () => {
     const abort = new Error('aborted');
     abort.name = 'AbortError';
     jest.spyOn(global, 'fetch').mockRejectedValue(abort);
-    const provider = new GeminiRoadmapPlannerProvider(config({ GEMINI_API_KEY: 'k' }));
+    const provider = new GeminiRoadmapPlannerProvider(
+      config({ GEMINI_API_KEY: 'k' }),
+    );
 
     await expect(provider.plan(planningRequest)).rejects.toMatchObject({
       kind: 'TIMEOUT',
@@ -252,8 +318,12 @@ describe('GeminiRoadmapPlannerProvider', () => {
   it('reports a safety block as unavailable', async () => {
     jest
       .spyOn(global, 'fetch')
-      .mockResolvedValue(okResponse({ promptFeedback: { blockReason: 'SAFETY' } }));
-    const provider = new GeminiRoadmapPlannerProvider(config({ GEMINI_API_KEY: 'k' }));
+      .mockResolvedValue(
+        okResponse({ promptFeedback: { blockReason: 'SAFETY' } }),
+      );
+    const provider = new GeminiRoadmapPlannerProvider(
+      config({ GEMINI_API_KEY: 'k' }),
+    );
 
     await expect(provider.plan(planningRequest)).rejects.toBeInstanceOf(
       RoadmapPlanningError,
@@ -266,10 +336,14 @@ describe('GeminiRoadmapPlannerProvider', () => {
   // Unlike STT's silence, an empty planning answer is not a legitimate
   // result — a roadmap needs at least one phase.
   it('reports an empty answer as unavailable rather than an empty plan', async () => {
-    jest.spyOn(global, 'fetch').mockResolvedValue(
-      okResponse({ candidates: [{ content: { parts: [{ text: '' }] } }] }),
+    jest
+      .spyOn(global, 'fetch')
+      .mockResolvedValue(
+        okResponse({ candidates: [{ content: { parts: [{ text: '' }] } }] }),
+      );
+    const provider = new GeminiRoadmapPlannerProvider(
+      config({ GEMINI_API_KEY: 'k' }),
     );
-    const provider = new GeminiRoadmapPlannerProvider(config({ GEMINI_API_KEY: 'k' }));
 
     await expect(provider.plan(planningRequest)).rejects.toMatchObject({
       kind: 'UNAVAILABLE',
@@ -279,28 +353,48 @@ describe('GeminiRoadmapPlannerProvider', () => {
   it('truncates a phase reason to MAX_REASON_CHARS before returning it', async () => {
     const longReason = 'x'.repeat(MAX_REASON_CHARS + 50);
     jest.spyOn(global, 'fetch').mockResolvedValue(
-      okPlan([{ resourceType: 'COURSE', resourceId: 'foundation-grammar', reason: longReason }]),
+      okPlan([
+        {
+          resourceType: 'COURSE',
+          resourceId: 'foundation-grammar',
+          reason: longReason,
+        },
+      ]),
     );
-    const provider = new GeminiRoadmapPlannerProvider(config({ GEMINI_API_KEY: 'k' }));
+    const provider = new GeminiRoadmapPlannerProvider(
+      config({ GEMINI_API_KEY: 'k' }),
+    );
 
     const result = await provider.plan(planningRequest);
 
-    expect(result.phases[0].reason.length).toBeLessThanOrEqual(MAX_REASON_CHARS + 1); // +1 for a trailing ellipsis
+    expect(result.phases[0].reason.length).toBeLessThanOrEqual(
+      MAX_REASON_CHARS + 1,
+    ); // +1 for a trailing ellipsis
   });
 
   it('truncates overallReason to MAX_OVERALL_REASON_CHARS before returning it', async () => {
     const longReason = 'y'.repeat(MAX_OVERALL_REASON_CHARS + 50);
     jest.spyOn(global, 'fetch').mockResolvedValue(
       okPlan(
-        [{ resourceType: 'COURSE', resourceId: 'foundation-grammar', reason: 'x' }],
+        [
+          {
+            resourceType: 'COURSE',
+            resourceId: 'foundation-grammar',
+            reason: 'x',
+          },
+        ],
         longReason,
       ),
     );
-    const provider = new GeminiRoadmapPlannerProvider(config({ GEMINI_API_KEY: 'k' }));
+    const provider = new GeminiRoadmapPlannerProvider(
+      config({ GEMINI_API_KEY: 'k' }),
+    );
 
     const result = await provider.plan(planningRequest);
 
-    expect(result.overallReason.length).toBeLessThanOrEqual(MAX_OVERALL_REASON_CHARS + 1);
+    expect(result.overallReason.length).toBeLessThanOrEqual(
+      MAX_OVERALL_REASON_CHARS + 1,
+    );
   });
 });
 
@@ -308,12 +402,16 @@ describe('extractPlan', () => {
   it('reads the schema-shaped answer', () => {
     const result = extractPlan(
       JSON.stringify({
-        phases: [{ resourceType: 'COURSE', resourceId: 'c1', reason: 'Good fit.' }],
+        phases: [
+          { resourceType: 'COURSE', resourceId: 'c1', reason: 'Good fit.' },
+        ],
         overallReason: 'Overall.',
       }),
     );
     expect(result).toEqual({
-      phases: [{ resourceType: 'COURSE', resourceId: 'c1', reason: 'Good fit.' }],
+      phases: [
+        { resourceType: 'COURSE', resourceId: 'c1', reason: 'Good fit.' },
+      ],
       overallReason: 'Overall.',
     });
   });
@@ -366,7 +464,9 @@ describe('extractPlan', () => {
   it('does not reject an unrecognized resourceType at the parsing layer', () => {
     const result = extractPlan(
       JSON.stringify({
-        phases: [{ resourceType: 'SOMETHING_ELSE', resourceId: 'c1', reason: 'x' }],
+        phases: [
+          { resourceType: 'SOMETHING_ELSE', resourceId: 'c1', reason: 'x' },
+        ],
         overallReason: 'Overall.',
       }),
     );

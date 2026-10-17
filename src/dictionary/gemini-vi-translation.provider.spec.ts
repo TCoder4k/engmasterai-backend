@@ -12,10 +12,16 @@ const config = (values: Record<string, unknown> = {}): ConfigService =>
   }) as unknown as ConfigService;
 
 const okResponse = (body: unknown): Response =>
-  ({ ok: true, status: 200, json: () => Promise.resolve(body) }) as unknown as Response;
+  ({
+    ok: true,
+    status: 200,
+    json: () => Promise.resolve(body),
+  }) as unknown as Response;
 
 const answer = (json: object) =>
-  okResponse({ candidates: [{ content: { parts: [{ text: JSON.stringify(json) }] } }] });
+  okResponse({
+    candidates: [{ content: { parts: [{ text: JSON.stringify(json) }] } }],
+  });
 
 const request = { word: 'hello', definitionEn: 'Used as a greeting.' };
 
@@ -28,7 +34,9 @@ describe('GeminiViTranslationProvider', () => {
     const fetchSpy = jest
       .spyOn(global, 'fetch')
       .mockResolvedValue(answer({ translation: 'Xin chào' }));
-    const provider = new GeminiViTranslationProvider(config({ GEMINI_API_KEY: 'k' }));
+    const provider = new GeminiViTranslationProvider(
+      config({ GEMINI_API_KEY: 'k' }),
+    );
 
     const result = await provider.translate(request);
 
@@ -52,14 +60,18 @@ describe('GeminiViTranslationProvider', () => {
 
     const [url, init] = fetchSpy.mock.calls[0];
     expect(String(url)).not.toContain('secret-key');
-    expect((init as RequestInit).headers).toMatchObject({ 'x-goog-api-key': 'secret-key' });
+    expect((init as RequestInit).headers).toMatchObject({
+      'x-goog-api-key': 'secret-key',
+    });
   });
 
-  it('targets the default chain\'s first model when GEMINI_DICTIONARY_TRANSLATION_MODEL is unset', async () => {
+  it("targets the default chain's first model when GEMINI_DICTIONARY_TRANSLATION_MODEL is unset", async () => {
     const fetchSpy = jest
       .spyOn(global, 'fetch')
       .mockResolvedValue(answer({ translation: 'ok' }));
-    const provider = new GeminiViTranslationProvider(config({ GEMINI_API_KEY: 'k' }));
+    const provider = new GeminiViTranslationProvider(
+      config({ GEMINI_API_KEY: 'k' }),
+    );
 
     await provider.translate(request);
 
@@ -100,25 +112,39 @@ describe('GeminiViTranslationProvider', () => {
     const abort = new Error('aborted');
     abort.name = 'AbortError';
     jest.spyOn(global, 'fetch').mockRejectedValue(abort);
-    const provider = new GeminiViTranslationProvider(config({ GEMINI_API_KEY: 'k' }));
+    const provider = new GeminiViTranslationProvider(
+      config({ GEMINI_API_KEY: 'k' }),
+    );
 
-    await expect(provider.translate(request)).rejects.toMatchObject({ kind: 'TIMEOUT' });
+    await expect(provider.translate(request)).rejects.toMatchObject({
+      kind: 'TIMEOUT',
+    });
   });
 
   it('reports a network failure as UNAVAILABLE', async () => {
     jest.spyOn(global, 'fetch').mockRejectedValue(new Error('offline'));
-    const provider = new GeminiViTranslationProvider(config({ GEMINI_API_KEY: 'k' }));
+    const provider = new GeminiViTranslationProvider(
+      config({ GEMINI_API_KEY: 'k' }),
+    );
 
-    await expect(provider.translate(request)).rejects.toBeInstanceOf(ViTranslationError);
+    await expect(provider.translate(request)).rejects.toBeInstanceOf(
+      ViTranslationError,
+    );
   });
 
   it('treats a safety block as UNAVAILABLE', async () => {
     jest
       .spyOn(global, 'fetch')
-      .mockResolvedValue(okResponse({ promptFeedback: { blockReason: 'SAFETY' } }));
-    const provider = new GeminiViTranslationProvider(config({ GEMINI_API_KEY: 'k' }));
+      .mockResolvedValue(
+        okResponse({ promptFeedback: { blockReason: 'SAFETY' } }),
+      );
+    const provider = new GeminiViTranslationProvider(
+      config({ GEMINI_API_KEY: 'k' }),
+    );
 
-    await expect(provider.translate(request)).rejects.toMatchObject({ kind: 'UNAVAILABLE' });
+    await expect(provider.translate(request)).rejects.toMatchObject({
+      kind: 'UNAVAILABLE',
+    });
   });
 });
 
@@ -134,7 +160,9 @@ describe('extractTranslation', () => {
   });
 
   it('rejects a missing or empty translation field', () => {
-    expect(() => extractTranslation('{"translation":""}')).toThrow(ViTranslationError);
+    expect(() => extractTranslation('{"translation":""}')).toThrow(
+      ViTranslationError,
+    );
     expect(() => extractTranslation('{}')).toThrow(ViTranslationError);
   });
 });

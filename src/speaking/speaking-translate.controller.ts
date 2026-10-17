@@ -1,4 +1,10 @@
-import { Body, Controller, Post, UseGuards, ValidationPipe } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Post,
+  UseGuards,
+  ValidationPipe,
+} from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards';
 import { SpeakingRateLimitGuard } from './rate-limit/speaking-rate-limit.guard';
 import { SpeakingRateLimit } from './rate-limit/speaking-rate-limits.decorator';

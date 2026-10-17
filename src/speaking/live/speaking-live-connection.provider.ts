@@ -8,7 +8,8 @@
 // same way speaking-attempt.service.spec.ts already fakes
 // SPEAKING_AI_PROVIDER instead of hitting Gemini for real.
 
-export const SPEAKING_LIVE_CONNECTION_PROVIDER = 'SPEAKING_LIVE_CONNECTION_PROVIDER';
+export const SPEAKING_LIVE_CONNECTION_PROVIDER =
+  'SPEAKING_LIVE_CONNECTION_PROVIDER';
 
 export type SpeakingLiveFailureKind = 'NOT_CONFIGURED' | 'CONNECT_FAILED';
 
@@ -28,7 +29,9 @@ export interface SpeakingLiveServerMessage {
   serverContent?: {
     inputTranscription?: { text: string };
     outputTranscription?: { text: string };
-    modelTurn?: { parts?: { inlineData?: { data: string; mimeType?: string } }[] };
+    modelTurn?: {
+      parts?: { inlineData?: { data: string; mimeType?: string } }[];
+    };
     turnComplete?: boolean;
     interrupted?: boolean;
   };
@@ -63,5 +66,7 @@ export interface SpeakingLiveConnectOptions {
 }
 
 export interface SpeakingLiveConnectionProvider {
-  connect(options: SpeakingLiveConnectOptions): Promise<SpeakingLiveConnectionHandle>;
+  connect(
+    options: SpeakingLiveConnectOptions,
+  ): Promise<SpeakingLiveConnectionHandle>;
 }

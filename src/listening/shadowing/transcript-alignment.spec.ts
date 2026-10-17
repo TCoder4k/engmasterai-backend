@@ -9,13 +9,18 @@ import { alignTranscript, alignRawTranscript } from './transcript-alignment';
 
 describe('alignTranscript', () => {
   it('scores a perfect reading 100 with every token a match', () => {
-    const result = alignTranscript('the otter wraps her baby', 'the otter wraps her baby');
+    const result = alignTranscript(
+      'the otter wraps her baby',
+      'the otter wraps her baby',
+    );
 
     expect(result.accuracyPercent).toBe(100);
     expect(result.wordsCorrect).toBe(5);
     expect(result.wordsTotal).toBe(5);
     expect(result.tokens.every((token) => token.op === 'MATCH')).toBe(true);
-    expect([result.substitutions, result.insertions, result.deletions]).toEqual([0, 0, 0]);
+    expect([result.substitutions, result.insertions, result.deletions]).toEqual(
+      [0, 0, 0],
+    );
   });
 
   // THE CASE THAT MOTIVATED REAL ALIGNMENT. A positional diff — which is what
@@ -34,13 +39,20 @@ describe('alignTranscript', () => {
   });
 
   it('records a wrong word as a substitution, not as a delete plus an insert', () => {
-    const result = alignTranscript('the otter wraps her baby', 'the otter wraps his baby');
+    const result = alignTranscript(
+      'the otter wraps her baby',
+      'the otter wraps his baby',
+    );
 
     expect(result.substitutions).toBe(1);
     expect(result.deletions).toBe(0);
     expect(result.insertions).toBe(0);
     const wrong = result.tokens.find((token) => token.op === 'SUBSTITUTE');
-    expect(wrong).toMatchObject({ reference: 'her', spoken: 'his', referenceIndex: 3 });
+    expect(wrong).toMatchObject({
+      reference: 'her',
+      spoken: 'his',
+      referenceIndex: 3,
+    });
   });
 
   // WHY INSERTIONS COUNT. Scoring `wordsCorrect / wordsTotal` would give this
@@ -122,7 +134,7 @@ describe('alignRawTranscript', () => {
   it('normalises the transcript with the same rules as the reference', () => {
     const result = alignRawTranscript(
       "don't drop the well-known otter",
-      "Don’t drop the well-known otter!",
+      'Don’t drop the well-known otter!',
     );
 
     expect(result.normalizedTranscript).toBe("don't drop the well-known otter");
@@ -130,7 +142,10 @@ describe('alignRawTranscript', () => {
   });
 
   it('does not split a hyphenated compound into two words', () => {
-    const result = alignRawTranscript('a well-known otter', 'a well-known otter');
+    const result = alignRawTranscript(
+      'a well-known otter',
+      'a well-known otter',
+    );
 
     expect(result.wordsTotal).toBe(3);
     expect(result.accuracyPercent).toBe(100);

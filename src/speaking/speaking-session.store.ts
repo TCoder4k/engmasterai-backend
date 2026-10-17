@@ -1,10 +1,17 @@
-import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { InjectRedis } from '@nestjs-modules/ioredis';
 import Redis from 'ioredis';
 import { ConfigService } from '@nestjs/config';
 import { readFileSync } from 'fs';
 import { join } from 'path';
-import { MAX_SPEAKING_TURNS, speakingSessionKey } from './speaking-redis.constants';
+import {
+  MAX_SPEAKING_TURNS,
+  speakingSessionKey,
+} from './speaking-redis.constants';
 import { StoredSpeakingTurn } from './speaking.types';
 
 // ioredis's `defineCommand`-registered commands aren't reflected in the
@@ -56,7 +63,10 @@ export class SpeakingSessionStore {
     if (typeof this.redis.appendSpeakingTurn !== 'function') {
       this.redis.defineCommand('appendSpeakingTurn', {
         numberOfKeys: 1,
-        lua: readFileSync(join(__dirname, 'lua', 'append-speaking-turn.lua'), 'utf8'),
+        lua: readFileSync(
+          join(__dirname, 'lua', 'append-speaking-turn.lua'),
+          'utf8',
+        ),
       });
     }
   }
@@ -66,13 +76,21 @@ export class SpeakingSessionStore {
   }
 
   /** Turns only — used to build the AI request's history, oldest-first. */
-  async getTurns(userId: string, attemptId: string): Promise<StoredSpeakingTurn[]> {
+  async getTurns(
+    userId: string,
+    attemptId: string,
+  ): Promise<StoredSpeakingTurn[]> {
     let raw: string | null;
     try {
       raw = await this.redis.get(speakingSessionKey(userId, attemptId));
     } catch (error) {
-      this.logger.error('Redis read failed while loading a speaking session', error as Error);
-      throw new ServiceUnavailableException('Speaking practice is temporarily unavailable');
+      this.logger.error(
+        'Redis read failed while loading a speaking session',
+        error as Error,
+      );
+      throw new ServiceUnavailableException(
+        'Speaking practice is temporarily unavailable',
+      );
     }
     if (!raw) return [];
     return parseRecord(raw).turns;
@@ -83,7 +101,12 @@ export class SpeakingSessionStore {
    * lua/append-speaking-turn.lua for why this must be a single EVAL rather
    * than a GET-modify-SET from Node.
    */
-  async appendTurn(userId: string, attemptId: string, userText: string, assistantText: string): Promise<void> {
+  async appendTurn(
+    userId: string,
+    attemptId: string,
+    userText: string,
+    assistantText: string,
+  ): Promise<void> {
     try {
       await this.redis.appendSpeakingTurn(
         speakingSessionKey(userId, attemptId),
@@ -94,8 +117,13 @@ export class SpeakingSessionStore {
         String(this.ttlSeconds),
       );
     } catch (error) {
-      this.logger.error('Redis EVAL failed while appending a speaking turn', error as Error);
-      throw new ServiceUnavailableException('Speaking practice is temporarily unavailable');
+      this.logger.error(
+        'Redis EVAL failed while appending a speaking turn',
+        error as Error,
+      );
+      throw new ServiceUnavailableException(
+        'Speaking practice is temporarily unavailable',
+      );
     }
   }
 
@@ -108,8 +136,13 @@ export class SpeakingSessionStore {
     try {
       await this.redis.del(speakingSessionKey(userId, attemptId));
     } catch (error) {
-      this.logger.error('Redis delete failed while clearing a speaking session', error as Error);
-      throw new ServiceUnavailableException('Speaking practice is temporarily unavailable');
+      this.logger.error(
+        'Redis delete failed while clearing a speaking session',
+        error as Error,
+      );
+      throw new ServiceUnavailableException(
+        'Speaking practice is temporarily unavailable',
+      );
     }
   }
 }

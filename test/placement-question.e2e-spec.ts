@@ -37,10 +37,15 @@ describe('Placement question bank (e2e)', () => {
 
     const adminEmail = `placement-admin-${randomUUID()}@example.test`;
     createdUserEmails.push(adminEmail);
-    await request(app.getHttpServer())
-      .post('/auth/register')
-      .send({ name: 'Placement Admin', email: adminEmail, password: 'password123' });
-    await prisma.user.update({ where: { email: adminEmail }, data: { role: 'ADMIN' } });
+    await request(app.getHttpServer()).post('/auth/register').send({
+      name: 'Placement Admin',
+      email: adminEmail,
+      password: 'password123',
+    });
+    await prisma.user.update({
+      where: { email: adminEmail },
+      data: { role: 'ADMIN' },
+    });
     const adminLogin = await request(app.getHttpServer())
       .post('/auth/login')
       .send({ email: adminEmail, password: 'password123', role: 'ADMIN' });
@@ -50,8 +55,13 @@ describe('Placement question bank (e2e)', () => {
     createdUserEmails.push(studentEmail);
     const studentRegister = await request(app.getHttpServer())
       .post('/auth/register')
-      .send({ name: 'Placement Student', email: studentEmail, password: 'password123' });
-    studentToken = (studentRegister.body as { accessToken: string }).accessToken;
+      .send({
+        name: 'Placement Student',
+        email: studentEmail,
+        password: 'password123',
+      });
+    studentToken = (studentRegister.body as { accessToken: string })
+      .accessToken;
   });
 
   afterAll(async () => {
@@ -61,7 +71,9 @@ describe('Placement question bank (e2e)', () => {
       });
     }
     if (createdUserEmails.length) {
-      await prisma.user.deleteMany({ where: { email: { in: createdUserEmails } } });
+      await prisma.user.deleteMany({
+        where: { email: { in: createdUserEmails } },
+      });
     }
     await app.close();
   });
@@ -183,7 +195,9 @@ describe('Placement question bank (e2e)', () => {
         .set('Authorization', `Bearer ${adminToken}`)
         .expect(204);
 
-      const row = await prisma.placementQuestion.findUnique({ where: { id: questionId } });
+      const row = await prisma.placementQuestion.findUnique({
+        where: { id: questionId },
+      });
       expect(row).toBeNull();
       createdQuestionIds.splice(createdQuestionIds.indexOf(questionId), 1);
     });
@@ -205,7 +219,10 @@ describe('Placement question bank (e2e)', () => {
           type: 'MULTIPLE_CHOICE',
           difficulty: 'HARD',
           content: testFixtureName('Listening filter fixture'),
-          options: [{ id: 'a', text: 'x' }, { id: 'b', text: 'y' }],
+          options: [
+            { id: 'a', text: 'x' },
+            { id: 'b', text: 'y' },
+          ],
           correctAnswer: { optionId: 'a' },
         },
       });
@@ -271,7 +288,11 @@ describe('Placement question bank (e2e)', () => {
         .expect(200);
 
       const bucket = (
-        res.body.buckets as { section: string; difficulty: string; available: number }[]
+        res.body.buckets as {
+          section: string;
+          difficulty: string;
+          available: number;
+        }[]
       ).find((b) => b.section === 'GRAMMAR' && b.difficulty === 'EASY');
       // >= 2 rather than === 2: other suites' fixtures may also publish
       // GRAMMAR/EASY questions and this file has no exclusive claim on the

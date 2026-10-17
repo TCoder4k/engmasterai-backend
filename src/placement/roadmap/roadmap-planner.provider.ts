@@ -51,7 +51,11 @@ export interface RoadmapPlanningRequest {
 
 /** One phase the model chose. Read-only, re-validated by the caller — see the file header. */
 export interface RoadmapPlanningPhase {
-  resourceType: 'COURSE' | 'VOCAB_LIBRARY' | 'LISTENING_CATEGORY' | 'SPEAKING_SCENARIO';
+  resourceType:
+    | 'COURSE'
+    | 'VOCAB_LIBRARY'
+    | 'LISTENING_CATEGORY'
+    | 'SPEAKING_SCENARIO';
   resourceId: string;
   reason: string;
 }
@@ -77,7 +81,10 @@ export interface RoadmapPlanningResult {
  * by falling back to the deterministic roadmap (see requestRoadmapPlan). This
  * type only covers the model/network genuinely not answering.
  */
-export type RoadmapPlanningFailureKind = 'UNAVAILABLE' | 'TIMEOUT' | 'NOT_CONFIGURED';
+export type RoadmapPlanningFailureKind =
+  | 'UNAVAILABLE'
+  | 'TIMEOUT'
+  | 'NOT_CONFIGURED';
 
 export class RoadmapPlanningError extends Error {
   constructor(

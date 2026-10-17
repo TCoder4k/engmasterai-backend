@@ -450,11 +450,7 @@ describe('Gamification (e2e) — Sprint 10', () => {
       expect(quiz.body.gamification.xpAwarded).toBe(70);
 
       // A perfect quiz leaves no traps, so Practice is unblocked.
-      const practice = await passPractice(
-        lessonId,
-        token,
-        practiceQuestionIds,
-      );
+      const practice = await passPractice(lessonId, token, practiceQuestionIds);
       // 40 only — both badges are already held.
       expect(practice.body.gamification.xpAwarded).toBe(40);
       expect(practice.body.gamification.xp.totalXp).toBe(110);
@@ -465,9 +461,9 @@ describe('Gamification (e2e) — Sprint 10', () => {
       );
       expect(passes).toHaveLength(2);
       expect(new Set(passes.map((r) => r.sourceKey)).size).toBe(2);
-      expect(passes.filter((r) => r.sourceKey.endsWith(':QUIZ:passed'))).toEqual(
-        [expect.objectContaining({ amount: 30 })],
-      );
+      expect(
+        passes.filter((r) => r.sourceKey.endsWith(':QUIZ:passed')),
+      ).toEqual([expect.objectContaining({ amount: 30 })]);
       expect(
         passes.filter((r) => r.sourceKey.endsWith(':PRACTICE:passed')),
       ).toEqual([expect.objectContaining({ amount: 40 })]);

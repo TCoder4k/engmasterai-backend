@@ -90,11 +90,24 @@ afterEach(() => {
 // service actually computes.
 const UTC = 'UTC';
 const days7 = enumerateDaysInTimeZone(NOW, UTC, 7);
-const current7dStart = startOfDayInTimeZone(new Date(`${days7[0]}T12:00:00.000Z`), UTC);
-const days7prev = enumerateDaysInTimeZone(new Date(current7dStart.getTime() - 1), UTC, 7);
-const previous7dStart = startOfDayInTimeZone(new Date(`${days7prev[0]}T12:00:00.000Z`), UTC);
+const current7dStart = startOfDayInTimeZone(
+  new Date(`${days7[0]}T12:00:00.000Z`),
+  UTC,
+);
+const days7prev = enumerateDaysInTimeZone(
+  new Date(current7dStart.getTime() - 1),
+  UTC,
+  7,
+);
+const _previous7dStart = startOfDayInTimeZone(
+  new Date(`${days7prev[0]}T12:00:00.000Z`),
+  UTC,
+);
 const days30 = enumerateDaysInTimeZone(NOW, UTC, 30);
-const window30dStart = startOfDayInTimeZone(new Date(`${days30[0]}T12:00:00.000Z`), UTC);
+const window30dStart = startOfDayInTimeZone(
+  new Date(`${days30[0]}T12:00:00.000Z`),
+  UTC,
+);
 
 interface Row {
   userId: string;
@@ -119,31 +132,45 @@ interface HarnessOptions {
   totalStudents?: number;
   baselineStudents?: number;
   newStudentRows?: Date[];
-  topStudentGroups?: { userId: string; _sum: { creditedSeconds: number | null } }[];
-  topStudentUsers?: { id: string; name: string; email: string; level: number }[];
+  topStudentGroups?: {
+    userId: string;
+    _sum: { creditedSeconds: number | null };
+  }[];
+  topStudentUsers?: {
+    id: string;
+    name: string;
+    email: string;
+    level: number;
+  }[];
   topStudentCompletions?: { userId: string; _count: number }[];
 }
 
 const buildHarness = (options: HarnessOptions = {}) => {
   const resolve = <T>(value: T): Promise<T> => Promise.resolve(value);
 
-  const isCurrentWindow = (gte: Date) => gte.getTime() === current7dStart.getTime();
+  const isCurrentWindow = (gte: Date) =>
+    gte.getTime() === current7dStart.getTime();
 
   const studyTimeEventFindMany = jest.fn(
-    (args: { where: Record<string, unknown>; select: Record<string, unknown> }) => {
+    (args: {
+      where: Record<string, unknown>;
+      select: Record<string, unknown>;
+    }) => {
       if ('userId' in args.select) {
         // Daily-active-users read (current or previous window).
         const gte = (args.where.occurredAt as { gte: Date }).gte;
         const rows = isCurrentWindow(gte)
-          ? options.currentActiveStudyRows ?? []
-          : options.previousActiveStudyRows ?? [];
-        return resolve(rows.map((row) => ({ userId: row.userId, occurredAt: row.at })));
+          ? (options.currentActiveStudyRows ?? [])
+          : (options.previousActiveStudyRows ?? []);
+        return resolve(
+          rows.map((row) => ({ userId: row.userId, occurredAt: row.at })),
+        );
       }
       // Skill-breakdown read (LISTENING or the VOCAB_GRAMMAR `in` list).
       const isListening = args.where.activityType === 'LISTENING';
       const ids = isListening
-        ? options.skillListeningSessionIds ?? []
-        : options.skillVocabGrammarSessionIds ?? [];
+        ? (options.skillListeningSessionIds ?? [])
+        : (options.skillVocabGrammarSessionIds ?? []);
       return resolve(ids.map((clientSessionId) => ({ clientSessionId })));
     },
   );
@@ -151,31 +178,37 @@ const buildHarness = (options: HarnessOptions = {}) => {
   const speakingAttemptFindMany = jest.fn(
     (args: { where: { completedAt: { gte: Date } } }) => {
       const rows = isCurrentWindow(args.where.completedAt.gte)
-        ? options.currentActiveSpeakingRows ?? []
-        : options.previousActiveSpeakingRows ?? [];
-      return resolve(rows.map((row) => ({ userId: row.userId, completedAt: row.at })));
+        ? (options.currentActiveSpeakingRows ?? [])
+        : (options.previousActiveSpeakingRows ?? []);
+      return resolve(
+        rows.map((row) => ({ userId: row.userId, completedAt: row.at })),
+      );
     },
   );
 
-  const speakingAttemptAggregate = jest.fn((args: { where: { completedAt: { gte: Date } } }) =>
-    resolve(
-      isCurrentWindow(args.where.completedAt.gte)
-        ? options.currentAiAgg ?? { _count: 0, _sum: { turnCount: null } }
-        : options.previousAiAgg ?? { _count: 0, _sum: { turnCount: null } },
-    ),
+  const speakingAttemptAggregate = jest.fn(
+    (args: { where: { completedAt: { gte: Date } } }) =>
+      resolve(
+        isCurrentWindow(args.where.completedAt.gte)
+          ? (options.currentAiAgg ?? { _count: 0, _sum: { turnCount: null } })
+          : (options.previousAiAgg ?? { _count: 0, _sum: { turnCount: null } }),
+      ),
   );
 
-  const lessonTaskAttemptGroupBy = jest.fn((args: { where: { submittedAt: { gte: Date } } }) =>
-    resolve(
-      isCurrentWindow(args.where.submittedAt.gte)
-        ? options.currentAttemptGroups ?? []
-        : options.previousAttemptGroups ?? [],
-    ),
+  const lessonTaskAttemptGroupBy = jest.fn(
+    (args: { where: { submittedAt: { gte: Date } } }) =>
+      resolve(
+        isCurrentWindow(args.where.submittedAt.gte)
+          ? (options.currentAttemptGroups ?? [])
+          : (options.previousAttemptGroups ?? []),
+      ),
   );
 
   const userCount = jest.fn((args: { where: Record<string, unknown> }) =>
     resolve(
-      'createdAt' in args.where ? options.baselineStudents ?? 0 : options.totalStudents ?? 0,
+      'createdAt' in args.where
+        ? (options.baselineStudents ?? 0)
+        : (options.totalStudents ?? 0),
     ),
   );
 
@@ -183,7 +216,9 @@ const buildHarness = (options: HarnessOptions = {}) => {
     if ('id' in args.where) {
       return resolve(options.topStudentUsers ?? []);
     }
-    return resolve((options.newStudentRows ?? []).map((createdAt) => ({ createdAt })));
+    return resolve(
+      (options.newStudentRows ?? []).map((createdAt) => ({ createdAt })),
+    );
   });
 
   const prisma = {
@@ -199,13 +234,21 @@ const buildHarness = (options: HarnessOptions = {}) => {
     },
     lessonTaskProgress: {
       findMany: jest.fn(() =>
-        resolve((options.currentTaskCompletions ?? []).map((completedAt) => ({ completedAt }))),
+        resolve(
+          (options.currentTaskCompletions ?? []).map((completedAt) => ({
+            completedAt,
+          })),
+        ),
       ),
       groupBy: jest.fn(() => resolve(options.topStudentCompletions ?? [])),
     },
     lessonStepProgress: {
       findMany: jest.fn(() =>
-        resolve((options.currentStepCompletions ?? []).map((completedAt) => ({ completedAt }))),
+        resolve(
+          (options.currentStepCompletions ?? []).map((completedAt) => ({
+            completedAt,
+          })),
+        ),
       ),
     },
     lessonTaskAttempt: { groupBy: lessonTaskAttemptGroupBy },
@@ -225,18 +268,23 @@ describe('AdminDashboardAnalyticsService — DAU unions StudyTimeEvent and Speak
         { userId: 'a', at: today },
         { userId: 'b', at: today },
       ],
-      currentActiveSpeakingRows: [{ userId: 'b', at: today }, { userId: 'c', at: today }],
+      currentActiveSpeakingRows: [
+        { userId: 'b', at: today },
+        { userId: 'c', at: today },
+      ],
     });
 
     const result = await service.getAdminDashboardAnalytics();
 
-    const todayPoint = result.engagement.find((point) => point.date === days7[days7.length - 1]);
+    const todayPoint = result.engagement.find(
+      (point) => point.date === days7[days7.length - 1],
+    );
     expect(todayPoint?.activeUsers).toBe(3); // a, b, c — b not double-counted
   });
 });
 
 describe('AdminDashboardAnalyticsService — half-open window boundary', () => {
-  it('excludes a row exactly AT the previous-window end / current-window start from both windows\' overlap and counts it as current', async () => {
+  it("excludes a row exactly AT the previous-window end / current-window start from both windows' overlap and counts it as current", async () => {
     freezeNow(NOW);
     const { service } = buildHarness({
       // Exactly on the boundary instant — belongs to the CURRENT window
@@ -312,7 +360,11 @@ describe('AdminDashboardAnalyticsService — top students', () => {
 
     const result = await service.getAdminDashboardAnalytics();
 
-    expect(result.topStudents.map((s) => s.id)).toEqual(['top', 'a-tied', 'z-tied']);
+    expect(result.topStudents.map((s) => s.id)).toEqual([
+      'top',
+      'a-tied',
+      'z-tied',
+    ]);
     expect(result.topStudents[0].completedTasks).toBe(10);
     expect(result.topStudents[1].completedTasks).toBe(0); // no row in topStudentCompletions
   });
@@ -324,7 +376,9 @@ describe('AdminDashboardAnalyticsService — user growth excludes ADMIN accounts
     const { service, prisma } = buildHarness({
       totalStudents: 9,
       baselineStudents: 3,
-      newStudentRows: [new Date(window30dStart.getTime() + 24 * 60 * 60 * 1000)],
+      newStudentRows: [
+        new Date(window30dStart.getTime() + 24 * 60 * 60 * 1000),
+      ],
     });
 
     const result = await service.getAdminDashboardAnalytics();
@@ -333,7 +387,9 @@ describe('AdminDashboardAnalyticsService — user growth excludes ADMIN accounts
     expect(result.userGrowth.newLast30d).toBe(1);
     expect(result.userGrowth.dailyCumulative.at(-1)?.totalStudents).toBe(4); // baseline 3 + 1 new
     expect(prisma.user.count).toHaveBeenCalledWith(
-      expect.objectContaining({ where: expect.objectContaining({ role: UserRole.USER }) }),
+      expect.objectContaining({
+        where: expect.objectContaining({ role: UserRole.USER }),
+      }),
     );
   });
 });

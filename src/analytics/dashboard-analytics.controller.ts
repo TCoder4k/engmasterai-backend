@@ -28,7 +28,10 @@ export class DashboardAnalyticsController {
   @UseGuards(JwtAuthGuard, QuizRateLimitGuard)
   @QuizRateLimit({ kind: 'stats', max: 30, windowSeconds: 60 })
   @Get('dashboard')
-  async getDashboard(@Query() query: DashboardAnalyticsQueryDto, @Req() req: AuthenticatedRequest) {
+  async getDashboard(
+    @Query() query: DashboardAnalyticsQueryDto,
+    @Req() req: AuthenticatedRequest,
+  ) {
     return this.analytics.getDashboardAnalytics(req.user.userId, query.tz);
   }
 

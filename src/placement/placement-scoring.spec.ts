@@ -33,7 +33,20 @@ describe('estimateLevel', () => {
 });
 
 describe('scorePlacementAttempt', () => {
-  const questionIds = ['g1', 'g2', 'g3', 'g4', 'v1', 'v2', 'v3', 'v4', 'l1', 'l2', 'l3', 'l4'];
+  const questionIds = [
+    'g1',
+    'g2',
+    'g3',
+    'g4',
+    'v1',
+    'v2',
+    'v3',
+    'v4',
+    'l1',
+    'l2',
+    'l3',
+    'l4',
+  ];
   const questions = [
     question('g1', 'GRAMMAR', true),
     question('g2', 'GRAMMAR', true),
@@ -83,7 +96,11 @@ describe('scorePlacementAttempt', () => {
   it('treats a question deleted after the attempt started as incorrect, same as unanswered', () => {
     const questionsMissingOne = questions.filter((q) => q.id !== 'g1');
     const answers = [{ questionId: 'g1', submitted: { value: true } }];
-    const result = scorePlacementAttempt(questionIds, questionsMissingOne, answers);
+    const result = scorePlacementAttempt(
+      questionIds,
+      questionsMissingOne,
+      answers,
+    );
     expect(result.grammarScore).toBe(0);
   });
 
@@ -95,7 +112,9 @@ describe('scorePlacementAttempt', () => {
 
   it('an unrecognized submission shape grades as incorrect, never throws (mirrors grade-question.ts)', () => {
     const answers = [{ questionId: 'g1', submitted: { garbage: true } }];
-    expect(() => scorePlacementAttempt(questionIds, questions, answers)).not.toThrow();
+    expect(() =>
+      scorePlacementAttempt(questionIds, questions, answers),
+    ).not.toThrow();
     const result = scorePlacementAttempt(questionIds, questions, answers);
     expect(result.grammarScore).toBe(0);
   });
@@ -114,7 +133,11 @@ describe('scorePlacementAttempt', () => {
       question('g2', 'GRAMMAR', true),
     ];
     const answers = [{ questionId: 'g1', submitted: { value: true } }];
-    const result = scorePlacementAttempt(twoGrammarQuestionIds, twoGrammarQuestions, answers);
+    const result = scorePlacementAttempt(
+      twoGrammarQuestionIds,
+      twoGrammarQuestions,
+      answers,
+    );
     expect(result.grammarScore).toBe(50); // 1/2, not 1/4 (old) or 1/8 (new)
   });
 
@@ -136,17 +159,32 @@ describe('scorePlacementAttempt', () => {
 // back to round(63/25)=3, not 5. The fix is authoritative counts straight
 // from scoring, never re-derived from a rounded percentage on either side.
 describe('scorePlacementAttempt — per-section correct/total counts (8 questions/section)', () => {
-  const eightGrammarQuestionIds = ['g1', 'g2', 'g3', 'g4', 'g5', 'g6', 'g7', 'g8'];
+  const eightGrammarQuestionIds = [
+    'g1',
+    'g2',
+    'g3',
+    'g4',
+    'g5',
+    'g6',
+    'g7',
+    'g8',
+  ];
   const eightGrammarQuestions = eightGrammarQuestionIds.map((id) =>
     question(id, 'GRAMMAR', true),
   );
 
   const scoreNCorrectOfEight = (correctCount: number) => {
-    const answers = eightGrammarQuestionIds.slice(0, correctCount).map((questionId) => ({
-      questionId,
-      submitted: { value: true },
-    }));
-    return scorePlacementAttempt(eightGrammarQuestionIds, eightGrammarQuestions, answers);
+    const answers = eightGrammarQuestionIds
+      .slice(0, correctCount)
+      .map((questionId) => ({
+        questionId,
+        submitted: { value: true },
+      }));
+    return scorePlacementAttempt(
+      eightGrammarQuestionIds,
+      eightGrammarQuestions,
+      answers,
+    );
   };
 
   it('5/8 correct scores 63% (not 25%-increment-derived) and reports the real 5/8 count', () => {

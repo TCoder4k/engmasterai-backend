@@ -54,6 +54,8 @@ export interface AdminStudentListRow {
   completedTestCount: number;
   isPro: boolean;
   proExpiresAt: Date | null;
+  isHocTap: boolean;
+  hocTapExpiresAt: Date | null;
   isActive: boolean;
   createdAt: Date;
 }
@@ -95,6 +97,8 @@ export interface AdminStudentDetail {
     isActive: boolean;
     isPro: boolean;
     proExpiresAt: Date | null;
+    isHocTap: boolean;
+    hocTapExpiresAt: Date | null;
   };
   progress: RoadmapProgress &
     AverageTestScore & { recentTests: AdminStudentRecentTest[] };
@@ -108,6 +112,8 @@ export interface AdminStudentDetail {
     plan: SubscriptionPlan | null;
     isPro: boolean;
     proExpiresAt: Date | null;
+    isHocTap: boolean;
+    hocTapExpiresAt: Date | null;
     payments: AdminStudentPaymentRow[];
     paymentsTotal: number;
   };

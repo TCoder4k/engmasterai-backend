@@ -20,8 +20,18 @@ export const DEFAULT_GEMINI_MODEL_CHAIN =
 
 // Non-empty + deduped. Throws naming the config key so a misconfigured env
 // var fails at boot, not as a runtime "models list is empty" deep in a request.
-export const parseGeminiModelList = (raw: string, configKey: string): string[] => {
-  const models = Array.from(new Set(raw.split(',').map((m) => m.trim()).filter(Boolean)));
+export const parseGeminiModelList = (
+  raw: string,
+  configKey: string,
+): string[] => {
+  const models = Array.from(
+    new Set(
+      raw
+        .split(',')
+        .map((m) => m.trim())
+        .filter(Boolean),
+    ),
+  );
   if (models.length === 0) {
     throw new Error(`${configKey} must list at least one Gemini model`);
   }

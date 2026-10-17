@@ -24,11 +24,16 @@ const config = (values: Record<string, unknown> = {}): ConfigService =>
   }) as unknown as ConfigService;
 
 const okResponse = (body: unknown): Response =>
-  ({ ok: true, status: 200, json: () => Promise.resolve(body) }) as unknown as Response;
+  ({
+    ok: true,
+    status: 200,
+    json: () => Promise.resolve(body),
+  }) as unknown as Response;
 
-const answer = (text: string) => okResponse({
-  candidates: [{ content: { parts: [{ text }] } }],
-});
+const answer = (text: string) =>
+  okResponse({
+    candidates: [{ content: { parts: [{ text }] } }],
+  });
 
 const feedbackRequest = {
   audio: Buffer.from('fake-audio'),
@@ -40,7 +45,9 @@ const feedbackRequest = {
 
 const sentBody = (fetchSpy: jest.SpyInstance) =>
   JSON.parse((fetchSpy.mock.calls[0][1] as RequestInit).body as string) as {
-    contents: { parts: { text?: string; inline_data?: { mime_type: string } }[] }[];
+    contents: {
+      parts: { text?: string; inline_data?: { mime_type: string } }[];
+    }[];
     generationConfig: { temperature: number };
   };
 
@@ -71,7 +78,9 @@ describe('GeminiPronunciationFeedbackProvider', () => {
   // The codec parameter is meaningful to MediaRecorder and noise to an
   // inference API, which rejects the whole string rather than ignoring it.
   it('strips the codec parameter from the mime type', async () => {
-    const fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValue(answer('ok'));
+    const fetchSpy = jest
+      .spyOn(global, 'fetch')
+      .mockResolvedValue(answer('ok'));
     const provider = new GeminiPronunciationFeedbackProvider(
       config({ GEMINI_API_KEY: 'k' }),
     );
@@ -87,7 +96,9 @@ describe('GeminiPronunciationFeedbackProvider', () => {
   // The app has exactly one number for an attempt and it came from the
   // alignment. The prompt is where a second one gets refused.
   it('instructs the model to give no score, rating or grade', async () => {
-    const fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValue(answer('ok'));
+    const fetchSpy = jest
+      .spyOn(global, 'fetch')
+      .mockResolvedValue(answer('ok'));
     const provider = new GeminiPronunciationFeedbackProvider(
       config({ GEMINI_API_KEY: 'k' }),
     );
@@ -104,7 +115,9 @@ describe('GeminiPronunciationFeedbackProvider', () => {
   // requests cannot be explained to a student; coaching worded slightly
   // differently is simply coaching.
   it('runs warmer than the transcriber, but not hot', async () => {
-    const fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValue(answer('ok'));
+    const fetchSpy = jest
+      .spyOn(global, 'fetch')
+      .mockResolvedValue(answer('ok'));
     const provider = new GeminiPronunciationFeedbackProvider(
       config({ GEMINI_API_KEY: 'k' }),
     );
@@ -117,7 +130,9 @@ describe('GeminiPronunciationFeedbackProvider', () => {
   });
 
   it('sends the API key as a header, never in the URL', async () => {
-    const fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValue(answer('ok'));
+    const fetchSpy = jest
+      .spyOn(global, 'fetch')
+      .mockResolvedValue(answer('ok'));
     const provider = new GeminiPronunciationFeedbackProvider(
       config({ GEMINI_API_KEY: 'secret-key' }),
     );
@@ -132,7 +147,9 @@ describe('GeminiPronunciationFeedbackProvider', () => {
   });
 
   it('uses its own model variable, not the transcriber s', async () => {
-    const fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValue(answer('ok'));
+    const fetchSpy = jest
+      .spyOn(global, 'fetch')
+      .mockResolvedValue(answer('ok'));
     const provider = new GeminiPronunciationFeedbackProvider(
       config({
         GEMINI_API_KEY: 'k',
@@ -147,8 +164,10 @@ describe('GeminiPronunciationFeedbackProvider', () => {
     expect(String(fetchSpy.mock.calls[0][0])).not.toContain('transcribe-model');
   });
 
-  it('targets the default chain\'s first model when GEMINI_FEEDBACK_MODEL is unset', async () => {
-    const fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValue(answer('ok'));
+  it("targets the default chain's first model when GEMINI_FEEDBACK_MODEL is unset", async () => {
+    const fetchSpy = jest
+      .spyOn(global, 'fetch')
+      .mockResolvedValue(answer('ok'));
     const provider = new GeminiPronunciationFeedbackProvider(
       config({ GEMINI_API_KEY: 'k' }),
     );
@@ -218,7 +237,12 @@ describe('GeminiPronunciationFeedbackProvider', () => {
   it('reports feedback cut off at the token limit as UNAVAILABLE', async () => {
     jest.spyOn(global, 'fetch').mockResolvedValue(
       okResponse({
-        candidates: [{ content: { parts: [{ text: 'Chú ý' }] }, finishReason: 'MAX_TOKENS' }],
+        candidates: [
+          {
+            content: { parts: [{ text: 'Chú ý' }] },
+            finishReason: 'MAX_TOKENS',
+          },
+        ],
       }),
     );
     const provider = new GeminiPronunciationFeedbackProvider(
@@ -253,9 +277,11 @@ describe('GeminiPronunciationFeedbackProvider', () => {
   });
 
   it('treats a safety block as a recording it cannot process', async () => {
-    jest.spyOn(global, 'fetch').mockResolvedValue(
-      okResponse({ promptFeedback: { blockReason: 'SAFETY' } }),
-    );
+    jest
+      .spyOn(global, 'fetch')
+      .mockResolvedValue(
+        okResponse({ promptFeedback: { blockReason: 'SAFETY' } }),
+      );
     const provider = new GeminiPronunciationFeedbackProvider(
       config({ GEMINI_API_KEY: 'k' }),
     );
@@ -280,9 +306,7 @@ describe('GeminiPronunciationFeedbackProvider', () => {
   });
 
   it('bounds a model that decides to write an essay', async () => {
-    jest
-      .spyOn(global, 'fetch')
-      .mockResolvedValue(answer('word '.repeat(1000)));
+    jest.spyOn(global, 'fetch').mockResolvedValue(answer('word '.repeat(1000)));
     const provider = new GeminiPronunciationFeedbackProvider(
       config({ GEMINI_API_KEY: 'k' }),
     );

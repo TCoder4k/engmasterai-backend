@@ -10,9 +10,12 @@ import {
   assertMigrationNameSetsMatch,
 } from './bootstrap-guards';
 
-const DEV_URL = 'postgresql://user:pass@localhost:5432/engmasterai?schema=public';
-const DEV_URL_LOOPBACK = 'postgresql://user:pass@127.0.0.1:5432/engmasterai?schema=public';
-const TEST_URL = 'postgresql://user:pass@localhost:5432/engmasterai_test?schema=public';
+const DEV_URL =
+  'postgresql://user:pass@localhost:5432/engmasterai?schema=public';
+const DEV_URL_LOOPBACK =
+  'postgresql://user:pass@127.0.0.1:5432/engmasterai?schema=public';
+const TEST_URL =
+  'postgresql://user:pass@localhost:5432/engmasterai_test?schema=public';
 const PROD_URL = 'postgresql://user:pass@localhost:55432/railway?schema=public';
 // Same database NAME as dev, but on a remote host — must still be rejected.
 const REMOTE_ENGMASTERAI_URL =
@@ -25,13 +28,15 @@ describe('parseDatabaseIdentity', () => {
   });
 
   it('throws on an unparseable connection string', () => {
-    expect(() => parseDatabaseIdentity('not a url')).toThrow(BootstrapGuardError);
+    expect(() => parseDatabaseIdentity('not a url')).toThrow(
+      BootstrapGuardError,
+    );
   });
 
   it('throws when the path has no database name', () => {
-    expect(() => parseDatabaseIdentity('postgresql://user:pass@localhost:5432/')).toThrow(
-      BootstrapGuardError,
-    );
+    expect(() =>
+      parseDatabaseIdentity('postgresql://user:pass@localhost:5432/'),
+    ).toThrow(BootstrapGuardError);
   });
 });
 
@@ -55,30 +60,40 @@ describe('assertSourceIsDevDatabase', () => {
   });
 
   it('rejects any other database name', () => {
-    expect(() => assertSourceIsDevDatabase(PROD_URL)).toThrow(BootstrapGuardError);
+    expect(() => assertSourceIsDevDatabase(PROD_URL)).toThrow(
+      BootstrapGuardError,
+    );
   });
 
   it('rejects a database named "engmasterai" on a non-local host', () => {
-    expect(() => assertSourceIsDevDatabase(REMOTE_ENGMASTERAI_URL)).toThrow(/host/i);
+    expect(() => assertSourceIsDevDatabase(REMOTE_ENGMASTERAI_URL)).toThrow(
+      /host/i,
+    );
   });
 });
 
 describe('requireDestinationConnectionString', () => {
   it('returns BOOTSTRAP_DEST_DATABASE_URL when set', () => {
     expect(
-      requireDestinationConnectionString({ BOOTSTRAP_DEST_DATABASE_URL: PROD_URL } as NodeJS.ProcessEnv),
+      requireDestinationConnectionString({
+        BOOTSTRAP_DEST_DATABASE_URL: PROD_URL,
+      } as NodeJS.ProcessEnv),
     ).toBe(PROD_URL);
   });
 
   it('throws when unset — never falls back to DATABASE_URL', () => {
     expect(() =>
-      requireDestinationConnectionString({ DATABASE_URL: DEV_URL } as NodeJS.ProcessEnv),
+      requireDestinationConnectionString({
+        DATABASE_URL: DEV_URL,
+      } as NodeJS.ProcessEnv),
     ).toThrow(/BOOTSTRAP_DEST_DATABASE_URL/);
   });
 
   it('throws when set to an empty string', () => {
     expect(() =>
-      requireDestinationConnectionString({ BOOTSTRAP_DEST_DATABASE_URL: '  ' } as NodeJS.ProcessEnv),
+      requireDestinationConnectionString({
+        BOOTSTRAP_DEST_DATABASE_URL: '  ',
+      } as NodeJS.ProcessEnv),
     ).toThrow();
   });
 });
@@ -105,7 +120,9 @@ describe('assertSourceAndDestinationDiffer', () => {
 
 describe('assertConfirmedDestinationName', () => {
   it('passes when --confirm-db matches the real destination name', () => {
-    expect(() => assertConfirmedDestinationName('railway', 'railway')).not.toThrow();
+    expect(() =>
+      assertConfirmedDestinationName('railway', 'railway'),
+    ).not.toThrow();
   });
 
   it('throws when --confirm-db is missing', () => {
@@ -115,9 +132,9 @@ describe('assertConfirmedDestinationName', () => {
   });
 
   it('throws when --confirm-db does not match', () => {
-    expect(() => assertConfirmedDestinationName('wrong-name', 'railway')).toThrow(
-      BootstrapGuardError,
-    );
+    expect(() =>
+      assertConfirmedDestinationName('wrong-name', 'railway'),
+    ).toThrow(BootstrapGuardError);
   });
 });
 
@@ -127,32 +144,46 @@ describe('assertProductionApplyAcknowledged', () => {
   });
 
   it('throws when --confirm-production is missing, independent of --confirm-db', () => {
-    expect(() => assertProductionApplyAcknowledged(false)).toThrow(/--confirm-production/);
+    expect(() => assertProductionApplyAcknowledged(false)).toThrow(
+      /--confirm-production/,
+    );
   });
 });
 
 describe('assertMigrationHistoryIsClean', () => {
   it('passes when there are no failed or rolled-back migrations', () => {
     expect(() =>
-      assertMigrationHistoryIsClean('source', { failedCount: 0, rolledBackCount: 0 }),
+      assertMigrationHistoryIsClean('source', {
+        failedCount: 0,
+        rolledBackCount: 0,
+      }),
     ).not.toThrow();
   });
 
   it('throws and names the side when a rolled-back migration exists, even if the count would drop out of a "currently applied" fingerprint view', () => {
     expect(() =>
-      assertMigrationHistoryIsClean('destination', { failedCount: 0, rolledBackCount: 1 }),
+      assertMigrationHistoryIsClean('destination', {
+        failedCount: 0,
+        rolledBackCount: 1,
+      }),
     ).toThrow(/destination.*rolled-back/is);
   });
 
   it('throws when a failed (never-finished) migration exists', () => {
     expect(() =>
-      assertMigrationHistoryIsClean('source', { failedCount: 1, rolledBackCount: 0 }),
+      assertMigrationHistoryIsClean('source', {
+        failedCount: 1,
+        rolledBackCount: 0,
+      }),
     ).toThrow(/source.*failed/is);
   });
 
   it('throws BootstrapGuardError', () => {
     expect(() =>
-      assertMigrationHistoryIsClean('source', { failedCount: 1, rolledBackCount: 1 }),
+      assertMigrationHistoryIsClean('source', {
+        failedCount: 1,
+        rolledBackCount: 1,
+      }),
     ).toThrow(BootstrapGuardError);
   });
 });
@@ -167,12 +198,14 @@ describe('assertMigrationNameSetsMatch', () => {
     expect(() => assertMigrationNameSetsMatch(base, [...base])).not.toThrow();
   });
 
-  it('passes even when checksums differ for the same name — checksum equality is not this guard\'s job', () => {
+  it("passes even when checksums differ for the same name — checksum equality is not this guard's job", () => {
     const differentChecksums = [
       { migrationName: '20260101_init', checksum: 'DIFFERENT' },
       { migrationName: '20260102_add_x', checksum: 'ALSO_DIFFERENT' },
     ];
-    expect(() => assertMigrationNameSetsMatch(base, differentChecksums)).not.toThrow();
+    expect(() =>
+      assertMigrationNameSetsMatch(base, differentChecksums),
+    ).not.toThrow();
   });
 
   it('throws when the destination is missing a migration', () => {
@@ -182,7 +215,10 @@ describe('assertMigrationNameSetsMatch', () => {
   });
 
   it('throws when the source is missing a migration destination has', () => {
-    const destinationOnly = [...base, { migrationName: '20260103_extra', checksum: 'ghi' }];
+    const destinationOnly = [
+      ...base,
+      { migrationName: '20260103_extra', checksum: 'ghi' },
+    ];
     expect(() => assertMigrationNameSetsMatch(base, destinationOnly)).toThrow(
       /Missing on source.*20260103_extra/s,
     );

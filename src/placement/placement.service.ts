@@ -377,7 +377,9 @@ export class PlacementService {
     ]);
 
     const questionById = new Map(questions.map((q) => [q.id, q]));
-    const submittedById = new Map(answers.map((a) => [a.questionId, a.submitted]));
+    const submittedById = new Map(
+      answers.map((a) => [a.questionId, a.submitted]),
+    );
 
     // Ordered by the attempt's own questionIds (the order the student
     // actually saw them in), same as toAttemptState — never DB insertion
@@ -390,7 +392,10 @@ export class PlacementService {
         const submitted = submittedById.get(q.id) ?? null;
         const isCorrect =
           submitted !== null &&
-          gradeQuestion({ type: q.type, correctAnswer: q.correctAnswer }, submitted);
+          gradeQuestion(
+            { type: q.type, correctAnswer: q.correctAnswer },
+            submitted,
+          );
         return {
           questionId: q.id,
           section: q.section,
@@ -493,7 +498,9 @@ export class PlacementService {
     }
 
     const [phases, sectionScores] = await Promise.all([
-      this.describePhases((roadmap.items as unknown[]).map(normalizeRoadmapItem)),
+      this.describePhases(
+        (roadmap.items as unknown[]).map(normalizeRoadmapItem),
+      ),
       this.loadSectionScores(roadmap.placementAttemptId),
     ]);
 
@@ -856,7 +863,10 @@ export class PlacementService {
     goal: LearningGoal,
   ): Promise<RoadmapResourceCandidate[]> {
     const goalFilter = {
-      OR: [{ suitableGoals: { isEmpty: true } }, { suitableGoals: { has: goal } }],
+      OR: [
+        { suitableGoals: { isEmpty: true } },
+        { suitableGoals: { has: goal } },
+      ],
     };
 
     const [courses, libraries, categories, scenarios] = await Promise.all([
@@ -993,29 +1003,30 @@ export class PlacementService {
       .filter((i) => i.resourceType === 'SPEAKING_SCENARIO')
       .map((i) => i.resourceId);
 
-    const [courses, libraries, categories, scenarios, minutesByCourse] = await Promise.all([
-      this.prisma.course.findMany({
-        where: { id: { in: courseIds }, isPublished: true },
-        select: { id: true, title: true, thumbnail: true },
-      }),
-      this.prisma.vocabLibrary.findMany({
-        where: { id: { in: libraryIds }, isPublished: true },
-        select: { id: true, name: true, thumbnail: true },
-      }),
-      this.prisma.listeningCategory.findMany({
-        where: { id: { in: categoryIds }, isPublished: true },
-        select: { id: true, nameVi: true },
-      }),
-      this.prisma.speakingScenario.findMany({
-        where: { id: { in: scenarioIds }, isPublished: true },
-        select: { id: true, nameVi: true },
-      }),
-      // Same shared helper CourseService's own course-card tile uses — see
-      // shared/estimated-minutes.ts's header for why this isn't
-      // reimplemented here. VocabLibrary/ListeningCategory have no
-      // equivalent aggregate; those items get 0 (never fabricated).
-      getEstimatedMinutesByCourseId(this.prisma, courseIds),
-    ]);
+    const [courses, libraries, categories, scenarios, minutesByCourse] =
+      await Promise.all([
+        this.prisma.course.findMany({
+          where: { id: { in: courseIds }, isPublished: true },
+          select: { id: true, title: true, thumbnail: true },
+        }),
+        this.prisma.vocabLibrary.findMany({
+          where: { id: { in: libraryIds }, isPublished: true },
+          select: { id: true, name: true, thumbnail: true },
+        }),
+        this.prisma.listeningCategory.findMany({
+          where: { id: { in: categoryIds }, isPublished: true },
+          select: { id: true, nameVi: true },
+        }),
+        this.prisma.speakingScenario.findMany({
+          where: { id: { in: scenarioIds }, isPublished: true },
+          select: { id: true, nameVi: true },
+        }),
+        // Same shared helper CourseService's own course-card tile uses — see
+        // shared/estimated-minutes.ts's header for why this isn't
+        // reimplemented here. VocabLibrary/ListeningCategory have no
+        // equivalent aggregate; those items get 0 (never fabricated).
+        getEstimatedMinutesByCourseId(this.prisma, courseIds),
+      ]);
 
     const resourceByKey = new Map<
       string,
@@ -1059,7 +1070,9 @@ export class PlacementService {
 
     return items
       .map((item) => {
-        const resource = resourceByKey.get(`${item.resourceType}:${item.resourceId}`);
+        const resource = resourceByKey.get(
+          `${item.resourceType}:${item.resourceId}`,
+        );
         return resource ? { item, resource } : null;
       })
       .filter((x): x is NonNullable<typeof x> => x != null);
@@ -1077,8 +1090,9 @@ export class PlacementService {
     // DTO for a pillar this narration was never written to describe, a
     // SPEAKING item is simply excluded from what gets narrated here.
     return joined
-      .filter((j): j is typeof j & { item: { pillar: CourseType } } =>
-        j.item.pillar !== 'SPEAKING',
+      .filter(
+        (j): j is typeof j & { item: { pillar: CourseType } } =>
+          j.item.pillar !== 'SPEAKING',
       )
       .map(({ item, resource }) => ({
         phase: item.phase,

@@ -7,7 +7,10 @@ const DEV_DATABASE_NAME = 'engmasterai';
 // The real dev setup (docker-compose.yml + .env) is always localhost — a
 // database literally named "engmasterai" on some OTHER host is not this
 // project's dev database, and must not be treated as one.
-const DEV_DATABASE_HOSTS: ReadonlySet<string> = new Set(['localhost', '127.0.0.1']);
+const DEV_DATABASE_HOSTS: ReadonlySet<string> = new Set([
+  'localhost',
+  '127.0.0.1',
+]);
 
 export class BootstrapGuardError extends Error {
   constructor(message: string) {
@@ -24,16 +27,22 @@ export interface DatabaseIdentity {
 // Deliberately returns only host + database name — never credentials. This
 // is the ONLY shape of a connection string this module (or its callers)
 // should ever log or print.
-export const parseDatabaseIdentity = (connectionString: string): DatabaseIdentity => {
+export const parseDatabaseIdentity = (
+  connectionString: string,
+): DatabaseIdentity => {
   let url: URL;
   try {
     url = new URL(connectionString);
   } catch {
-    throw new BootstrapGuardError('Could not parse a database connection string.');
+    throw new BootstrapGuardError(
+      'Could not parse a database connection string.',
+    );
   }
   const database = url.pathname.replace(/^\//, '');
   if (!database) {
-    throw new BootstrapGuardError('Connection string has no database name in its path.');
+    throw new BootstrapGuardError(
+      'Connection string has no database name in its path.',
+    );
   }
   return { host: url.hostname, database };
 };
@@ -57,7 +66,7 @@ export const assertSourceIsDevDatabase = (
   if (!DEV_DATABASE_HOSTS.has(identity.host)) {
     throw new BootstrapGuardError(
       `Bootstrap source resolves to host "${identity.host}". A database named "${DEV_DATABASE_NAME}" ` +
-        'on a non-local host is not this project\'s dev database — refusing to run. ' +
+        "on a non-local host is not this project's dev database — refusing to run. " +
         `Expected one of: ${[...DEV_DATABASE_HOSTS].join(', ')}.`,
     );
   }
@@ -82,7 +91,10 @@ export const assertSourceAndDestinationDiffer = (
   source: DatabaseIdentity,
   destination: DatabaseIdentity,
 ): void => {
-  if (source.host === destination.host && source.database === destination.database) {
+  if (
+    source.host === destination.host &&
+    source.database === destination.database
+  ) {
     throw new BootstrapGuardError(
       'Source and destination resolve to the same host + database. ' +
         'Refusing to run a no-op/self-copy bootstrap.',
@@ -117,7 +129,9 @@ export const assertConfirmedDestinationName = (
 // write against production at all. Required together, checked separately,
 // so a future caller cannot satisfy the "production" acknowledgement by
 // accident while only intending to pass --confirm-db.
-export const assertProductionApplyAcknowledged = (confirmProduction: boolean): void => {
+export const assertProductionApplyAcknowledged = (
+  confirmProduction: boolean,
+): void => {
   if (!confirmProduction) {
     throw new BootstrapGuardError(
       '--confirm-production is required with --apply — a literal, value-free acknowledgement ' +
@@ -172,7 +186,9 @@ export const assertMigrationNameSetsMatch = (
   source: readonly MigrationRecord[],
   destination: readonly MigrationRecord[],
 ): void => {
-  const destinationNames = new Set(destination.map((record) => record.migrationName));
+  const destinationNames = new Set(
+    destination.map((record) => record.migrationName),
+  );
   const sourceNames = new Set(source.map((record) => record.migrationName));
   const missingOnDestination = source
     .filter((record) => !destinationNames.has(record.migrationName))

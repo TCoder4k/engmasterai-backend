@@ -710,12 +710,14 @@ describe('Listening module (e2e) — Sprint 11: content authoring', () => {
         .set('Authorization', `Bearer ${studentToken}`)
         .expect(200);
 
-      const card = (res.body.data as { id: string; thumbnailUrl: string }[]).find(
-        (c) => c.id === contentId,
-      );
+      const card = (
+        res.body.data as { id: string; thumbnailUrl: string }[]
+      ).find((c) => c.id === contentId);
       // YOUTUBE_URL is https://www.youtube.com/watch?v=dQw4w9WgXcQ — the video
       // id parsed out of it, never a stock placeholder.
-      expect(card?.thumbnailUrl).toBe('https://img.youtube.com/vi/dQw4w9WgXcQ/hqdefault.jpg');
+      expect(card?.thumbnailUrl).toBe(
+        'https://img.youtube.com/vi/dQw4w9WgXcQ/hqdefault.jpg',
+      );
     });
 
     it('prefers an author-supplied thumbnailUrl over the YouTube fallback', async () => {
@@ -742,10 +744,12 @@ describe('Listening module (e2e) — Sprint 11: content authoring', () => {
         .set('Authorization', `Bearer ${studentToken}`)
         .expect(200);
 
-      const card = (res.body.data as { id: string; thumbnailUrl: string }[]).find(
-        (c) => c.id === contentId,
+      const card = (
+        res.body.data as { id: string; thumbnailUrl: string }[]
+      ).find((c) => c.id === contentId);
+      expect(card?.thumbnailUrl).toBe(
+        'https://cdn.example.com/custom-cover.jpg',
       );
-      expect(card?.thumbnailUrl).toBe('https://cdn.example.com/custom-cover.jpg');
     });
   });
 });

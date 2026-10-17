@@ -34,7 +34,9 @@ describe('SseFrameBuffer', () => {
 
   it('keeps a trailing incomplete frame in the buffer after extracting complete ones ahead of it', () => {
     const buffer = new SseFrameBuffer();
-    const frames = buffer.push('event: delta\ndata: {"text":"a"}\n\nevent: delta\ndata: {"tex');
+    const frames = buffer.push(
+      'event: delta\ndata: {"text":"a"}\n\nevent: delta\ndata: {"tex',
+    );
     expect(frames).toEqual([{ event: 'delta', data: '{"text":"a"}' }]);
     const rest = buffer.push('t":"b"}\n\n');
     expect(rest).toEqual([{ event: 'delta', data: '{"text":"b"}' }]);
@@ -42,7 +44,9 @@ describe('SseFrameBuffer', () => {
 
   it('joins multiple data: lines within one frame with a newline, per the SSE spec', () => {
     const buffer = new SseFrameBuffer();
-    const frames = buffer.push('event: delta\ndata: line one\ndata: line two\n\n');
+    const frames = buffer.push(
+      'event: delta\ndata: line one\ndata: line two\n\n',
+    );
     expect(frames).toEqual([{ event: 'delta', data: 'line one\nline two' }]);
   });
 
@@ -57,7 +61,9 @@ describe('SseFrameBuffer', () => {
     // If the implementation only ever looked for "\n\n", this would still
     // work by accident — the real risk is the reverse: this input must NOT
     // spuriously match "\n\n" and cut the frame in the wrong place.
-    const frames = buffer.push('event: delta\r\ndata: {"text":"a"}\r\n\r\ndata: {"text":"b"}\n\n');
+    const frames = buffer.push(
+      'event: delta\r\ndata: {"text":"a"}\r\n\r\ndata: {"text":"b"}\n\n',
+    );
     expect(frames).toEqual([
       { event: 'delta', data: '{"text":"a"}' },
       { event: undefined, data: '{"text":"b"}' },
@@ -67,7 +73,10 @@ describe('SseFrameBuffer', () => {
 
 describe('consumeSseStream', () => {
   const encoder = new TextEncoder();
-  const streamOf = (pieces: string[], onCancel?: () => void): ReadableStream<Uint8Array> =>
+  const streamOf = (
+    pieces: string[],
+    onCancel?: () => void,
+  ): ReadableStream<Uint8Array> =>
     new ReadableStream<Uint8Array>({
       start(controller) {
         for (const piece of pieces) controller.enqueue(encoder.encode(piece));
@@ -90,7 +99,9 @@ describe('consumeSseStream', () => {
   it('processes every frame from a single chunk that carries several', async () => {
     const seen: string[] = [];
     await consumeSseStream(
-      streamOf(['data: {"text":"a"}\n\ndata: {"text":"b"}\n\ndata: {"text":"c"}\n\n']),
+      streamOf([
+        'data: {"text":"a"}\n\ndata: {"text":"b"}\n\ndata: {"text":"c"}\n\n',
+      ]),
       (frame) => {
         seen.push(frame.data);
       },
@@ -108,7 +119,9 @@ describe('consumeSseStream', () => {
     // `consumeSseStream` actually calls `reader.cancel()`.
     const body = new ReadableStream<Uint8Array>({
       start(controller) {
-        controller.enqueue(encoder.encode('data: {"text":"a"}\n\ndata: {"text":"b"}\n\n'));
+        controller.enqueue(
+          encoder.encode('data: {"text":"a"}\n\ndata: {"text":"b"}\n\n'),
+        );
       },
       cancel() {
         cancelled = true;

@@ -16,9 +16,9 @@ describe('assertLessonVisible Premium policy', () => {
       },
     } as never;
 
-    await expect(assertLessonVisible(prisma, 'lesson-10', 'free-user')).rejects.toBeInstanceOf(
-      ForbiddenException,
-    );
+    await expect(
+      assertLessonVisible(prisma, 'lesson-10', 'free-user'),
+    ).rejects.toBeInstanceOf(ForbiddenException);
   });
 
   it('keeps the free preview available', async () => {
@@ -29,7 +29,9 @@ describe('assertLessonVisible Premium policy', () => {
       },
     } as never;
 
-    await expect(assertLessonVisible(prisma, 'lesson-3', 'free-user')).resolves.toBeUndefined();
+    await expect(
+      assertLessonVisible(prisma, 'lesson-3', 'free-user'),
+    ).resolves.toBeUndefined();
   });
 
   it('allows a currently active Premium subscription regardless of stored progress', async () => {
@@ -43,7 +45,9 @@ describe('assertLessonVisible Premium policy', () => {
       },
     } as never;
 
-    await expect(assertLessonVisible(prisma, 'lesson-10', 'premium-user')).resolves.toBeUndefined();
+    await expect(
+      assertLessonVisible(prisma, 'lesson-10', 'premium-user'),
+    ).resolves.toBeUndefined();
   });
 
   it('still hides unpublished lessons before entitlement is evaluated', async () => {
@@ -52,8 +56,8 @@ describe('assertLessonVisible Premium policy', () => {
       subscription: { findUnique: jest.fn() },
     } as never;
 
-    await expect(assertLessonVisible(prisma, 'missing', 'free-user')).rejects.toBeInstanceOf(
-      NotFoundException,
-    );
+    await expect(
+      assertLessonVisible(prisma, 'missing', 'free-user'),
+    ).rejects.toBeInstanceOf(NotFoundException);
   });
 });

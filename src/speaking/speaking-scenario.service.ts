@@ -1,4 +1,8 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { CefrLevel } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateSpeakingScenarioDto, UpdateSpeakingScenarioDto } from './dto';
@@ -66,7 +70,9 @@ export class SpeakingScenarioService {
    * never a bare `include: { exercises: true }`, which would leak `aiRole`/
    * `conversationGoal` straight to the browser. See speaking.types.ts.
    */
-  async findPublishedDetail(scenarioId: string): Promise<SpeakingScenarioDetailDto> {
+  async findPublishedDetail(
+    scenarioId: string,
+  ): Promise<SpeakingScenarioDetailDto> {
     const scenario = await this.prisma.speakingScenario.findFirst({
       where: { id: scenarioId, isPublished: true },
       select: {
@@ -94,7 +100,9 @@ export class SpeakingScenarioService {
     });
 
     if (!scenario) {
-      throw new NotFoundException(`Speaking scenario with ID ${scenarioId} not found`);
+      throw new NotFoundException(
+        `Speaking scenario with ID ${scenarioId} not found`,
+      );
     }
 
     return {
@@ -128,7 +136,9 @@ export class SpeakingScenarioService {
     return scenarios.map(toManageScenario);
   }
 
-  async create(dto: CreateSpeakingScenarioDto): Promise<ManageSpeakingScenarioDto> {
+  async create(
+    dto: CreateSpeakingScenarioDto,
+  ): Promise<ManageSpeakingScenarioDto> {
     // Explicit field construction, never a DTO spread — the global
     // ValidationPipe is bare (no `whitelist`), so an unknown `isPublished`
     // in the body survives onto req.body; this is what stops it reaching a
@@ -151,7 +161,10 @@ export class SpeakingScenarioService {
     return toManageScenario(scenario);
   }
 
-  async update(id: string, dto: UpdateSpeakingScenarioDto): Promise<ManageSpeakingScenarioDto> {
+  async update(
+    id: string,
+    dto: UpdateSpeakingScenarioDto,
+  ): Promise<ManageSpeakingScenarioDto> {
     await this.findOneOrThrow(id);
 
     const scenario = await this.prisma.speakingScenario.update({
@@ -159,8 +172,12 @@ export class SpeakingScenarioService {
       data: {
         ...(dto.name !== undefined && { name: dto.name.trim() }),
         ...(dto.nameVi !== undefined && { nameVi: dto.nameVi.trim() }),
-        ...(dto.description !== undefined && { description: dto.description.trim() }),
-        ...(dto.descriptionVi !== undefined && { descriptionVi: dto.descriptionVi.trim() }),
+        ...(dto.description !== undefined && {
+          description: dto.description.trim(),
+        }),
+        ...(dto.descriptionVi !== undefined && {
+          descriptionVi: dto.descriptionVi.trim(),
+        }),
         ...(dto.level !== undefined && { level: dto.level }),
         ...(dto.orderIndex !== undefined && { orderIndex: dto.orderIndex }),
         ...(dto.isFreeTalk !== undefined && { isFreeTalk: dto.isFreeTalk }),

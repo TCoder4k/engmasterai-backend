@@ -1,7 +1,10 @@
 // Shared response shape for GET /dictionary/lookup — used by the service,
 // the Redis cache store and (implicitly) the controller's return type.
 
-export type DictionarySourceKind = 'VOCAB_WORD' | 'DICTIONARY_CACHE' | 'EXTERNAL';
+export type DictionarySourceKind =
+  | 'VOCAB_WORD'
+  | 'DICTIONARY_CACHE'
+  | 'EXTERNAL';
 
 export type ViTranslationSource = 'NONE' | 'AI' | 'CURATED';
 

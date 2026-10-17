@@ -1,4 +1,14 @@
-import { Body, Controller, Get, Param, Post, Query, Req, UseGuards, ValidationPipe } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Post,
+  Query,
+  Req,
+  UseGuards,
+  ValidationPipe,
+} from '@nestjs/common';
 import type { Request } from 'express';
 import { JwtAuthGuard } from '../auth/guards';
 import { RateLimiterService } from '../auth/rate-limit/rate-limiter.service';
@@ -30,15 +40,25 @@ export class StreakController {
   @UseGuards(JwtAuthGuard, StreakRateLimitGuard)
   @StreakRateLimit({ kind: 'invite', max: 10, windowSeconds: 3600 })
   @Post('invitations')
-  async sendInvitation(@Req() req: RequestWithUser, @Body(bodyPipe) dto: CreateInvitationDto) {
+  async sendInvitation(
+    @Req() req: RequestWithUser,
+    @Body(bodyPipe) dto: CreateInvitationDto,
+  ) {
     return this.streakService.sendInvitation(req.user.userId, dto.inviteeId);
   }
 
   @UseGuards(JwtAuthGuard, StreakRateLimitGuard)
   @StreakRateLimit({ kind: 'read', max: 60, windowSeconds: 60 })
   @Get('invitations')
-  async listInvitations(@Req() req: RequestWithUser, @Query(queryPipe) query: QueryInvitationsDto) {
-    return this.streakService.listInvitations(req.user.userId, query.direction, query.status);
+  async listInvitations(
+    @Req() req: RequestWithUser,
+    @Query(queryPipe) query: QueryInvitationsDto,
+  ) {
+    return this.streakService.listInvitations(
+      req.user.userId,
+      query.direction,
+      query.status,
+    );
   }
 
   @UseGuards(JwtAuthGuard, StreakRateLimitGuard)
@@ -51,7 +71,10 @@ export class StreakController {
   @UseGuards(JwtAuthGuard, StreakRateLimitGuard)
   @StreakRateLimit({ kind: 'respond', max: 30, windowSeconds: 3600 })
   @Post('invitations/:id/decline')
-  async declineInvitation(@Req() req: RequestWithUser, @Param('id') id: string) {
+  async declineInvitation(
+    @Req() req: RequestWithUser,
+    @Param('id') id: string,
+  ) {
     await this.streakService.declineInvitation(req.user.userId, id);
     return { success: true };
   }
@@ -78,7 +101,11 @@ export class StreakController {
   /** PUBLIC, unauthenticated — same pattern as GET public/:shareId below. */
   @Get('invite-link/:token')
   async previewInviteLink(@Req() req: Request, @Param('token') token: string) {
-    const result = await this.rateLimiter.checkAndIncrement(`streak:invite-link-read:${req.ip}`, 30, 60);
+    const result = await this.rateLimiter.checkAndIncrement(
+      `streak:invite-link-read:${req.ip}`,
+      30,
+      60,
+    );
     if (!result.allowed) throw new RateLimitExceededException();
     return this.streakService.previewInviteLink(token);
   }
@@ -86,7 +113,10 @@ export class StreakController {
   @UseGuards(JwtAuthGuard, StreakRateLimitGuard)
   @StreakRateLimit({ kind: 'linkJoin', max: 20, windowSeconds: 3600 })
   @Post('invite-link/:token/accept')
-  async acceptInviteLink(@Req() req: RequestWithUser, @Param('token') token: string) {
+  async acceptInviteLink(
+    @Req() req: RequestWithUser,
+    @Param('token') token: string,
+  ) {
     return this.streakService.acceptInviteLink(req.user.userId, token);
   }
 
@@ -112,7 +142,10 @@ export class StreakController {
   @UseGuards(JwtAuthGuard, StreakRateLimitGuard)
   @StreakRateLimit({ kind: 'read', max: 60, windowSeconds: 60 })
   @Get('pair/:userId')
-  async getPairStatus(@Req() req: RequestWithUser, @Param('userId') userId: string) {
+  async getPairStatus(
+    @Req() req: RequestWithUser,
+    @Param('userId') userId: string,
+  ) {
     return this.streakService.getPairStatus(req.user.userId, userId);
   }
 
@@ -122,8 +155,15 @@ export class StreakController {
    * authenticated user to key on.
    */
   @Get('public/:shareId')
-  async getPublicStreak(@Req() req: Request, @Param('shareId') shareId: string) {
-    const result = await this.rateLimiter.checkAndIncrement(`streak:public-read:${req.ip}`, 30, 60);
+  async getPublicStreak(
+    @Req() req: Request,
+    @Param('shareId') shareId: string,
+  ) {
+    const result = await this.rateLimiter.checkAndIncrement(
+      `streak:public-read:${req.ip}`,
+      30,
+      60,
+    );
     if (!result.allowed) throw new RateLimitExceededException();
     return this.streakService.getPublicStreak(shareId);
   }
@@ -138,7 +178,10 @@ export class StreakController {
   @UseGuards(JwtAuthGuard, StreakRateLimitGuard)
   @StreakRateLimit({ kind: 'share', max: 10, windowSeconds: 3600 })
   @Post(':id/share')
-  async generateShareLink(@Req() req: RequestWithUser, @Param('id') id: string) {
+  async generateShareLink(
+    @Req() req: RequestWithUser,
+    @Param('id') id: string,
+  ) {
     return this.streakService.generateShareLink(req.user.userId, id);
   }
 }

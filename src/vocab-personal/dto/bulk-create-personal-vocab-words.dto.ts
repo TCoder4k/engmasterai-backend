@@ -1,5 +1,10 @@
 import { Type } from 'class-transformer';
-import { ArrayMaxSize, ArrayMinSize, IsArray, ValidateNested } from 'class-validator';
+import {
+  ArrayMaxSize,
+  ArrayMinSize,
+  IsArray,
+  ValidateNested,
+} from 'class-validator';
 import { CreatePersonalVocabWordDto } from './create-personal-vocab-word.dto';
 
 // The frontend has already done the throttled /dictionary/lookup calls for

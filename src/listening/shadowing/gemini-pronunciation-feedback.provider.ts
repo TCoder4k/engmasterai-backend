@@ -7,8 +7,14 @@ import {
   PronunciationFeedbackResult,
 } from './pronunciation-feedback.provider';
 import { normaliseMimeForProvider } from './gemini-speech-to-text.provider';
-import { DEFAULT_GEMINI_MODEL_CHAIN, parseGeminiModelList } from '../../shared/gemini-models';
-import { fetchGeminiWithFallback, isGeminiTimeout } from '../../shared/gemini-fetch-with-fallback';
+import {
+  DEFAULT_GEMINI_MODEL_CHAIN,
+  parseGeminiModelList,
+} from '../../shared/gemini-models';
+import {
+  fetchGeminiWithFallback,
+  isGeminiTimeout,
+} from '../../shared/gemini-fetch-with-fallback';
 
 // Sprint 11 Phase 4C — pronunciation coaching via the Gemini REST API.
 //
@@ -27,7 +33,8 @@ import { fetchGeminiWithFallback, isGeminiTimeout } from '../../shared/gemini-fe
 // coaching that is worded slightly differently is simply coaching. It is kept
 // low so the ADVICE does not swing between requests, only the wording.
 
-const GEMINI_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models';
+const GEMINI_ENDPOINT =
+  'https://generativelanguage.googleapis.com/v1beta/models';
 
 /**
  * The cap on what comes back, in characters.
@@ -73,10 +80,10 @@ interface GeminiResponseShape {
 }
 
 @Injectable()
-export class GeminiPronunciationFeedbackProvider
-  implements PronunciationFeedbackProvider
-{
-  private readonly logger = new Logger(GeminiPronunciationFeedbackProvider.name);
+export class GeminiPronunciationFeedbackProvider implements PronunciationFeedbackProvider {
+  private readonly logger = new Logger(
+    GeminiPronunciationFeedbackProvider.name,
+  );
   private readonly models: string[];
 
   constructor(private readonly config: ConfigService) {
@@ -86,7 +93,10 @@ export class GeminiPronunciationFeedbackProvider
     // gemini-fetch-with-fallback.ts. Every model in the chain was verified
     // to accept audio inline_data.
     this.models = parseGeminiModelList(
-      this.config.get<string>('GEMINI_FEEDBACK_MODEL', DEFAULT_GEMINI_MODEL_CHAIN),
+      this.config.get<string>(
+        'GEMINI_FEEDBACK_MODEL',
+        DEFAULT_GEMINI_MODEL_CHAIN,
+      ),
       'GEMINI_FEEDBACK_MODEL',
     );
   }
@@ -205,7 +215,10 @@ export class GeminiPronunciationFeedbackProvider
     // empty answer below.
     if (payload.candidates?.[0]?.finishReason === 'MAX_TOKENS') {
       this.logger.warn('Gemini feedback was cut off at the token limit');
-      throw new PronunciationFeedbackError('UNAVAILABLE', 'AI feedback was cut off');
+      throw new PronunciationFeedbackError(
+        'UNAVAILABLE',
+        'AI feedback was cut off',
+      );
     }
 
     const text = payload.candidates?.[0]?.content?.parts

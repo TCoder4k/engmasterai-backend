@@ -17,7 +17,11 @@ export const ENGY_CHAT_PROVIDER = 'ENGY_CHAT_PROVIDER';
  * Deliberately its own union, not shared with PronunciationFeedbackFailureKind
  * or RoadmapAnalysisFailureKind — these providers fail independently.
  */
-export type EngyChatFailureKind = 'NOT_CONFIGURED' | 'TIMEOUT' | 'UNAVAILABLE' | 'BLOCKED';
+export type EngyChatFailureKind =
+  | 'NOT_CONFIGURED'
+  | 'TIMEOUT'
+  | 'UNAVAILABLE'
+  | 'BLOCKED';
 
 export class EngyChatError extends Error {
   constructor(

@@ -46,6 +46,8 @@ export const assertExerciseVisible = async (
   });
 
   if (!exercise) {
-    throw new NotFoundException(`Speaking exercise with ID ${exerciseId} not found`);
+    throw new NotFoundException(
+      `Speaking exercise with ID ${exerciseId} not found`,
+    );
   }
 };

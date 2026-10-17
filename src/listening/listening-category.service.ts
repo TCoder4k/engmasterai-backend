@@ -74,7 +74,9 @@ export class ListeningCategoryService {
         ...(dto.nameVi !== undefined && { nameVi: dto.nameVi.trim() }),
         ...(dto.orderIndex !== undefined && { orderIndex: dto.orderIndex }),
         ...(dto.level !== undefined && { level: dto.level }),
-        ...(dto.suitableGoals !== undefined && { suitableGoals: dto.suitableGoals }),
+        ...(dto.suitableGoals !== undefined && {
+          suitableGoals: dto.suitableGoals,
+        }),
       },
       select: MANAGE_SELECT,
     });

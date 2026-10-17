@@ -32,12 +32,19 @@ export const MAX_THEORY_EXCERPT_CHARS = 4000;
 export class ChatContextResolver {
   constructor(private readonly prisma: PrismaService) {}
 
-  async resolve(context: ChatContextInput, userId?: string): Promise<string | null> {
+  async resolve(
+    context: ChatContextInput,
+    userId?: string,
+  ): Promise<string | null> {
     if (context.type === 'GENERAL') return null;
     if (context.type === 'LESSON') {
-      return formatLessonContext(await this.resolveLesson(context.resourceId, context.stage, userId));
+      return formatLessonContext(
+        await this.resolveLesson(context.resourceId, context.stage, userId),
+      );
     }
-    return formatVocabWordContext(await this.resolveVocabWord(context.resourceId));
+    return formatVocabWordContext(
+      await this.resolveVocabWord(context.resourceId),
+    );
   }
 
   private async resolveLesson(
@@ -53,7 +60,10 @@ export class ChatContextResolver {
     } else {
       const lesson = await this.prisma.lesson.findUnique({
         where: { id: lessonId },
-        select: { isPublished: true, course: { select: { isPublished: true } } },
+        select: {
+          isPublished: true,
+          course: { select: { isPublished: true } },
+        },
       });
       if (!lesson || !lesson.isPublished || !lesson.course.isPublished) {
         throw new NotFoundException(`Lesson for context ${lessonId} not found`);
@@ -62,7 +72,12 @@ export class ChatContextResolver {
 
     const lesson = await this.prisma.lesson.findUniqueOrThrow({
       where: { id: lessonId },
-      select: { title: true, description: true, learningObjectives: true, notes: true },
+      select: {
+        title: true,
+        description: true,
+        learningObjectives: true,
+        notes: true,
+      },
     });
 
     const projection: LessonContextProjection = {
@@ -82,14 +97,24 @@ export class ChatContextResolver {
     return projection;
   }
 
-  private async resolveVocabWord(vocabWordId: string): Promise<VocabWordContextProjection> {
+  private async resolveVocabWord(
+    vocabWordId: string,
+  ): Promise<VocabWordContextProjection> {
     const word = await this.prisma.vocabWord.findUnique({
       where: { id: vocabWordId },
       select: {
         text: true,
         ipa: true,
-        meanings: { select: { meaning: true }, orderBy: { orderIndex: 'asc' }, take: 1 },
-        examples: { select: { sentence: true }, orderBy: { orderIndex: 'asc' }, take: 1 },
+        meanings: {
+          select: { meaning: true },
+          orderBy: { orderIndex: 'asc' },
+          take: 1,
+        },
+        examples: {
+          select: { sentence: true },
+          orderBy: { orderIndex: 'asc' },
+          take: 1,
+        },
       },
     });
     // VocabWord has no draft/published concept to hide — unlike Lesson, a
@@ -108,13 +133,19 @@ export class ChatContextResolver {
 }
 
 /** Exported for tests. Turns the allowlisted projection into the prompt text. */
-export const formatLessonContext = (projection: LessonContextProjection): string => {
-  const lines = [`The student is currently viewing the lesson "${projection.title}".`];
+export const formatLessonContext = (
+  projection: LessonContextProjection,
+): string => {
+  const lines = [
+    `The student is currently viewing the lesson "${projection.title}".`,
+  ];
   if (projection.description) {
     lines.push(`Lesson description: ${projection.description}`);
   }
   if (projection.learningObjectives.length > 0) {
-    lines.push(`Learning objectives: ${projection.learningObjectives.join('; ')}`);
+    lines.push(
+      `Learning objectives: ${projection.learningObjectives.join('; ')}`,
+    );
   }
   if (projection.theoryExcerpt) {
     lines.push(
@@ -125,11 +156,17 @@ export const formatLessonContext = (projection: LessonContextProjection): string
 };
 
 /** Exported for tests. */
-export const formatVocabWordContext = (projection: VocabWordContextProjection): string => {
-  const lines = [`The student is asking about the English word "${projection.word}".`];
+export const formatVocabWordContext = (
+  projection: VocabWordContextProjection,
+): string => {
+  const lines = [
+    `The student is asking about the English word "${projection.word}".`,
+  ];
   if (projection.ipa) lines.push(`IPA: ${projection.ipa}`);
-  if (projection.viMeaning) lines.push(`Curated Vietnamese meaning: ${projection.viMeaning}`);
-  if (projection.exampleEn) lines.push(`Example sentence: ${projection.exampleEn}`);
+  if (projection.viMeaning)
+    lines.push(`Curated Vietnamese meaning: ${projection.viMeaning}`);
+  if (projection.exampleEn)
+    lines.push(`Example sentence: ${projection.exampleEn}`);
   return lines.join('\n');
 };
 

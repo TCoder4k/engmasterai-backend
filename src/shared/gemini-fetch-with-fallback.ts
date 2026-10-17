@@ -11,7 +11,9 @@ export interface GeminiFallbackResult {
 export class GeminiFetchError extends Error {
   readonly model: string;
   constructor(model: string, cause: unknown) {
-    super(cause instanceof Error ? cause.message : 'Gemini fetch failed', { cause });
+    super(cause instanceof Error ? cause.message : 'Gemini fetch failed', {
+      cause,
+    });
     this.name = 'GeminiFetchError';
     this.model = model;
   }
@@ -85,13 +87,18 @@ export async function fetchGeminiWithFallback(
 ): Promise<GeminiFallbackResult> {
   for (let i = 0; i < models.length; i++) {
     if (externalSignal?.aborted) {
-      throw new GeminiFetchError(models[i], new DOMException('Aborted by caller', 'AbortError'));
+      throw new GeminiFetchError(
+        models[i],
+        new DOMException('Aborted by caller', 'AbortError'),
+      );
     }
     const model = models[i];
     const isLast = i === models.length - 1;
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
-    const signal = externalSignal ? AbortSignal.any([controller.signal, externalSignal]) : controller.signal;
+    const signal = externalSignal
+      ? AbortSignal.any([controller.signal, externalSignal])
+      : controller.signal;
     try {
       const response = await fetch(endpoint(model), buildInit(model, signal));
       if (RETRYABLE_STATUSES.has(response.status)) {
@@ -114,7 +121,9 @@ export async function fetchGeminiWithFallback(
       }
       const aborted = caught instanceof Error && caught.name === 'AbortError';
       if (aborted && !isLast) {
-        logger.warn(`Gemini fallback (timeout) from=${model} to=${models[i + 1]} provider=${providerName}`);
+        logger.warn(
+          `Gemini fallback (timeout) from=${model} to=${models[i + 1]} provider=${providerName}`,
+        );
         continue;
       }
       throw new GeminiFetchError(model, caught);

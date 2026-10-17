@@ -1,4 +1,8 @@
-import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { InjectRedis } from '@nestjs-modules/ioredis';
 import Redis from 'ioredis';
 import { randomBytes } from 'crypto';
@@ -39,7 +43,10 @@ export class CommunityChatTicketStore {
     if (typeof this.redis.consumeCommunityTicket !== 'function') {
       this.redis.defineCommand('consumeCommunityTicket', {
         numberOfKeys: 1,
-        lua: readFileSync(join(__dirname, 'lua', 'consume-community-ticket.lua'), 'utf8'),
+        lua: readFileSync(
+          join(__dirname, 'lua', 'consume-community-ticket.lua'),
+          'utf8',
+        ),
       });
     }
   }
@@ -56,8 +63,13 @@ export class CommunityChatTicketStore {
         COMMUNITY_LIVE_TICKET_TTL_SECONDS,
       );
     } catch (error) {
-      this.logger.error('Redis SET failed while issuing a Community Live ticket', error as Error);
-      throw new ServiceUnavailableException('Community Chat is temporarily unavailable');
+      this.logger.error(
+        'Redis SET failed while issuing a Community Live ticket',
+        error as Error,
+      );
+      throw new ServiceUnavailableException(
+        'Community Chat is temporarily unavailable',
+      );
     }
     return ticket;
   }
@@ -72,9 +84,14 @@ export class CommunityChatTicketStore {
   async consume(ticket: string): Promise<CommunityLiveTicketPayload | null> {
     let raw: string | null;
     try {
-      raw = await this.redis.consumeCommunityTicket(communityLiveTicketKey(ticket));
+      raw = await this.redis.consumeCommunityTicket(
+        communityLiveTicketKey(ticket),
+      );
     } catch (error) {
-      this.logger.error('Redis EVAL failed while consuming a Community Live ticket', error as Error);
+      this.logger.error(
+        'Redis EVAL failed while consuming a Community Live ticket',
+        error as Error,
+      );
       return null;
     }
     if (!raw) return null;

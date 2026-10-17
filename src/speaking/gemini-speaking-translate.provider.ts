@@ -6,8 +6,14 @@ import {
   SpeakingTranslateRequest,
   SpeakingTranslateResult,
 } from './speaking-translate.provider';
-import { DEFAULT_GEMINI_MODEL_CHAIN, parseGeminiModelList } from '../shared/gemini-models';
-import { fetchGeminiWithFallback, isGeminiTimeout } from '../shared/gemini-fetch-with-fallback';
+import {
+  DEFAULT_GEMINI_MODEL_CHAIN,
+  parseGeminiModelList,
+} from '../shared/gemini-models';
+import {
+  fetchGeminiWithFallback,
+  isGeminiTimeout,
+} from '../shared/gemini-fetch-with-fallback';
 
 // Speaking Partner — on-demand subtitle translation via the Gemini REST API.
 //
@@ -16,7 +22,8 @@ import { fetchGeminiWithFallback, isGeminiTimeout } from '../shared/gemini-fetch
 // request has nothing to do with the conversation's context, only the one
 // sentence handed to it.
 
-const GEMINI_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models';
+const GEMINI_ENDPOINT =
+  'https://generativelanguage.googleapis.com/v1beta/models';
 
 // 2026-09-12: a one-sentence subtitle translation needs no reasoning, but the
 // 3.x chain "thinks" before answering by default anyway — measured at ~9s for
@@ -29,7 +36,10 @@ const GEMINI_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models
 // same hang from the 2026-09-09 incident, unrelated to this param). Applied
 // ONLY to models confirmed safe — an unlisted model just keeps the slower
 // default "thinking" behavior instead of risking a chain-breaking 400.
-const THINKING_BUDGET_ZERO_SUPPORTED = new Set(['gemini-3.5-flash', 'gemini-3.7-flash']);
+const THINKING_BUDGET_ZERO_SUPPORTED = new Set([
+  'gemini-3.5-flash',
+  'gemini-3.7-flash',
+]);
 
 const TRANSLATE_SYSTEM_INSTRUCTION = [
   'You are a translation engine, not a conversational assistant.',
@@ -56,12 +66,17 @@ export class GeminiSpeakingTranslateProvider implements SpeakingTranslateProvide
     // that motivated this. Falls through to the next model on 429/503 —
     // see gemini-fetch-with-fallback.ts.
     this.models = parseGeminiModelList(
-      this.config.get<string>('GEMINI_SPEAKING_TRANSLATE_MODEL', DEFAULT_GEMINI_MODEL_CHAIN),
+      this.config.get<string>(
+        'GEMINI_SPEAKING_TRANSLATE_MODEL',
+        DEFAULT_GEMINI_MODEL_CHAIN,
+      ),
       'GEMINI_SPEAKING_TRANSLATE_MODEL',
     );
   }
 
-  async translate(request: SpeakingTranslateRequest): Promise<SpeakingTranslateResult> {
+  async translate(
+    request: SpeakingTranslateRequest,
+  ): Promise<SpeakingTranslateResult> {
     const apiKey = this.config.get<string>('GEMINI_API_KEY');
     if (!apiKey) {
       throw new SpeakingTranslateError(
@@ -70,7 +85,10 @@ export class GeminiSpeakingTranslateProvider implements SpeakingTranslateProvide
       );
     }
 
-    const timeoutMs = this.config.get<number>('SPEAKING_TRANSLATE_TIMEOUT_MS', 20000);
+    const timeoutMs = this.config.get<number>(
+      'SPEAKING_TRANSLATE_TIMEOUT_MS',
+      20000,
+    );
 
     let response: Response;
     try {
@@ -88,7 +106,9 @@ export class GeminiSpeakingTranslateProvider implements SpeakingTranslateProvide
             'x-goog-api-key': apiKey,
           },
           body: JSON.stringify({
-            systemInstruction: { parts: [{ text: TRANSLATE_SYSTEM_INSTRUCTION }] },
+            systemInstruction: {
+              parts: [{ text: TRANSLATE_SYSTEM_INSTRUCTION }],
+            },
             contents: [{ role: 'user', parts: [{ text: request.text }] }],
             generationConfig: {
               // Zero — a translation has one correct-enough answer, unlike
@@ -122,7 +142,9 @@ export class GeminiSpeakingTranslateProvider implements SpeakingTranslateProvide
       );
       throw new SpeakingTranslateError(
         aborted ? 'TIMEOUT' : 'UNAVAILABLE',
-        aborted ? 'Subtitle translation timed out' : 'Subtitle translation is unavailable',
+        aborted
+          ? 'Subtitle translation timed out'
+          : 'Subtitle translation is unavailable',
       );
     }
 
@@ -138,14 +160,20 @@ export class GeminiSpeakingTranslateProvider implements SpeakingTranslateProvide
     try {
       payload = (await response.json()) as GeminiResponseShape;
     } catch {
-      throw new SpeakingTranslateError('UNAVAILABLE', 'Subtitle translation returned no data');
+      throw new SpeakingTranslateError(
+        'UNAVAILABLE',
+        'Subtitle translation returned no data',
+      );
     }
 
     if (payload.promptFeedback?.blockReason) {
       this.logger.warn(
         `Gemini blocked a speaking translate request: ${payload.promptFeedback.blockReason}`,
       );
-      throw new SpeakingTranslateError('BLOCKED', 'The text could not be translated');
+      throw new SpeakingTranslateError(
+        'BLOCKED',
+        'The text could not be translated',
+      );
     }
 
     // A truncated answer is worse than no answer — half a sentence reads as
@@ -165,7 +193,10 @@ export class GeminiSpeakingTranslateProvider implements SpeakingTranslateProvide
       .trim();
 
     if (!text) {
-      throw new SpeakingTranslateError('UNAVAILABLE', 'Subtitle translation returned an empty reply');
+      throw new SpeakingTranslateError(
+        'UNAVAILABLE',
+        'Subtitle translation returned an empty reply',
+      );
     }
 
     return { textVi: text };

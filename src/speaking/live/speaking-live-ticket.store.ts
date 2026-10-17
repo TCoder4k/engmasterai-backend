@@ -1,4 +1,8 @@
-import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { InjectRedis } from '@nestjs-modules/ioredis';
 import Redis from 'ioredis';
 import { randomBytes } from 'crypto';
@@ -50,7 +54,10 @@ export class SpeakingLiveTicketStore {
     if (typeof this.redis.consumeLiveTicket !== 'function') {
       this.redis.defineCommand('consumeLiveTicket', {
         numberOfKeys: 1,
-        lua: readFileSync(join(__dirname, 'lua', 'consume-live-ticket.lua'), 'utf8'),
+        lua: readFileSync(
+          join(__dirname, 'lua', 'consume-live-ticket.lua'),
+          'utf8',
+        ),
       });
     }
   }
@@ -67,8 +74,13 @@ export class SpeakingLiveTicketStore {
         SPEAKING_LIVE_TICKET_TTL_SECONDS,
       );
     } catch (error) {
-      this.logger.error('Redis SET failed while issuing a Speaking Live ticket', error as Error);
-      throw new ServiceUnavailableException('Speaking Live is temporarily unavailable');
+      this.logger.error(
+        'Redis SET failed while issuing a Speaking Live ticket',
+        error as Error,
+      );
+      throw new ServiceUnavailableException(
+        'Speaking Live is temporarily unavailable',
+      );
     }
     return ticket;
   }
@@ -85,7 +97,10 @@ export class SpeakingLiveTicketStore {
     try {
       raw = await this.redis.consumeLiveTicket(speakingLiveTicketKey(ticket));
     } catch (error) {
-      this.logger.error('Redis EVAL failed while consuming a Speaking Live ticket', error as Error);
+      this.logger.error(
+        'Redis EVAL failed while consuming a Speaking Live ticket',
+        error as Error,
+      );
       return null;
     }
     if (!raw) return null;

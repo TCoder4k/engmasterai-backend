@@ -4,13 +4,19 @@ import { SpeakingTranslateError } from './speaking-translate.provider';
 
 const config = (values: Record<string, unknown> = {}): ConfigService =>
   ({
-    get: (key: string, fallback?: unknown) => (key in values ? values[key] : fallback),
+    get: (key: string, fallback?: unknown) =>
+      key in values ? values[key] : fallback,
   }) as unknown as ConfigService;
 
 const okResponse = (body: unknown): Response =>
-  ({ ok: true, status: 200, json: () => Promise.resolve(body) }) as unknown as Response;
+  ({
+    ok: true,
+    status: 200,
+    json: () => Promise.resolve(body),
+  }) as unknown as Response;
 
-const answer = (text: string) => okResponse({ candidates: [{ content: { parts: [{ text }] } }] });
+const answer = (text: string) =>
+  okResponse({ candidates: [{ content: { parts: [{ text }] } }] });
 
 const request = { text: 'What would you like to order today?' };
 
@@ -23,45 +29,68 @@ describe('GeminiSpeakingTranslateProvider', () => {
     const fetchSpy = jest
       .spyOn(global, 'fetch')
       .mockResolvedValue(answer('Bạn muốn gọi món gì hôm nay?'));
-    const provider = new GeminiSpeakingTranslateProvider(config({ GEMINI_API_KEY: 'k' }));
+    const provider = new GeminiSpeakingTranslateProvider(
+      config({ GEMINI_API_KEY: 'k' }),
+    );
 
     const result = await provider.translate(request);
 
     expect(result.textVi).toBe('Bạn muốn gọi món gì hôm nay?');
-    const body = JSON.parse((fetchSpy.mock.calls[0][1] as RequestInit).body as string) as {
+    const body = JSON.parse(
+      (fetchSpy.mock.calls[0][1] as RequestInit).body as string,
+    ) as {
       contents: { role: string; parts: { text: string }[] }[];
     };
     expect(body.contents).toEqual([
-      { role: 'user', parts: [{ text: 'What would you like to order today?' }] },
+      {
+        role: 'user',
+        parts: [{ text: 'What would you like to order today?' }],
+      },
     ]);
   });
 
   it('uses a zero temperature (one correct-enough answer, not conversational prose)', async () => {
-    const fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValue(answer('ok'));
-    const provider = new GeminiSpeakingTranslateProvider(config({ GEMINI_API_KEY: 'k' }));
+    const fetchSpy = jest
+      .spyOn(global, 'fetch')
+      .mockResolvedValue(answer('ok'));
+    const provider = new GeminiSpeakingTranslateProvider(
+      config({ GEMINI_API_KEY: 'k' }),
+    );
 
     await provider.translate(request);
 
-    const body = JSON.parse((fetchSpy.mock.calls[0][1] as RequestInit).body as string) as {
+    const body = JSON.parse(
+      (fetchSpy.mock.calls[0][1] as RequestInit).body as string,
+    ) as {
       generationConfig: { temperature: number };
     };
     expect(body.generationConfig.temperature).toBe(0);
   });
 
   it('sends the API key as a header, never in the URL', async () => {
-    const fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValue(answer('ok'));
-    const provider = new GeminiSpeakingTranslateProvider(config({ GEMINI_API_KEY: 'secret-key' }));
+    const fetchSpy = jest
+      .spyOn(global, 'fetch')
+      .mockResolvedValue(answer('ok'));
+    const provider = new GeminiSpeakingTranslateProvider(
+      config({ GEMINI_API_KEY: 'secret-key' }),
+    );
 
     await provider.translate(request);
 
     const [url, init] = fetchSpy.mock.calls[0];
     expect(String(url)).not.toContain('secret-key');
-    expect((init as RequestInit).headers).toMatchObject({ 'x-goog-api-key': 'secret-key' });
+    expect((init as RequestInit).headers).toMatchObject({
+      'x-goog-api-key': 'secret-key',
+    });
   });
 
-  it('targets the default chain\'s first model when GEMINI_SPEAKING_TRANSLATE_MODEL is unset', async () => {
-    const fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValue(answer('ok'));
-    const provider = new GeminiSpeakingTranslateProvider(config({ GEMINI_API_KEY: 'k' }));
+  it("targets the default chain's first model when GEMINI_SPEAKING_TRANSLATE_MODEL is unset", async () => {
+    const fetchSpy = jest
+      .spyOn(global, 'fetch')
+      .mockResolvedValue(answer('ok'));
+    const provider = new GeminiSpeakingTranslateProvider(
+      config({ GEMINI_API_KEY: 'k' }),
+    );
 
     await provider.translate(request);
 
@@ -75,28 +104,42 @@ describe('GeminiSpeakingTranslateProvider', () => {
   // gemini-3.6-flash rejects it with a hard 400, which would break the
   // fallback chain outright (400 is non-retryable by design).
   it('disables thinking on models confirmed to support it, for a faster subtitle translation', async () => {
-    const fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValue(answer('ok'));
+    const fetchSpy = jest
+      .spyOn(global, 'fetch')
+      .mockResolvedValue(answer('ok'));
     const provider = new GeminiSpeakingTranslateProvider(
-      config({ GEMINI_API_KEY: 'k', GEMINI_SPEAKING_TRANSLATE_MODEL: 'gemini-3.5-flash' }),
+      config({
+        GEMINI_API_KEY: 'k',
+        GEMINI_SPEAKING_TRANSLATE_MODEL: 'gemini-3.5-flash',
+      }),
     );
 
     await provider.translate(request);
 
-    const body = JSON.parse((fetchSpy.mock.calls[0][1] as RequestInit).body as string) as {
+    const body = JSON.parse(
+      (fetchSpy.mock.calls[0][1] as RequestInit).body as string,
+    ) as {
       generationConfig: { thinkingConfig?: { thinkingBudget: number } };
     };
     expect(body.generationConfig.thinkingConfig).toEqual({ thinkingBudget: 0 });
   });
 
   it('leaves thinking on (no thinkingConfig sent) for a model not confirmed to support disabling it', async () => {
-    const fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValue(answer('ok'));
+    const fetchSpy = jest
+      .spyOn(global, 'fetch')
+      .mockResolvedValue(answer('ok'));
     const provider = new GeminiSpeakingTranslateProvider(
-      config({ GEMINI_API_KEY: 'k', GEMINI_SPEAKING_TRANSLATE_MODEL: 'gemini-3.6-flash' }),
+      config({
+        GEMINI_API_KEY: 'k',
+        GEMINI_SPEAKING_TRANSLATE_MODEL: 'gemini-3.6-flash',
+      }),
     );
 
     await provider.translate(request);
 
-    const body = JSON.parse((fetchSpy.mock.calls[0][1] as RequestInit).body as string) as {
+    const body = JSON.parse(
+      (fetchSpy.mock.calls[0][1] as RequestInit).body as string,
+    ) as {
       generationConfig: { thinkingConfig?: { thinkingBudget: number } };
     };
     expect(body.generationConfig.thinkingConfig).toBeUndefined();
@@ -108,7 +151,10 @@ describe('GeminiSpeakingTranslateProvider', () => {
       .mockResolvedValueOnce({ ok: false, status: 503 } as unknown as Response)
       .mockResolvedValueOnce(answer('Bạn muốn gọi món gì hôm nay?'));
     const provider = new GeminiSpeakingTranslateProvider(
-      config({ GEMINI_API_KEY: 'k', GEMINI_SPEAKING_TRANSLATE_MODEL: 'model-a,model-b' }),
+      config({
+        GEMINI_API_KEY: 'k',
+        GEMINI_SPEAKING_TRANSLATE_MODEL: 'model-a,model-b',
+      }),
     );
 
     const result = await provider.translate(request);
@@ -123,7 +169,9 @@ describe('GeminiSpeakingTranslateProvider', () => {
     const fetchSpy = jest.spyOn(global, 'fetch');
     const provider = new GeminiSpeakingTranslateProvider(config({}));
 
-    await expect(provider.translate(request)).rejects.toMatchObject({ kind: 'NOT_CONFIGURED' });
+    await expect(provider.translate(request)).rejects.toMatchObject({
+      kind: 'NOT_CONFIGURED',
+    });
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
@@ -131,24 +179,40 @@ describe('GeminiSpeakingTranslateProvider', () => {
     const abort = new Error('aborted');
     abort.name = 'AbortError';
     jest.spyOn(global, 'fetch').mockRejectedValue(abort);
-    const provider = new GeminiSpeakingTranslateProvider(config({ GEMINI_API_KEY: 'k' }));
+    const provider = new GeminiSpeakingTranslateProvider(
+      config({ GEMINI_API_KEY: 'k' }),
+    );
 
-    await expect(provider.translate(request)).rejects.toMatchObject({ kind: 'TIMEOUT' });
+    await expect(provider.translate(request)).rejects.toMatchObject({
+      kind: 'TIMEOUT',
+    });
   });
 
   it('reports a network failure as UNAVAILABLE', async () => {
     jest.spyOn(global, 'fetch').mockRejectedValue(new Error('offline'));
-    const provider = new GeminiSpeakingTranslateProvider(config({ GEMINI_API_KEY: 'k' }));
+    const provider = new GeminiSpeakingTranslateProvider(
+      config({ GEMINI_API_KEY: 'k' }),
+    );
 
-    await expect(provider.translate(request)).rejects.toBeInstanceOf(SpeakingTranslateError);
-    await expect(provider.translate(request)).rejects.toMatchObject({ kind: 'UNAVAILABLE' });
+    await expect(provider.translate(request)).rejects.toBeInstanceOf(
+      SpeakingTranslateError,
+    );
+    await expect(provider.translate(request)).rejects.toMatchObject({
+      kind: 'UNAVAILABLE',
+    });
   });
 
   it('reports a non-2xx response as UNAVAILABLE', async () => {
-    jest.spyOn(global, 'fetch').mockResolvedValue({ ok: false, status: 500 } as unknown as Response);
-    const provider = new GeminiSpeakingTranslateProvider(config({ GEMINI_API_KEY: 'k' }));
+    jest
+      .spyOn(global, 'fetch')
+      .mockResolvedValue({ ok: false, status: 500 } as unknown as Response);
+    const provider = new GeminiSpeakingTranslateProvider(
+      config({ GEMINI_API_KEY: 'k' }),
+    );
 
-    await expect(provider.translate(request)).rejects.toMatchObject({ kind: 'UNAVAILABLE' });
+    await expect(provider.translate(request)).rejects.toMatchObject({
+      kind: 'UNAVAILABLE',
+    });
   });
 
   // 2026-09-05 production bug: the 3.x model chain spends part of
@@ -158,27 +222,46 @@ describe('GeminiSpeakingTranslateProvider', () => {
   it('reports a translation cut off at the token limit as UNAVAILABLE, never a truncated translation', async () => {
     jest.spyOn(global, 'fetch').mockResolvedValue(
       okResponse({
-        candidates: [{ content: { parts: [{ text: 'Ý bạn là' }] }, finishReason: 'MAX_TOKENS' }],
+        candidates: [
+          {
+            content: { parts: [{ text: 'Ý bạn là' }] },
+            finishReason: 'MAX_TOKENS',
+          },
+        ],
       }),
     );
-    const provider = new GeminiSpeakingTranslateProvider(config({ GEMINI_API_KEY: 'k' }));
+    const provider = new GeminiSpeakingTranslateProvider(
+      config({ GEMINI_API_KEY: 'k' }),
+    );
 
-    await expect(provider.translate(request)).rejects.toMatchObject({ kind: 'UNAVAILABLE' });
+    await expect(provider.translate(request)).rejects.toMatchObject({
+      kind: 'UNAVAILABLE',
+    });
   });
 
   it('reports a safety block as BLOCKED', async () => {
     jest
       .spyOn(global, 'fetch')
-      .mockResolvedValue(okResponse({ promptFeedback: { blockReason: 'SAFETY' } }));
-    const provider = new GeminiSpeakingTranslateProvider(config({ GEMINI_API_KEY: 'k' }));
+      .mockResolvedValue(
+        okResponse({ promptFeedback: { blockReason: 'SAFETY' } }),
+      );
+    const provider = new GeminiSpeakingTranslateProvider(
+      config({ GEMINI_API_KEY: 'k' }),
+    );
 
-    await expect(provider.translate(request)).rejects.toMatchObject({ kind: 'BLOCKED' });
+    await expect(provider.translate(request)).rejects.toMatchObject({
+      kind: 'BLOCKED',
+    });
   });
 
   it('reports an empty answer as UNAVAILABLE, never a blank translation', async () => {
     jest.spyOn(global, 'fetch').mockResolvedValue(answer('   '));
-    const provider = new GeminiSpeakingTranslateProvider(config({ GEMINI_API_KEY: 'k' }));
+    const provider = new GeminiSpeakingTranslateProvider(
+      config({ GEMINI_API_KEY: 'k' }),
+    );
 
-    await expect(provider.translate(request)).rejects.toMatchObject({ kind: 'UNAVAILABLE' });
+    await expect(provider.translate(request)).rejects.toMatchObject({
+      kind: 'UNAVAILABLE',
+    });
   });
 });

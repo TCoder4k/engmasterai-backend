@@ -46,7 +46,11 @@ export class LessonStepController {
     @Req() req: AuthenticatedRequest,
   ) {
     return flatten(
-      await this.stepService.recordVideoProgress(lessonId, req.user.userId, dto),
+      await this.stepService.recordVideoProgress(
+        lessonId,
+        req.user.userId,
+        dto,
+      ),
     );
   }
 
@@ -59,7 +63,9 @@ export class LessonStepController {
     @Param('lessonId', ParseUUIDPipe) lessonId: string,
     @Req() req: AuthenticatedRequest,
   ) {
-    return flatten(await this.stepService.startTheory(lessonId, req.user.userId));
+    return flatten(
+      await this.stepService.startTheory(lessonId, req.user.userId),
+    );
   }
 
   // The explicit "Tôi đã đọc xong" action. Scroll position does not complete

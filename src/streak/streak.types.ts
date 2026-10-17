@@ -58,7 +58,12 @@ export interface StreakInvitationDto {
   expiresAt: string;
 }
 
-export type PairRelationship = 'none' | 'pending_sent' | 'pending_received' | 'active' | 'broken';
+export type PairRelationship =
+  | 'none'
+  | 'pending_sent'
+  | 'pending_received'
+  | 'active'
+  | 'broken';
 
 export interface PairRelationshipDto {
   relationship: PairRelationship;

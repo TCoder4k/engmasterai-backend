@@ -60,7 +60,11 @@ class FakeEngyChat implements EngyChatProvider {
     FakeEngyChat.delayBeforeFirstDeltaMs = 0;
   }
 
-  async reply(req: EngyChatRequest, onDelta: (text: string) => void, signal?: AbortSignal) {
+  async reply(
+    req: EngyChatRequest,
+    onDelta: (text: string) => void,
+    signal?: AbortSignal,
+  ) {
     FakeEngyChat.callCount += 1;
     FakeEngyChat.seenRequests.push(req);
     if (FakeEngyChat.failWith) {
@@ -73,7 +77,9 @@ class FakeEngyChat implements EngyChatProvider {
       });
     }
     if (FakeEngyChat.delayBeforeFirstDeltaMs > 0) {
-      await new Promise((resolve) => setTimeout(resolve, FakeEngyChat.delayBeforeFirstDeltaMs));
+      await new Promise((resolve) =>
+        setTimeout(resolve, FakeEngyChat.delayBeforeFirstDeltaMs),
+      );
     }
     // Split into two deltas (not one big chunk) so the SSE tests below
     // exercise the controller's real delta-forwarding path, not just the
@@ -108,7 +114,9 @@ const parseSseEvents = (text: string): SseEvent[] =>
       const dataLine = lines.find((line) => line.startsWith('data:'));
       return {
         event: eventLine ? eventLine.slice('event:'.length).trim() : '',
-        data: dataLine ? (JSON.parse(dataLine.slice('data:'.length).trim()) as unknown) : undefined,
+        data: dataLine
+          ? (JSON.parse(dataLine.slice('data:'.length).trim()) as unknown)
+          : undefined,
       };
     });
 
@@ -149,21 +157,31 @@ describe('Engy Chat (e2e)', () => {
       });
     }
     if (createdVocabWordIds.length) {
-      await prisma.vocabWord.deleteMany({ where: { id: { in: createdVocabWordIds } } });
+      await prisma.vocabWord.deleteMany({
+        where: { id: { in: createdVocabWordIds } },
+      });
     }
     if (createdLessonIds.length) {
-      await prisma.lesson.deleteMany({ where: { id: { in: createdLessonIds } } });
+      await prisma.lesson.deleteMany({
+        where: { id: { in: createdLessonIds } },
+      });
     }
     if (createdCourseIds.length) {
-      await prisma.course.deleteMany({ where: { id: { in: createdCourseIds } } });
+      await prisma.course.deleteMany({
+        where: { id: { in: createdCourseIds } },
+      });
     }
     if (createdUserEmails.length) {
-      await prisma.user.deleteMany({ where: { email: { in: createdUserEmails } } });
+      await prisma.user.deleteMany({
+        where: { email: { in: createdUserEmails } },
+      });
     }
     await app.close();
   });
 
-  async function registerStudent(label: string): Promise<{ token: string; userId: string }> {
+  async function registerStudent(
+    label: string,
+  ): Promise<{ token: string; userId: string }> {
     const email = `chat-${label}-${randomUUID()}@example.test`;
     createdUserEmails.push(email);
     const res = await request(app.getHttpServer())
@@ -179,7 +197,9 @@ describe('Engy Chat (e2e)', () => {
     return { token, userId };
   }
 
-  async function startUnfinishedPlacementAttempt(userId: string): Promise<void> {
+  async function startUnfinishedPlacementAttempt(
+    userId: string,
+  ): Promise<void> {
     const attempt = await prisma.placementAttempt.create({
       data: {
         userId,
@@ -202,11 +222,13 @@ describe('Engy Chat (e2e)', () => {
     createdPlacementAttemptIds.push(attempt.id);
   }
 
-  async function seedPublishedLesson(overrides: {
-    notes?: string;
-    isPublished?: boolean;
-    coursePublished?: boolean;
-  } = {}): Promise<string> {
+  async function seedPublishedLesson(
+    overrides: {
+      notes?: string;
+      isPublished?: boolean;
+      coursePublished?: boolean;
+    } = {},
+  ): Promise<string> {
     const course = await prisma.course.create({
       data: {
         title: `Chat Phase C course ${randomUUID()}`,
@@ -223,7 +245,9 @@ describe('Engy Chat (e2e)', () => {
         title: 'Present Perfect Tense',
         description: 'Learn when to use the present perfect.',
         learningObjectives: ['Recognise the form', 'Use it in a sentence'],
-        notes: overrides.notes ?? 'The present perfect is formed with have/has + past participle.',
+        notes:
+          overrides.notes ??
+          'The present perfect is formed with have/has + past participle.',
         orderIndex: 0,
         isPublished: overrides.isPublished ?? true,
       },
@@ -239,7 +263,9 @@ describe('Engy Chat (e2e)', () => {
         ipa: '/rɪˈzaɪn/',
         source: 'ADMIN',
         meanings: { create: [{ meaning: 'từ chức', orderIndex: 0 }] },
-        examples: { create: [{ sentence: 'She resigned from her job.', orderIndex: 0 }] },
+        examples: {
+          create: [{ sentence: 'She resigned from her job.', orderIndex: 0 }],
+        },
       },
     });
     createdVocabWordIds.push(word.id);
@@ -285,7 +311,7 @@ describe('Engy Chat (e2e)', () => {
         .expect(400);
     });
 
-    it('sends a message and gets Engy\'s reply back via SSE — delta events followed by one done event', async () => {
+    it("sends a message and gets Engy's reply back via SSE — delta events followed by one done event", async () => {
       const { token } = await registerStudent('happy');
       FakeEngyChat.reply = 'Hello! How can I help you learn English today?';
       const clientMessageId = randomUUID();
@@ -304,14 +330,16 @@ describe('Engy Chat (e2e)', () => {
       // the exact full reply — proves the controller relays every delta,
       // not just the final result.
       expect(deltas.length).toBeGreaterThanOrEqual(2);
-      expect(deltas.map((e) => (e.data as { text: string }).text).join('')).toBe(
-        'Hello! How can I help you learn English today?',
-      );
+      expect(
+        deltas.map((e) => (e.data as { text: string }).text).join(''),
+      ).toBe('Hello! How can I help you learn English today?');
       expect(done?.data).toMatchObject({
         clientMessageId,
         reply: 'Hello! How can I help you learn English today?',
       });
-      expect(typeof (done?.data as { repliedAt: string }).repliedAt).toBe('string');
+      expect(typeof (done?.data as { repliedAt: string }).repliedAt).toBe(
+        'string',
+      );
       expect(FakeEngyChat.callCount).toBe(1);
       expect(FakeEngyChat.seenRequests[0]).toEqual({
         history: [],
@@ -340,7 +368,10 @@ describe('Engy Chat (e2e)', () => {
         });
         const { port } = server.address() as { port: number };
 
-        const body = JSON.stringify({ clientMessageId: randomUUID(), message: 'hello' });
+        const body = JSON.stringify({
+          clientMessageId: randomUUID(),
+          message: 'hello',
+        });
         const start = Date.now();
         const headersAfterMs = await new Promise<number>((resolve, reject) => {
           const req = http.request(
@@ -386,7 +417,9 @@ describe('Engy Chat (e2e)', () => {
         .set('Authorization', `Bearer ${token}`)
         .send({ clientMessageId, message: 'Explain present perfect' })
         .expect(200);
-      const firstDone = parseSseEvents(first.text).find((e) => e.event === 'done');
+      const firstDone = parseSseEvents(first.text).find(
+        (e) => e.event === 'done',
+      );
 
       // Change what the fake WOULD return, to prove the replay is served
       // from the idempotency cache rather than calling the provider again.
@@ -442,8 +475,12 @@ describe('Engy Chat (e2e)', () => {
         .set('Authorization', `Bearer ${token}`)
         .send({ clientMessageId, message: 'hello' })
         .expect(200);
-      const retryDone = parseSseEvents(retry.text).find((e) => e.event === 'done');
-      expect(retryDone?.data).toMatchObject({ reply: 'A fresh answer after the retry.' });
+      const retryDone = parseSseEvents(retry.text).find(
+        (e) => e.event === 'done',
+      );
+      expect(retryDone?.data).toMatchObject({
+        reply: 'A fresh answer after the retry.',
+      });
       expect(FakeEngyChat.callCount).toBe(2); // the hung attempt + the retry — never a 3rd
     }, 10000);
 
@@ -517,7 +554,11 @@ describe('Engy Chat (e2e)', () => {
           .send({
             clientMessageId: randomUUID(),
             message: 'hello',
-            context: { type: 'LESSON', resourceId: lessonId, stage: 'not-a-real-stage' },
+            context: {
+              type: 'LESSON',
+              resourceId: lessonId,
+              stage: 'not-a-real-stage',
+            },
           })
           .expect(400);
       });
@@ -538,7 +579,9 @@ describe('Engy Chat (e2e)', () => {
 
         const seen = FakeEngyChat.seenRequests[0];
         expect(seen.context).toContain('Present Perfect Tense');
-        expect(seen.context).toContain('formed with have/has + past participle');
+        expect(seen.context).toContain(
+          'formed with have/has + past participle',
+        );
       });
 
       it('a LESSON context at the quiz stage never includes lesson.notes — only title/objectives', async () => {
@@ -557,7 +600,9 @@ describe('Engy Chat (e2e)', () => {
 
         const seen = FakeEngyChat.seenRequests[0];
         expect(seen.context).toContain('Present Perfect Tense');
-        expect(seen.context).not.toContain('formed with have/has + past participle');
+        expect(seen.context).not.toContain(
+          'formed with have/has + past participle',
+        );
       });
 
       it('a LESSON context for a missing/unpublished lesson 404s, never calling Gemini', async () => {
@@ -637,7 +682,10 @@ describe('Engy Chat (e2e)', () => {
       await request(app.getHttpServer())
         .post('/chat/messages')
         .set('Authorization', `Bearer ${token}`)
-        .send({ clientMessageId: randomUUID(), message: 'Give me an example sentence' })
+        .send({
+          clientMessageId: randomUUID(),
+          message: 'Give me an example sentence',
+        })
         .expect(200);
 
       const res = await request(app.getHttpServer())
@@ -645,10 +693,21 @@ describe('Engy Chat (e2e)', () => {
         .set('Authorization', `Bearer ${token}`)
         .expect(200);
 
-      const body = res.body as { turns: { role: string; text: string }[]; expiresAt: string };
+      const body = res.body as {
+        turns: { role: string; text: string }[];
+        expiresAt: string;
+      };
       expect(body.turns).toEqual([
-        { role: 'user', text: 'Give me an example sentence', at: expect.any(Number) },
-        { role: 'assistant', text: 'Sure, here is an example.', at: expect.any(Number) },
+        {
+          role: 'user',
+          text: 'Give me an example sentence',
+          at: expect.any(Number),
+        },
+        {
+          role: 'assistant',
+          text: 'Sure, here is an example.',
+          at: expect.any(Number),
+        },
       ]);
       expect(typeof body.expiresAt).toBe('string');
     });

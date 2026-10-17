@@ -40,7 +40,7 @@ const SAFE_USER_SELECT = {
   // column (see its schema comment): "is this user PRO" is a pure function
   // of expiresAt, derived fresh below, never a persisted flag that could go
   // stale. One relational select, not a second query.
-  subscription: { select: { plan: true, expiresAt: true } },
+  subscriptions: { select: { plan: true, expiresAt: true } },
 };
 
 type SafeUserRow = Prisma.UserGetPayload<{ select: typeof SAFE_USER_SELECT }>;
@@ -48,18 +48,28 @@ type SafeUserRow = Prisma.UserGetPayload<{ select: typeof SAFE_USER_SELECT }>;
 const toSafeUser = ({
   emailVerifiedAt,
   onboardedAt,
-  subscription,
+  subscriptions,
   ...rest
-}: SafeUserRow) => ({
-  ...rest,
-  emailVerified: emailVerifiedAt !== null,
-  onboarded: onboardedAt !== null,
-  isPro: subscription !== null && subscription.expiresAt > new Date(),
-  isPremium:
-    subscription?.plan === 'PREMIUM_MONTHLY' &&
-    subscription.expiresAt > new Date(),
-  proExpiresAt: subscription?.expiresAt ?? null,
-});
+}: SafeUserRow) => {
+  const now = new Date();
+  const proSub = subscriptions?.find(
+    (s) => s.plan === 'PRO_MONTHLY' && s.expiresAt > now,
+  );
+  const hocTapSub = subscriptions?.find(
+    (s) => s.plan === 'PREMIUM_MONTHLY' && s.expiresAt > now,
+  );
+  return {
+    ...rest,
+    emailVerified: emailVerifiedAt !== null,
+    onboarded: onboardedAt !== null,
+    isPro: proSub !== undefined,
+    proExpiresAt: proSub?.expiresAt ?? null,
+    isHocTap: hocTapSub !== undefined,
+    hocTapExpiresAt: hocTapSub?.expiresAt ?? null,
+    isPremium: hocTapSub !== undefined,
+    premiumExpiresAt: hocTapSub?.expiresAt ?? null,
+  };
+};
 
 const MAX_LIMIT = 100;
 

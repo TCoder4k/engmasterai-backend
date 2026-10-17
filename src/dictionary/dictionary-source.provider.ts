@@ -27,7 +27,10 @@ export interface DictionarySourceLookup {
  * source failures. dictionary.service.ts maps NOT_FOUND to an honest 404 and
  * the other two to a 503, never to a fabricated definition either way.
  */
-export type DictionarySourceFailureKind = 'UNAVAILABLE' | 'TIMEOUT' | 'NOT_FOUND';
+export type DictionarySourceFailureKind =
+  | 'UNAVAILABLE'
+  | 'TIMEOUT'
+  | 'NOT_FOUND';
 
 export class DictionarySourceError extends Error {
   constructor(

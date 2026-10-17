@@ -158,7 +158,12 @@ describe('AuthService — email verification (Sprint 02B)', () => {
     });
 
     it('leaves emailVerifiedAt null for a newly registered local user', async () => {
-      const result = await service.register(dto, null, testLogContext, '203.0.113.42');
+      const result = await service.register(
+        dto,
+        null,
+        testLogContext,
+        '203.0.113.42',
+      );
 
       const createCall = firstCallArg<{ data: Record<string, unknown> }>(
         prisma.user.create,
@@ -196,7 +201,12 @@ describe('AuthService — email verification (Sprint 02B)', () => {
     });
 
     it('awaits TransactionalMailService and reports emailDeliveryStatus: "sent" on success', async () => {
-      const result = await service.register(dto, null, testLogContext, '203.0.113.42');
+      const result = await service.register(
+        dto,
+        null,
+        testLogContext,
+        '203.0.113.42',
+      );
 
       expect(
         transactionalMailService.sendVerificationEmail,
@@ -214,7 +224,12 @@ describe('AuthService — email verification (Sprint 02B)', () => {
         durationMs: 5000,
       });
 
-      const result = await service.register(dto, null, testLogContext, '203.0.113.42');
+      const result = await service.register(
+        dto,
+        null,
+        testLogContext,
+        '203.0.113.42',
+      );
 
       expect(result.emailDeliveryStatus).toBe('failed');
       expect(result.message).toBe('Registration successful');
@@ -239,7 +254,12 @@ describe('AuthService — email verification (Sprint 02B)', () => {
         new Error('unexpected mail-path crash'),
       );
 
-      const result = await service.register(dto, null, testLogContext, '203.0.113.42');
+      const result = await service.register(
+        dto,
+        null,
+        testLogContext,
+        '203.0.113.42',
+      );
 
       expect(result.emailDeliveryStatus).toBe('failed');
       expect(result.accessToken).toBeTruthy();

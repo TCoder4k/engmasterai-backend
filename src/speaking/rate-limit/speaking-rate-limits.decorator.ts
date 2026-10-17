@@ -20,7 +20,13 @@ import { SetMetadata } from '@nestjs/common';
 // handleConnection is a lifecycle hook, not a route handler NestJS guards
 // can wrap), but the key namespace (`speaking:live-connect:<userId>`)
 // still follows this same `speaking:<kind>:<userId>` convention.
-export type SpeakingRateLimitKind = 'read' | 'start' | 'complete' | 'manage' | 'translate' | 'live-connect';
+export type SpeakingRateLimitKind =
+  | 'read'
+  | 'start'
+  | 'complete'
+  | 'manage'
+  | 'translate'
+  | 'live-connect';
 
 export interface SpeakingRateLimitPolicy {
   kind: SpeakingRateLimitKind;

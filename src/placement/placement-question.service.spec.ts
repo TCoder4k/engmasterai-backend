@@ -28,8 +28,12 @@ const buildHarness = (overrides: Record<string, unknown> = {}) => {
     ...overrides,
   };
 
-  const create = jest.fn((args) => Promise.resolve({ id: 'new-id', ...args.data }));
-  const update = jest.fn((args) => Promise.resolve({ id: args.where.id, ...args.data }));
+  const create = jest.fn((args) =>
+    Promise.resolve({ id: 'new-id', ...args.data }),
+  );
+  const update = jest.fn((args) =>
+    Promise.resolve({ id: args.where.id, ...args.data }),
+  );
   const findUnique = jest.fn(() => Promise.resolve(found));
   const deleteFn = jest.fn(() => Promise.resolve(found));
   const findMany = jest.fn(() => Promise.resolve([found]));
@@ -49,7 +53,18 @@ const buildHarness = (overrides: Record<string, unknown> = {}) => {
   };
 
   const service = new PlacementQuestionService(prisma as never);
-  return { service, prisma, found, create, update, findUnique, deleteFn, findMany, count, groupBy };
+  return {
+    service,
+    prisma,
+    found,
+    create,
+    update,
+    findUnique,
+    deleteFn,
+    findMany,
+    count,
+    groupBy,
+  };
 };
 
 describe('PlacementQuestionService', () => {
@@ -62,7 +77,10 @@ describe('PlacementQuestionService', () => {
           type: 'MULTIPLE_CHOICE',
           difficulty: 'EASY',
           content: 'x',
-          options: [{ id: 'a', text: 'go' }, { id: 'b', text: 'goes' }],
+          options: [
+            { id: 'a', text: 'go' },
+            { id: 'b', text: 'goes' },
+          ],
           correctAnswer: { optionId: 'c' },
         } as never),
       ).rejects.toBeInstanceOf(BadRequestException);
@@ -124,9 +142,9 @@ describe('PlacementQuestionService', () => {
     it('throws 404 for an unknown id', async () => {
       const { service, findUnique } = buildHarness();
       findUnique.mockResolvedValueOnce(null as never);
-      await expect(service.update('missing', {} as never)).rejects.toBeInstanceOf(
-        NotFoundException,
-      );
+      await expect(
+        service.update('missing', {} as never),
+      ).rejects.toBeInstanceOf(NotFoundException);
     });
   });
 
@@ -135,7 +153,10 @@ describe('PlacementQuestionService', () => {
       const { service, update } = buildHarness();
       await service.publish('q1');
       expect(update).toHaveBeenCalledWith(
-        expect.objectContaining({ where: { id: 'q1' }, data: { isPublished: true } }),
+        expect.objectContaining({
+          where: { id: 'q1' },
+          data: { isPublished: true },
+        }),
       );
     });
 
@@ -143,7 +164,10 @@ describe('PlacementQuestionService', () => {
       const { service, update } = buildHarness();
       await service.unpublish('q1');
       expect(update).toHaveBeenCalledWith(
-        expect.objectContaining({ where: { id: 'q1' }, data: { isPublished: false } }),
+        expect.objectContaining({
+          where: { id: 'q1' },
+          data: { isPublished: false },
+        }),
       );
     });
   });
@@ -210,7 +234,10 @@ describe('PlacementQuestionService', () => {
   describe('findAllManage', () => {
     it('filters by section and difficulty when provided', async () => {
       const { service, findMany } = buildHarness();
-      await service.findAllManage({ section: 'LISTENING', difficulty: 'HARD' } as never);
+      await service.findAllManage({
+        section: 'LISTENING',
+        difficulty: 'HARD',
+      } as never);
       expect(findMany).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { section: 'LISTENING', difficulty: 'HARD' },
@@ -221,7 +248,9 @@ describe('PlacementQuestionService', () => {
     it('caps the page size at MAX_LIMIT (100) even if a larger limit is requested', async () => {
       const { service, findMany } = buildHarness();
       await service.findAllManage({ limit: 500 } as never);
-      expect(findMany).toHaveBeenCalledWith(expect.objectContaining({ take: 100 }));
+      expect(findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ take: 100 }),
+      );
     });
   });
 });

@@ -80,29 +80,34 @@ export const collectActiveDays = async (
   windowStart: Date,
   timeZone: string,
 ): Promise<Set<string>> => {
-  const [stepActivity, attemptActivity, reviewActivity, dictationActivity, shadowingActivity] =
-    await Promise.all([
-      prisma.lessonStepProgress.findMany({
-        where: { userId, lastActivityAt: { gte: windowStart } },
-        select: { lastActivityAt: true },
-      }),
-      prisma.lessonTaskAttempt.findMany({
-        where: { userId, submittedAt: { gte: windowStart } },
-        select: { submittedAt: true },
-      }),
-      prisma.wordReviewLog.findMany({
-        where: { userId, reviewedAt: { gte: windowStart } },
-        select: { reviewedAt: true },
-      }),
-      prisma.listeningDictationAttempt.findMany({
-        where: { userId, submittedAt: { gte: windowStart } },
-        select: { submittedAt: true },
-      }),
-      prisma.listeningShadowingAttempt.findMany({
-        where: { userId, submittedAt: { gte: windowStart } },
-        select: { submittedAt: true },
-      }),
-    ]);
+  const [
+    stepActivity,
+    attemptActivity,
+    reviewActivity,
+    dictationActivity,
+    shadowingActivity,
+  ] = await Promise.all([
+    prisma.lessonStepProgress.findMany({
+      where: { userId, lastActivityAt: { gte: windowStart } },
+      select: { lastActivityAt: true },
+    }),
+    prisma.lessonTaskAttempt.findMany({
+      where: { userId, submittedAt: { gte: windowStart } },
+      select: { submittedAt: true },
+    }),
+    prisma.wordReviewLog.findMany({
+      where: { userId, reviewedAt: { gte: windowStart } },
+      select: { reviewedAt: true },
+    }),
+    prisma.listeningDictationAttempt.findMany({
+      where: { userId, submittedAt: { gte: windowStart } },
+      select: { submittedAt: true },
+    }),
+    prisma.listeningShadowingAttempt.findMany({
+      where: { userId, submittedAt: { gte: windowStart } },
+      select: { submittedAt: true },
+    }),
+  ]);
 
   return new Set<string>([
     ...stepActivity.map((row) =>

@@ -343,7 +343,12 @@ export class ShadowingService {
       },
     });
 
-    return { feedback: generated.feedback, generatedAt: now, model: generated.model, cached: false };
+    return {
+      feedback: generated.feedback,
+      generatedAt: now,
+      model: generated.model,
+      cached: false,
+    };
   }
 
   /**

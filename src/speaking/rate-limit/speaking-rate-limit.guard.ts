@@ -3,7 +3,10 @@ import { Reflector } from '@nestjs/core';
 import type { Request } from 'express';
 import { RateLimiterService } from '../../auth/rate-limit/rate-limiter.service';
 import { RateLimitExceededException } from '../../auth/exceptions/rate-limit-exceeded.exception';
-import { SPEAKING_RATE_LIMITS_KEY, SpeakingRateLimitPolicy } from './speaking-rate-limits.decorator';
+import {
+  SPEAKING_RATE_LIMITS_KEY,
+  SpeakingRateLimitPolicy,
+} from './speaking-rate-limits.decorator';
 
 interface RequestWithUser extends Request {
   user?: { userId: string };
@@ -33,7 +36,11 @@ export class SpeakingRateLimitGuard implements CanActivate {
     if (!userId) return true;
 
     const key = `speaking:${policy.kind}:${userId}`;
-    const result = await this.rateLimiter.checkAndIncrement(key, policy.max, policy.windowSeconds);
+    const result = await this.rateLimiter.checkAndIncrement(
+      key,
+      policy.max,
+      policy.windowSeconds,
+    );
     if (!result.allowed) {
       throw new RateLimitExceededException();
     }

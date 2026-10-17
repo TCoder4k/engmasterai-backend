@@ -1,7 +1,10 @@
 import { ConfigService } from '@nestjs/config';
 import { GoogleGenAI } from '@google/genai';
 import { GeminiSpeakingLiveConnectionProvider } from './gemini-speaking-live-connection.provider';
-import { SpeakingLiveConnectOptions, SpeakingLiveError } from './speaking-live-connection.provider';
+import {
+  SpeakingLiveConnectOptions,
+  SpeakingLiveError,
+} from './speaking-live-connection.provider';
 
 // GeminiSpeakingLiveConnectionProvider is the ONE deliberate exception in
 // this codebase that talks to @google/genai's SDK directly rather than bare
@@ -36,7 +39,10 @@ const buildFakeSession = (): FakeSession => ({
 });
 
 const buildConfig = (overrides: Record<string, string> = {}): ConfigService => {
-  const values: Record<string, string> = { GEMINI_API_KEY: 'test-key', ...overrides };
+  const values: Record<string, string> = {
+    GEMINI_API_KEY: 'test-key',
+    ...overrides,
+  };
   return {
     get: jest.fn((key: string, defaultValue?: unknown) =>
       key in values ? values[key] : defaultValue,
@@ -56,11 +62,15 @@ describe('GeminiSpeakingLiveConnectionProvider', () => {
   beforeEach(() => {
     fakeSession = buildFakeSession();
     connectMock = jest.fn().mockResolvedValue(fakeSession);
-    mockedGoogleGenAI.mockImplementation(() => ({ live: { connect: connectMock } }));
+    mockedGoogleGenAI.mockImplementation(() => ({
+      live: { connect: connectMock },
+    }));
   });
 
   it('throws NOT_CONFIGURED when GEMINI_API_KEY is missing, without ever calling the SDK', async () => {
-    const provider = new GeminiSpeakingLiveConnectionProvider(buildConfig({ GEMINI_API_KEY: '' }));
+    const provider = new GeminiSpeakingLiveConnectionProvider(
+      buildConfig({ GEMINI_API_KEY: '' }),
+    );
 
     await expect(provider.connect(CONNECT_OPTIONS)).rejects.toMatchObject({
       constructor: SpeakingLiveError,
@@ -85,8 +95,12 @@ describe('GeminiSpeakingLiveConnectionProvider', () => {
     await provider.connect(CONNECT_OPTIONS);
 
     const config = connectMock.mock.calls[0][0].config;
-    expect(config.inputAudioTranscription).toEqual({ languageCodes: ['en-US', 'vi-VN'] });
-    expect(config.outputAudioTranscription).toEqual({ languageCodes: ['en-US', 'vi-VN'] });
+    expect(config.inputAudioTranscription).toEqual({
+      languageCodes: ['en-US', 'vi-VN'],
+    });
+    expect(config.outputAudioTranscription).toEqual({
+      languageCodes: ['en-US', 'vi-VN'],
+    });
   });
 
   it('input and output language hints are genuinely independent — overriding one never touches the other', async () => {
@@ -100,13 +114,20 @@ describe('GeminiSpeakingLiveConnectionProvider', () => {
     await provider.connect(CONNECT_OPTIONS);
 
     const config = connectMock.mock.calls[0][0].config;
-    expect(config.inputAudioTranscription).toEqual({ languageCodes: ['en-US'] });
-    expect(config.outputAudioTranscription).toEqual({ languageCodes: ['vi-VN'] });
+    expect(config.inputAudioTranscription).toEqual({
+      languageCodes: ['en-US'],
+    });
+    expect(config.outputAudioTranscription).toEqual({
+      languageCodes: ['vi-VN'],
+    });
   });
 
   it('an empty-string override omits languageCodes entirely — Gemini automatic language detection, the pre-fix behaviour (the "A" leg of the A/B/C comparison)', async () => {
     const provider = new GeminiSpeakingLiveConnectionProvider(
-      buildConfig({ GEMINI_LIVE_INPUT_LANGUAGE_CODES: '', GEMINI_LIVE_OUTPUT_LANGUAGE_CODES: '' }),
+      buildConfig({
+        GEMINI_LIVE_INPUT_LANGUAGE_CODES: '',
+        GEMINI_LIVE_OUTPUT_LANGUAGE_CODES: '',
+      }),
     );
 
     await provider.connect(CONNECT_OPTIONS);
@@ -124,7 +145,9 @@ describe('GeminiSpeakingLiveConnectionProvider', () => {
     await provider.connect(CONNECT_OPTIONS);
 
     const config = connectMock.mock.calls[0][0].config;
-    expect(config.inputAudioTranscription).toEqual({ languageCodes: ['en-US', 'vi-VN'] });
+    expect(config.inputAudioTranscription).toEqual({
+      languageCodes: ['en-US', 'vi-VN'],
+    });
   });
 
   it('the returned handle wires sendRealtimeInput/close straight through to the SDK session', async () => {
@@ -134,7 +157,9 @@ describe('GeminiSpeakingLiveConnectionProvider', () => {
     handle.sendRealtimeInput({ activityStart: {} });
     handle.close();
 
-    expect(fakeSession.sendRealtimeInput).toHaveBeenCalledWith({ activityStart: {} });
+    expect(fakeSession.sendRealtimeInput).toHaveBeenCalledWith({
+      activityStart: {},
+    });
     expect(fakeSession.close).toHaveBeenCalledTimes(1);
   });
 
@@ -153,13 +178,18 @@ describe('GeminiSpeakingLiveConnectionProvider', () => {
 
   it('model and voice still honour their own env vars, unaffected by the language-hint change', async () => {
     const provider = new GeminiSpeakingLiveConnectionProvider(
-      buildConfig({ GEMINI_LIVE_MODEL: 'gemini-custom-live', GEMINI_LIVE_VOICE: 'Puck' }),
+      buildConfig({
+        GEMINI_LIVE_MODEL: 'gemini-custom-live',
+        GEMINI_LIVE_VOICE: 'Puck',
+      }),
     );
 
     await provider.connect(CONNECT_OPTIONS);
 
     const call = connectMock.mock.calls[0][0];
     expect(call.model).toBe('gemini-custom-live');
-    expect(call.config.speechConfig.voiceConfig.prebuiltVoiceConfig.voiceName).toBe('Puck');
+    expect(
+      call.config.speechConfig.voiceConfig.prebuiltVoiceConfig.voiceName,
+    ).toBe('Puck');
   });
 });

@@ -35,7 +35,7 @@ export class SubscriptionGrantService {
     await prisma.$executeRaw`
       INSERT INTO subscriptions (id, "userId", plan, "startsAt", "expiresAt", "lastPaymentId", "createdAt", "updatedAt")
       VALUES (${id}, ${userId}, 'PRO_MONTHLY'::"SubscriptionPlan", NOW(), NOW() + (${days} * INTERVAL '1 day'), NULL, NOW(), NOW())
-      ON CONFLICT ("userId") DO UPDATE SET
+      ON CONFLICT ("userId", plan) DO UPDATE SET
         "expiresAt" = GREATEST(subscriptions."expiresAt", NOW()) + (${days} * INTERVAL '1 day'),
         "updatedAt" = NOW()
     `;

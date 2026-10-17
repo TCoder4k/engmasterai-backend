@@ -17,7 +17,10 @@ import { SPEAKING_LIVE_CONNECTION_PROVIDER } from './speaking-live-connection.pr
 // fix speaking-attempt.service.ts already applies to its own token-injected
 // interfaces.
 import type { SpeakingLiveConnectionProvider } from './speaking-live-connection.provider';
-import { SpeakingLiveServerEvent, SpeakingLiveSession } from './speaking-live-session';
+import {
+  SpeakingLiveServerEvent,
+  SpeakingLiveSession,
+} from './speaking-live-session';
 import { SpeakingRateLimitKind } from '../rate-limit/speaking-rate-limits.decorator';
 
 // Speaking Partner Live — the WebSocket entry point, /speaking/live. This
@@ -46,7 +49,9 @@ interface ClientMessage {
 }
 
 @WebSocketGateway({ path: '/speaking/live' })
-export class SpeakingLiveGateway implements OnGatewayConnection, OnGatewayDisconnect {
+export class SpeakingLiveGateway
+  implements OnGatewayConnection, OnGatewayDisconnect
+{
   private readonly logger = new Logger(SpeakingLiveGateway.name);
   private readonly sessions = new Map<WebSocket, SpeakingLiveSession>();
 
@@ -59,7 +64,10 @@ export class SpeakingLiveGateway implements OnGatewayConnection, OnGatewayDiscon
     private readonly connectionProvider: SpeakingLiveConnectionProvider,
   ) {}
 
-  async handleConnection(client: WebSocket, request: IncomingMessage): Promise<void> {
+  async handleConnection(
+    client: WebSocket,
+    request: IncomingMessage,
+  ): Promise<void> {
     // BUFFER, DON'T DROP. The transport-level 'open' event fires on the
     // client the instant the handshake completes — before this handler has
     // even reached its first `await` below (ticket consume, rate limit, the
@@ -99,7 +107,10 @@ export class SpeakingLiveGateway implements OnGatewayConnection, OnGatewayDiscon
       return;
     }
 
-    const exercise = await this.attemptService.loadLiveContext(claim.userId, claim.attemptId);
+    const exercise = await this.attemptService.loadLiveContext(
+      claim.userId,
+      claim.attemptId,
+    );
     if (!exercise) {
       client.off('message', bufferMessage);
       client.close(4404, 'Attempt not found');
@@ -119,7 +130,10 @@ export class SpeakingLiveGateway implements OnGatewayConnection, OnGatewayDiscon
       await session.start();
     } catch (error) {
       client.off('message', bufferMessage);
-      this.logger.warn('Failed to start a Speaking Live session', error as Error);
+      this.logger.warn(
+        'Failed to start a Speaking Live session',
+        error as Error,
+      );
       client.close(4500, 'Could not start Speaking Live');
       return;
     }
@@ -139,7 +153,10 @@ export class SpeakingLiveGateway implements OnGatewayConnection, OnGatewayDiscon
     session.close();
   }
 
-  private handleClientMessage(session: SpeakingLiveSession, raw: WebSocket.RawData): void {
+  private handleClientMessage(
+    session: SpeakingLiveSession,
+    raw: WebSocket.RawData,
+  ): void {
     let message: ClientMessage;
     try {
       message = JSON.parse(raw.toString()) as ClientMessage;
@@ -152,7 +169,8 @@ export class SpeakingLiveGateway implements OnGatewayConnection, OnGatewayDiscon
         session.handleActivityStart();
         break;
       case 'audioChunk':
-        if (typeof message.data === 'string') session.handleAudioChunk(message.data);
+        if (typeof message.data === 'string')
+          session.handleAudioChunk(message.data);
         break;
       case 'activityEnd':
         session.handleActivityEnd();
@@ -160,7 +178,10 @@ export class SpeakingLiveGateway implements OnGatewayConnection, OnGatewayDiscon
     }
   }
 
-  private sendToClient(client: WebSocket, event: SpeakingLiveServerEvent): void {
+  private sendToClient(
+    client: WebSocket,
+    event: SpeakingLiveServerEvent,
+  ): void {
     if (client.readyState !== client.OPEN) return;
     client.send(JSON.stringify(event));
   }

@@ -137,7 +137,9 @@ export class VocabLibraryService {
         ...(dto.description !== undefined && { description: dto.description }),
         ...(dto.thumbnail !== undefined && { thumbnail: dto.thumbnail }),
         ...(dto.level !== undefined && { level: dto.level }),
-        ...(dto.suitableGoals !== undefined && { suitableGoals: dto.suitableGoals }),
+        ...(dto.suitableGoals !== undefined && {
+          suitableGoals: dto.suitableGoals,
+        }),
       },
       select: PUBLIC_SELECT,
     });

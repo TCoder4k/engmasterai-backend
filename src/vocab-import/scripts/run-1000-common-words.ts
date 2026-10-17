@@ -44,15 +44,60 @@ const STAGED_IMG_DIR = path.join(STAGE_DIR, 'media', 'img');
 // correct compound term with a definition that is factually wrong for it —
 // worse than not importing the row. AMBIGUOUS_SKIP, not reconstructed.
 const EXCLUDED_ROWS: { word: string; posCell: string; reason: string }[] = [
-  { word: 'dining', posCell: 'room', reason: 'implied compound "dining room"; EnglishDefinition describes "dining" alone' },
-  { word: 'living', posCell: 'room', reason: 'implied compound "living room"; EnglishDefinition describes "living" alone' },
-  { word: 'frying', posCell: 'pan', reason: 'implied compound "frying pan"; EnglishDefinition describes "frying" alone' },
-  { word: 'ice', posCell: 'cream', reason: 'implied compound "ice cream"; EnglishDefinition describes "ice" alone' },
-  { word: 'credit', posCell: 'card', reason: 'implied compound "credit card"; EnglishDefinition describes "credit" alone' },
-  { word: 'debit', posCell: 'card', reason: 'implied compound "debit card"; EnglishDefinition describes "debit" alone' },
-  { word: 'sign', posCell: 'language', reason: 'implied compound "sign language"; EnglishDefinition describes "sign" alone' },
-  { word: 'social', posCell: 'media', reason: 'implied compound "social media"; EnglishDefinition describes "social" alone' },
-  { word: 'prime', posCell: 'minister', reason: 'implied compound "prime minister"; EnglishDefinition describes "prime" alone' },
+  {
+    word: 'dining',
+    posCell: 'room',
+    reason:
+      'implied compound "dining room"; EnglishDefinition describes "dining" alone',
+  },
+  {
+    word: 'living',
+    posCell: 'room',
+    reason:
+      'implied compound "living room"; EnglishDefinition describes "living" alone',
+  },
+  {
+    word: 'frying',
+    posCell: 'pan',
+    reason:
+      'implied compound "frying pan"; EnglishDefinition describes "frying" alone',
+  },
+  {
+    word: 'ice',
+    posCell: 'cream',
+    reason:
+      'implied compound "ice cream"; EnglishDefinition describes "ice" alone',
+  },
+  {
+    word: 'credit',
+    posCell: 'card',
+    reason:
+      'implied compound "credit card"; EnglishDefinition describes "credit" alone',
+  },
+  {
+    word: 'debit',
+    posCell: 'card',
+    reason:
+      'implied compound "debit card"; EnglishDefinition describes "debit" alone',
+  },
+  {
+    word: 'sign',
+    posCell: 'language',
+    reason:
+      'implied compound "sign language"; EnglishDefinition describes "sign" alone',
+  },
+  {
+    word: 'social',
+    posCell: 'media',
+    reason:
+      'implied compound "social media"; EnglishDefinition describes "social" alone',
+  },
+  {
+    word: 'prime',
+    posCell: 'minister',
+    reason:
+      'implied compound "prime minister"; EnglishDefinition describes "prime" alone',
+  },
   // Found during dry-run review (not a compound-headword split): IPA is
   // literally split mid-string across Phonetics="/ˌeɪ" and
   // VietnameseTranslation="tiː ˈem/ máy rút tiền tự động" (i.e. the intended
@@ -63,7 +108,12 @@ const EXCLUDED_ROWS: { word: string; posCell: string; reason: string }[] = [
   // different word sense. Same failure mode as the 9 rows above — the
   // definition belongs to a different lexical item than the headword's own
   // IPA/translation/media imply — so AMBIGUOUS_SKIP, not reconstructed.
-  { word: 'ATM', posCell: 'n', reason: 'EnglishDefinition is for "atm" the pressure unit, not the banking machine implied by IPA/Topic/media' },
+  {
+    word: 'ATM',
+    posCell: 'n',
+    reason:
+      'EnglishDefinition is for "atm" the pressure unit, not the banking machine implied by IPA/Topic/media',
+  },
 ];
 
 const CSV_HEADER = [
@@ -133,7 +183,11 @@ interface StagingReport {
   topics: { name: string; normalizedFrom?: string; rowCount: number }[];
   examples: { blankable: number; notBlankable: number; noExample: number };
   audio: { matched: number; missing: string[] };
-  image: { matchedPlain: number; matchedPlaceholderRenamed: number; missing: string[] };
+  image: {
+    matchedPlain: number;
+    matchedPlaceholderRenamed: number;
+    missing: string[];
+  };
   orphanedByExclusion: { word: string; hasAudio: boolean; hasImage: boolean }[];
 }
 
@@ -171,7 +225,8 @@ function resolveImageSource(
   }
   for (const ext of IMAGE_EXT_CANDIDATES) {
     const placeholder = path.join(SOURCE_IMG_DIR, `${word}_placeholder${ext}`);
-    if (fs.existsSync(placeholder)) return { filePath: placeholder, kind: 'placeholder' };
+    if (fs.existsSync(placeholder))
+      return { filePath: placeholder, kind: 'placeholder' };
   }
   return null;
 }
@@ -215,7 +270,12 @@ function prepareStaging(): StagingReport {
       (e) => e.word === word && e.posCell === posCell,
     );
     if (exclusion) {
-      excluded.push({ row: rowNumber, word, posCell, reason: exclusion.reason });
+      excluded.push({
+        row: rowNumber,
+        word,
+        posCell,
+        reason: exclusion.reason,
+      });
       return;
     }
 
@@ -252,9 +312,15 @@ function prepareStaging(): StagingReport {
   for (let { row } of kept) {
     const word = row.Word.trim();
 
-    const shiftMatch = IPA_TRANSLATION_SHIFT_PATTERN.exec(row.VietnameseTranslation.trim());
+    const shiftMatch = IPA_TRANSLATION_SHIFT_PATTERN.exec(
+      row.VietnameseTranslation.trim(),
+    );
     if (shiftMatch) {
-      row = { ...row, Phonetics: shiftMatch[1], VietnameseTranslation: shiftMatch[2].trim() };
+      row = {
+        ...row,
+        Phonetics: shiftMatch[1],
+        VietnameseTranslation: shiftMatch[2].trim(),
+      };
       ipaTranslationShiftFixed++;
     }
 
@@ -279,7 +345,10 @@ function prepareStaging(): StagingReport {
       notBlankable++;
     }
 
-    topicRowCounts.set(normalizedTopic, (topicRowCounts.get(normalizedTopic) ?? 0) + 1);
+    topicRowCounts.set(
+      normalizedTopic,
+      (topicRowCounts.get(normalizedTopic) ?? 0) + 1,
+    );
 
     cleanedRows.push({
       ...row,
@@ -300,14 +369,20 @@ function prepareStaging(): StagingReport {
 
       const audioSrc = resolveAudioSource(word);
       if (audioSrc) {
-        copyFile(audioSrc, path.join(STAGED_AUDIO_DIR, normalizedTopic, `${word}.mp3`));
+        copyFile(
+          audioSrc,
+          path.join(STAGED_AUDIO_DIR, normalizedTopic, `${word}.mp3`),
+        );
       } else {
         audioMissing.push(word);
       }
 
       const imageSrc = resolveImageSource(word);
       if (imageSrc) {
-        copyFile(imageSrc.filePath, path.join(STAGED_IMG_DIR, normalizedTopic, `${word}.jpg`));
+        copyFile(
+          imageSrc.filePath,
+          path.join(STAGED_IMG_DIR, normalizedTopic, `${word}.jpg`),
+        );
         if (imageSrc.kind === 'plain') imageMatchedPlain++;
         else imageMatchedPlaceholder++;
       } else {
@@ -330,12 +405,20 @@ function prepareStaging(): StagingReport {
 
   // Sanity assertions — fail loudly rather than silently drift from the
   // numbers verified during planning.
-  const expected = { validRows: 1009, uniqueWords: 937, duplicateOccurrences: 72 };
+  const expected = {
+    validRows: 1009,
+    uniqueWords: 937,
+    duplicateOccurrences: 72,
+  };
   const mismatches: string[] = [];
   if (validRows !== expected.validRows)
-    mismatches.push(`validRows: expected ${expected.validRows}, got ${validRows}`);
+    mismatches.push(
+      `validRows: expected ${expected.validRows}, got ${validRows}`,
+    );
   if (uniqueWords !== expected.uniqueWords)
-    mismatches.push(`uniqueWords: expected ${expected.uniqueWords}, got ${uniqueWords}`);
+    mismatches.push(
+      `uniqueWords: expected ${expected.uniqueWords}, got ${uniqueWords}`,
+    );
   if (duplicateOccurrences !== expected.duplicateOccurrences)
     mismatches.push(
       `duplicateOccurrences: expected ${expected.duplicateOccurrences}, got ${duplicateOccurrences}`,
@@ -361,7 +444,10 @@ function prepareStaging(): StagingReport {
       return { name, normalizedFrom: normalizedFromEntry?.[0], rowCount };
     }),
     examples: { blankable, notBlankable, noExample },
-    audio: { matched: uniqueWords - audioMissing.length, missing: audioMissing },
+    audio: {
+      matched: uniqueWords - audioMissing.length,
+      missing: audioMissing,
+    },
     image: {
       matchedPlain: imageMatchedPlain,
       matchedPlaceholderRenamed: imageMatchedPlaceholder,
@@ -376,30 +462,43 @@ function printStagingReport(r: StagingReport): void {
   console.log(`CSV topic rows:                 ${r.csvTopicRows}`);
   console.log(`Excluded (malformed, AMBIGUOUS_SKIP): ${r.excluded.length}`);
   for (const e of r.excluded) {
-    console.log(`  - row ${e.row}: Word="${e.word}", PartOfSpeech-cell="${e.posCell}" — ${e.reason} — NOT imported`);
+    console.log(
+      `  - row ${e.row}: Word="${e.word}", PartOfSpeech-cell="${e.posCell}" — ${e.reason} — NOT imported`,
+    );
   }
   console.log(`Valid rows carried into mapping: ${r.validRows}`);
   console.log(`Cross-topic duplicate occurrences: ${r.duplicateOccurrences}`);
   console.log(`Unique vocabulary headwords:     ${r.uniqueWords}`);
-  console.log(`\nIPA/VietnameseTranslation column-shift fixed (mechanical un-merge): ${r.ipaTranslationShiftFixed} rows`);
+  console.log(
+    `\nIPA/VietnameseTranslation column-shift fixed (mechanical un-merge): ${r.ipaTranslationShiftFixed} rows`,
+  );
   console.log(`\nResidual unmapped PartOfSpeech: ${r.unmappedPosRows.length}`);
   for (const u of r.unmappedPosRows) {
-    console.log(`  - row ${u.row}: Word="${u.word}", PartOfSpeech="${u.posCell}" (left null, not guessed)`);
+    console.log(
+      `  - row ${u.row}: Word="${u.word}", PartOfSpeech="${u.posCell}" (left null, not guessed)`,
+    );
   }
   console.log(`\nTopics normalized (stray leading ": " stripped):`);
   for (const t of r.topics) {
-    if (t.normalizedFrom) console.log(`  - "${t.normalizedFrom}" → "${t.name}"`);
+    if (t.normalizedFrom)
+      console.log(`  - "${t.normalizedFrom}" → "${t.name}"`);
   }
   console.log(`\nTopics → decks (word-row count per topic):`);
   for (const t of r.topics) {
     console.log(`  - ${t.name}: ${t.rowCount}`);
   }
-  console.log(`\nExamples: blankable=${r.examples.blankable}, notBlankable=${r.examples.notBlankable}, noExample=${r.examples.noExample}`);
-  console.log(`\nAudio staged: matched=${r.audio.matched}/${r.uniqueWords}, missing=${r.audio.missing.length}${r.audio.missing.length ? ' (' + r.audio.missing.join(', ') + ')' : ''}`);
+  console.log(
+    `\nExamples: blankable=${r.examples.blankable}, notBlankable=${r.examples.notBlankable}, noExample=${r.examples.noExample}`,
+  );
+  console.log(
+    `\nAudio staged: matched=${r.audio.matched}/${r.uniqueWords}, missing=${r.audio.missing.length}${r.audio.missing.length ? ' (' + r.audio.missing.join(', ') + ')' : ''}`,
+  );
   console.log(
     `Image staged: exact=${r.image.matchedPlain}, placeholder-renamed=${r.image.matchedPlaceholderRenamed}, missing=${r.image.missing.length}${r.image.missing.length ? ' (' + r.image.missing.join(', ') + ')' : ''}`,
   );
-  console.log(`\nMedia orphaned by the 9 excluded rows (real files, word never imported):`);
+  console.log(
+    `\nMedia orphaned by the 9 excluded rows (real files, word never imported):`,
+  );
   for (const o of r.orphanedByExclusion) {
     console.log(`  - ${o.word}: audio=${o.hasAudio}, image=${o.hasImage}`);
   }
@@ -419,39 +518,65 @@ function readJson<T>(filePath: string): T | undefined {
 
 function printFrameworkArtifacts(dryRun: boolean): void {
   const buildDir = buildDatasetBuildDir(DATASET_ID);
-  const analysis = readJson<AnalysisReport>(path.join(buildDir, 'analysis.json'));
-  const validation = readJson<ValidationReport>(path.join(buildDir, 'validation.json'));
-  const manifest = readJson<MediaManifest>(path.join(buildDir, 'media-manifest.json'));
-  const summary = readJson<ImportSummary>(path.join(buildDir, 'import-summary.json'));
+  const analysis = readJson<AnalysisReport>(
+    path.join(buildDir, 'analysis.json'),
+  );
+  const validation = readJson<ValidationReport>(
+    path.join(buildDir, 'validation.json'),
+  );
+  const manifest = readJson<MediaManifest>(
+    path.join(buildDir, 'media-manifest.json'),
+  );
+  const summary = readJson<ImportSummary>(
+    path.join(buildDir, 'import-summary.json'),
+  );
 
   console.log('\n============ FRAMEWORK ARTIFACTS SUMMARY ============');
   if (analysis) {
-    console.log(`analyze: ${analysis.file.rowCount} rows read, ${analysis.columns.length} columns`);
+    console.log(
+      `analyze: ${analysis.file.rowCount} rows read, ${analysis.columns.length} columns`,
+    );
   }
   if (validation) {
-    console.log(`validate: ${validation.errors.length} error(s), ${validation.warnings.length} warning(s)`);
-    console.log(`  in-file duplicates reported: ${validation.inFileDuplicates.length}`);
-    console.log(`  already-in-DB duplicates: ${validation.dbDuplicates.length}`);
+    console.log(
+      `validate: ${validation.errors.length} error(s), ${validation.warnings.length} warning(s)`,
+    );
+    console.log(
+      `  in-file duplicates reported: ${validation.inFileDuplicates.length}`,
+    );
+    console.log(
+      `  already-in-DB duplicates: ${validation.dbDuplicates.length}`,
+    );
   }
   if (manifest) {
-    const byKind = (kind: 'audio' | 'image') => manifest.entries.filter((e) => e.kind === kind);
+    const byKind = (kind: 'audio' | 'image') =>
+      manifest.entries.filter((e) => e.kind === kind);
     for (const kind of ['audio', 'image'] as const) {
       const entries = byKind(kind);
-      const matched = entries.filter((e) => e.status === 'pending' || e.status === 'uploaded').length;
+      const matched = entries.filter(
+        (e) => e.status === 'pending' || e.status === 'uploaded',
+      ).length;
       const missing = entries.filter((e) => e.status === 'missing').length;
-      console.log(`media (${kind}): ${entries.length} entries — matched(local)=${matched}, missing=${missing}`);
+      console.log(
+        `media (${kind}): ${entries.length} entries — matched(local)=${matched}, missing=${missing}`,
+      );
     }
   }
   if (summary) {
     console.log(
       `import${dryRun ? ' (dry-run)' : ''}: created=${summary.created}, updated=${summary.updated}, skipped=${summary.skipped}, skippedProtected=${summary.skippedProtected}, failed=${summary.failed.length}`,
     );
-    console.log(`  decks: +${summary.decksCreated} created / ${summary.decksReused} reused, attached=${summary.attached}`);
+    console.log(
+      `  decks: +${summary.decksCreated} created / ${summary.decksReused} reused, attached=${summary.attached}`,
+    );
     if (summary.unattachedNoDeckKey.length > 0) {
-      console.log(`  WARNING unattachedNoDeckKey: ${summary.unattachedNoDeckKey.length}`);
+      console.log(
+        `  WARNING unattachedNoDeckKey: ${summary.unattachedNoDeckKey.length}`,
+      );
     }
     if (summary.failed.length > 0) {
-      for (const f of summary.failed) console.log(`  failed: row ${f.row} (${f.text}): ${f.error}`);
+      for (const f of summary.failed)
+        console.log(`  failed: row ${f.row} (${f.text}): ${f.error}`);
     }
   }
   console.log('=======================================================\n');
@@ -460,9 +585,13 @@ function printFrameworkArtifacts(dryRun: boolean): void {
 async function autoPublishQualifyingDecks(): Promise<void> {
   const prisma = new PrismaClient();
   try {
-    const library = await prisma.vocabLibrary.findFirst({ where: { name: LIBRARY_NAME } });
+    const library = await prisma.vocabLibrary.findFirst({
+      where: { name: LIBRARY_NAME },
+    });
     if (!library) {
-      console.log(`No library named "${LIBRARY_NAME}" found — skipping publish.`);
+      console.log(
+        `No library named "${LIBRARY_NAME}" found — skipping publish.`,
+      );
       return;
     }
     const decks = await prisma.vocabDeck.findMany({
@@ -472,11 +601,16 @@ async function autoPublishQualifyingDecks(): Promise<void> {
     let published = 0;
     for (const deck of decks) {
       if (deck._count.deckWords > 0) {
-        await prisma.vocabDeck.update({ where: { id: deck.id }, data: { isPublished: true } });
+        await prisma.vocabDeck.update({
+          where: { id: deck.id },
+          data: { isPublished: true },
+        });
         published++;
       }
     }
-    console.log(`Auto-published ${published}/${decks.length} newly-unpublished deck(s) with ≥1 word.`);
+    console.log(
+      `Auto-published ${published}/${decks.length} newly-unpublished deck(s) with ≥1 word.`,
+    );
   } finally {
     await prisma.$disconnect();
   }
@@ -505,7 +639,9 @@ async function main(): Promise<void> {
     runCli(['--stage', 'media', '--dry-run']);
     runCli(['--stage', 'import', '--dry-run', '--allow-partial']);
     printFrameworkArtifacts(true);
-    console.log('DRY RUN complete. No DB writes, no media uploads. Review the report above before running --write.');
+    console.log(
+      'DRY RUN complete. No DB writes, no media uploads. Review the report above before running --write.',
+    );
     return;
   }
 

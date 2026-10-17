@@ -23,7 +23,9 @@ const searchableValue = (value: unknown): string => {
 // PlacementQuestion.correctAnswer) is stringified and scanned too, so a
 // marker buried inside JSON content is still caught.
 export const rowContainsFixtureMarker = (row: ContentRow): boolean =>
-  Object.values(row).some((value) => searchableValue(value).includes(FIXTURE_MARKER));
+  Object.values(row).some((value) =>
+    searchableValue(value).includes(FIXTURE_MARKER),
+  );
 
 export interface FixtureMarkerHit {
   readonly modelName: string;
@@ -34,7 +36,9 @@ export const findFixtureMarkerHits = (
   modelName: string,
   rows: readonly ContentRow[],
 ): readonly FixtureMarkerHit[] =>
-  rows.filter(rowContainsFixtureMarker).map((row) => ({ modelName, id: row.id }));
+  rows
+    .filter(rowContainsFixtureMarker)
+    .map((row) => ({ modelName, id: row.id }));
 
 export class FixtureContaminationError extends Error {
   constructor(hits: readonly FixtureMarkerHit[]) {
@@ -48,7 +52,9 @@ export class FixtureContaminationError extends Error {
   }
 }
 
-export const assertNoFixtureContamination = (hits: readonly FixtureMarkerHit[]): void => {
+export const assertNoFixtureContamination = (
+  hits: readonly FixtureMarkerHit[],
+): void => {
   if (hits.length > 0) {
     throw new FixtureContaminationError(hits);
   }

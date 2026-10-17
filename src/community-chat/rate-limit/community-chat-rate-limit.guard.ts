@@ -36,7 +36,11 @@ export class CommunityChatRateLimitGuard implements CanActivate {
     if (!userId) return true;
 
     const key = `community:${policy.kind}:${userId}`;
-    const result = await this.rateLimiter.checkAndIncrement(key, policy.max, policy.windowSeconds);
+    const result = await this.rateLimiter.checkAndIncrement(
+      key,
+      policy.max,
+      policy.windowSeconds,
+    );
     if (!result.allowed) {
       throw new RateLimitExceededException();
     }

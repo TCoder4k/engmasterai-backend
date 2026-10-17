@@ -6,7 +6,10 @@ import {
   SpeakingLiveServerMessage,
 } from './speaking-live-connection.provider';
 import { SpeakingAiExerciseContext } from '../speaking.types';
-import { buildSpeakingLiveOpeningCue, buildSpeakingLiveSystemInstruction } from './speaking-live-instruction';
+import {
+  buildSpeakingLiveOpeningCue,
+  buildSpeakingLiveSystemInstruction,
+} from './speaking-live-instruction';
 import { SpeakingLiveAudioDiagnostics } from './speaking-live-audio-diagnostics';
 
 // Speaking Partner Live — one instance per WebSocket connection, i.e. per
@@ -66,7 +69,8 @@ import { SpeakingLiveAudioDiagnostics } from './speaking-live-audio-diagnostics'
 // transport-level error as recoverable-for-just-this-turn would be a lie
 // about what this code actually does.
 
-export const combine = (previous: string, incoming: string): string => previous + incoming;
+export const combine = (previous: string, incoming: string): string =>
+  previous + incoming;
 
 export type SpeakingLiveServerEvent =
   | { type: 'audioChunk'; data: string }
@@ -118,7 +122,9 @@ export class SpeakingLiveSession {
     this.phase = 'opening';
     this.currentUserTranscript = '';
     this.currentAiTranscript = '';
-    this.connection.sendClientTurn(buildSpeakingLiveOpeningCue(this.exercise.openingLine));
+    this.connection.sendClientTurn(
+      buildSpeakingLiveOpeningCue(this.exercise.openingLine),
+    );
   }
 
   /** Tap-start: begin a new turn, forward to Gemini, reset both accumulators. Blocked while the opening line is still generating or a turn is already active. */
@@ -163,10 +169,16 @@ export class SpeakingLiveSession {
     if (!sc) return;
 
     if (sc.inputTranscription) {
-      this.currentUserTranscript = combine(this.currentUserTranscript, sc.inputTranscription.text);
+      this.currentUserTranscript = combine(
+        this.currentUserTranscript,
+        sc.inputTranscription.text,
+      );
     }
     if (sc.outputTranscription) {
-      this.currentAiTranscript = combine(this.currentAiTranscript, sc.outputTranscription.text);
+      this.currentAiTranscript = combine(
+        this.currentAiTranscript,
+        sc.outputTranscription.text,
+      );
     }
     if (sc.modelTurn?.parts) {
       for (const part of sc.modelTurn.parts) {
@@ -220,9 +232,14 @@ export class SpeakingLiveSession {
 
     this.sessionStore
       .appendTurn(this.userId, this.attemptId, userText, aiText)
-      .then(() => this.sendToClient({ type: 'turnFinalized', userText, aiText }))
+      .then(() =>
+        this.sendToClient({ type: 'turnFinalized', userText, aiText }),
+      )
       .catch((error: Error) => {
-        this.logger.error('Failed to persist a finalized Speaking Live turn', error);
+        this.logger.error(
+          'Failed to persist a finalized Speaking Live turn',
+          error,
+        );
         this.sendToClient({ type: 'turnError' });
       });
   }

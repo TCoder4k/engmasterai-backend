@@ -133,7 +133,10 @@ describe('enumerateCalendarWeekInTimeZone', () => {
   ];
 
   it('returns Monday-first when today IS Monday', () => {
-    const days = enumerateCalendarWeekInTimeZone(new Date('2026-08-24T12:00:00.000Z'), 'UTC');
+    const days = enumerateCalendarWeekInTimeZone(
+      new Date('2026-08-24T12:00:00.000Z'),
+      'UTC',
+    );
     expect(days).toEqual(AUG_WEEK);
   });
 
@@ -141,14 +144,23 @@ describe('enumerateCalendarWeekInTimeZone', () => {
   // window would put Monday LAST here, stranding today's checkmark on the
   // far right of the row.
   it('returns the SAME week regardless of which weekday within it is today', () => {
-    const midweek = enumerateCalendarWeekInTimeZone(new Date('2026-08-26T12:00:00.000Z'), 'UTC');
-    const sunday = enumerateCalendarWeekInTimeZone(new Date('2026-08-30T12:00:00.000Z'), 'UTC');
+    const midweek = enumerateCalendarWeekInTimeZone(
+      new Date('2026-08-26T12:00:00.000Z'),
+      'UTC',
+    );
+    const sunday = enumerateCalendarWeekInTimeZone(
+      new Date('2026-08-30T12:00:00.000Z'),
+      'UTC',
+    );
     expect(midweek).toEqual(AUG_WEEK);
     expect(sunday).toEqual(AUG_WEEK);
   });
 
   it('crosses a month boundary without repeating or skipping a day', () => {
-    const days = enumerateCalendarWeekInTimeZone(new Date('2026-08-02T12:00:00.000Z'), 'UTC');
+    const days = enumerateCalendarWeekInTimeZone(
+      new Date('2026-08-02T12:00:00.000Z'),
+      'UTC',
+    );
     expect(days).toEqual([
       '2026-07-27',
       '2026-07-28',
@@ -161,7 +173,10 @@ describe('enumerateCalendarWeekInTimeZone', () => {
   });
 
   it('crosses a spring-forward DST transition with no duplicate and no gap', () => {
-    const days = enumerateCalendarWeekInTimeZone(new Date('2026-03-04T12:00:00.000Z'), 'America/New_York');
+    const days = enumerateCalendarWeekInTimeZone(
+      new Date('2026-03-04T12:00:00.000Z'),
+      'America/New_York',
+    );
     expect(days).toEqual([
       '2026-03-02',
       '2026-03-03',
@@ -175,7 +190,10 @@ describe('enumerateCalendarWeekInTimeZone', () => {
   });
 
   it('crosses a fall-back DST transition with no duplicate and no gap', () => {
-    const days = enumerateCalendarWeekInTimeZone(new Date('2026-10-28T12:00:00.000Z'), 'America/New_York');
+    const days = enumerateCalendarWeekInTimeZone(
+      new Date('2026-10-28T12:00:00.000Z'),
+      'America/New_York',
+    );
     expect(days).toEqual([
       '2026-10-26',
       '2026-10-27',

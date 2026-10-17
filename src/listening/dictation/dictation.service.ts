@@ -67,7 +67,10 @@ export class DictationService {
     const segment = await this.prisma.listeningSegment.findFirst({
       where: {
         id: segmentId,
-        content: { ...visibleContentWhere, supportedModes: { has: 'DICTATION' } },
+        content: {
+          ...visibleContentWhere,
+          supportedModes: { has: 'DICTATION' },
+        },
       },
       select: {
         id: true,
@@ -88,7 +91,12 @@ export class DictationService {
     // edited since, and re-scoring the same submission against new text would
     // hand a student two different results for one attempt.
     const existing = await this.prisma.listeningDictationAttempt.findUnique({
-      where: { userId_clientAttemptId: { userId, clientAttemptId: dto.clientAttemptId } },
+      where: {
+        userId_clientAttemptId: {
+          userId,
+          clientAttemptId: dto.clientAttemptId,
+        },
+      },
       select: {
         segmentId: true,
         accuracyPercent: true,
@@ -103,7 +111,9 @@ export class DictationService {
     if (existing) {
       const [segmentRow, content] = await Promise.all([
         this.prisma.listeningDictationSegmentProgress.findUnique({
-          where: { userId_segmentId: { userId, segmentId: existing.segmentId } },
+          where: {
+            userId_segmentId: { userId, segmentId: existing.segmentId },
+          },
           select: SEGMENT_PROGRESS_SELECT,
         }),
         this.summariseContent(userId, existing.contentId),
@@ -152,7 +162,11 @@ export class DictationService {
 
       const previous = await tx.listeningDictationSegmentProgress.findUnique({
         where: { userId_segmentId: { userId, segmentId: segment.id } },
-        select: { bestAccuracyPercent: true, completedAt: true, assisted: true },
+        select: {
+          bestAccuracyPercent: true,
+          completedAt: true,
+          assisted: true,
+        },
       });
 
       const progress = await tx.listeningDictationSegmentProgress.upsert({
@@ -171,8 +185,7 @@ export class DictationService {
           // completedAt is set once and NEVER cleared — the same contract as
           // LessonStepProgress. A later failed attempt does not un-finish a
           // sentence the student already transcribed correctly.
-          completedAt:
-            previous?.completedAt ?? (score.solved ? now : null),
+          completedAt: previous?.completedAt ?? (score.solved ? now : null),
           // Monotonic. A retry can only raise this.
           bestAccuracyPercent: Math.max(
             previous?.bestAccuracyPercent ?? 0,
@@ -314,7 +327,11 @@ export class DictationService {
       }),
     ]);
 
-    return summarise(totalSegments, completedSegments, activity._max.lastAttemptAt);
+    return summarise(
+      totalSegments,
+      completedSegments,
+      activity._max.lastAttemptAt,
+    );
   }
 }
 

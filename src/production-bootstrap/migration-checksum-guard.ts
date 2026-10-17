@@ -93,7 +93,10 @@ export const classifySourceMigrationChecksum = (
         'Refusing to proceed.',
     );
   }
-  if (evidence.canonicalNormalizedChecksum !== evidence.workingTreeNormalizedChecksum) {
+  if (
+    evidence.canonicalNormalizedChecksum !==
+    evidence.workingTreeNormalizedChecksum
+  ) {
     throw new MigrationChecksumGuardError(
       `Local dev migration "${migrationName}": working-tree content differs from the canonical Git ` +
         'blob even after line-ending normalization — this is a real content change, not a ' +

@@ -34,7 +34,9 @@ export class GamificationController {
   @UseGuards(JwtAuthGuard, QuizRateLimitGuard)
   @QuizRateLimit({ kind: 'gamification', max: 30, windowSeconds: 60 })
   @Get('profile')
-  async getProfile(@Req() req: AuthenticatedRequest): Promise<GamificationProfileDto> {
+  async getProfile(
+    @Req() req: AuthenticatedRequest,
+  ): Promise<GamificationProfileDto> {
     return this.gamification.buildProfile(req.user.userId);
   }
 }

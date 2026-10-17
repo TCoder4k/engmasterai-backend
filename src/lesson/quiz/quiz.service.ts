@@ -617,7 +617,8 @@ export class QuizService {
         // TaskSubmitOutcome), which is exactly why replaying it cannot
         // re-announce an award that already happened.
         return {
-          response: progress.lastSubmitResult as unknown as SubmitQuizResponseDto,
+          response:
+            progress.lastSubmitResult as unknown as SubmitQuizResponseDto,
           gamification: await this.replayGamification(tx, userId),
         };
       }

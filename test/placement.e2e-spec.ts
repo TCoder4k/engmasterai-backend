@@ -74,9 +74,10 @@ class FakeRoadmapAnalysis implements RoadmapAnalysisProvider {
 class FakeRoadmapPlanner implements RoadmapPlannerProvider {
   readonly model = 'fake-planner-model';
   static selectResourceId: string | null = null;
-  static forceInvalidPlan:
-    | { resourceType: 'COURSE' | 'VOCAB_LIBRARY' | 'LISTENING_CATEGORY'; resourceId: string }
-    | null = null;
+  static forceInvalidPlan: {
+    resourceType: 'COURSE' | 'VOCAB_LIBRARY' | 'LISTENING_CATEGORY';
+    resourceId: string;
+  } | null = null;
   static overallReason = 'Lộ trình được sắp xếp phù hợp với mục tiêu của bạn.';
   static failWith: RoadmapPlanningError | null = null;
   static seenRequests: RoadmapPlanningRequest[] = [];
@@ -100,7 +101,12 @@ class FakeRoadmapPlanner implements RoadmapPlannerProvider {
     }
     if (FakeRoadmapPlanner.forceInvalidPlan) {
       return Promise.resolve({
-        phases: [{ ...FakeRoadmapPlanner.forceInvalidPlan, reason: 'Hallucinated for this test.' }],
+        phases: [
+          {
+            ...FakeRoadmapPlanner.forceInvalidPlan,
+            reason: 'Hallucinated for this test.',
+          },
+        ],
         overallReason: FakeRoadmapPlanner.overallReason,
         model: this.model,
       });
@@ -121,8 +127,9 @@ class FakeRoadmapPlanner implements RoadmapPlannerProvider {
       // (roadmap-algorithm.ts's pickResource) so fixtures behave predictably
       // in both paths.
       const chosen =
-        candidatesInPillar.find((c) => c.id === FakeRoadmapPlanner.selectResourceId) ??
-        [...candidatesInPillar].sort((a, b) => a.sortKey - b.sortKey)[0];
+        candidatesInPillar.find(
+          (c) => c.id === FakeRoadmapPlanner.selectResourceId,
+        ) ?? [...candidatesInPillar].sort((a, b) => a.sortKey - b.sortKey)[0];
       return {
         resourceType: chosen.resourceType,
         resourceId: chosen.id,
@@ -975,7 +982,9 @@ describe('Placement test flow (e2e)', () => {
 
       expect(res.body.aiPlanningUsed).toBe(true);
       expect(
-        (res.body.items as Array<{ resourceType: string; resourceId: string }>).some(
+        (
+          res.body.items as Array<{ resourceType: string; resourceId: string }>
+        ).some(
           (i) => i.resourceType === 'COURSE' && i.resourceId === course.id,
         ),
       ).toBe(true);
@@ -1053,9 +1062,16 @@ describe('Placement test flow (e2e)', () => {
     });
 
     it('a heterogeneous 3-pillar candidate seed (Course + VocabLibrary + ListeningCategory) produces one AI-selected phase per pillar', async () => {
-      const course = await seedPublishedCourse('GRAMMAR', 'Plan multi-pillar course');
-      const library = await seedPublishedVocabLibrary('Plan multi-pillar library');
-      const category = await seedPublishedListeningCategory('Plan multi-pillar category');
+      const course = await seedPublishedCourse(
+        'GRAMMAR',
+        'Plan multi-pillar course',
+      );
+      const library = await seedPublishedVocabLibrary(
+        'Plan multi-pillar library',
+      );
+      const category = await seedPublishedListeningCategory(
+        'Plan multi-pillar category',
+      );
       const token = await registerStudent('plan-multipillar');
       await setGoal(token, 'GENERAL_ENGLISH');
       await request(app.getHttpServer())

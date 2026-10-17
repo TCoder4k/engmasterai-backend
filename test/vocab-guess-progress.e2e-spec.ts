@@ -35,9 +35,11 @@ describe('Vocabulary Guess-the-Word progress (e2e)', () => {
   const registerAndLogin = async (): Promise<string> => {
     const email = `guess-progress-${randomUUID()}@example.test`;
     createdUserEmails.push(email);
-    const res = await request(app.getHttpServer())
-      .post('/auth/register')
-      .send({ name: 'Guess Progress Test User', email, password: 'password123' });
+    const res = await request(app.getHttpServer()).post('/auth/register').send({
+      name: 'Guess Progress Test User',
+      email,
+      password: 'password123',
+    });
     return (res.body as { accessToken: string }).accessToken;
   };
 
@@ -97,7 +99,9 @@ describe('Vocabulary Guess-the-Word progress (e2e)', () => {
     const sharedWord = await prisma.vocabWord.create({
       data: {
         text: testFixtureName('guess-progress-shared-word'),
-        meanings: { create: [{ meaning: 'a shared fixture word', orderIndex: 0 }] },
+        meanings: {
+          create: [{ meaning: 'a shared fixture word', orderIndex: 0 }],
+        },
       },
     });
     sharedWordId = sharedWord.id;
@@ -113,7 +117,11 @@ describe('Vocabulary Guess-the-Word progress (e2e)', () => {
     const unattachedWord = await prisma.vocabWord.create({
       data: {
         text: testFixtureName('guess-progress-unattached-word'),
-        meanings: { create: [{ meaning: 'not attached to any fixture deck', orderIndex: 0 }] },
+        meanings: {
+          create: [
+            { meaning: 'not attached to any fixture deck', orderIndex: 0 },
+          ],
+        },
       },
     });
     unattachedWordId = unattachedWord.id;
@@ -147,7 +155,9 @@ describe('Vocabulary Guess-the-Word progress (e2e)', () => {
     });
     await prisma.vocabWord.deleteMany({
       where: {
-        id: { in: [sharedWordId, deckOnlyWordId, unattachedWordId, hiddenWordId] },
+        id: {
+          in: [sharedWordId, deckOnlyWordId, unattachedWordId, hiddenWordId],
+        },
       },
     });
     await prisma.vocabDeck.deleteMany({
@@ -246,7 +256,9 @@ describe('Vocabulary Guess-the-Word progress (e2e)', () => {
     it('404s when the word is not attached to the deck', async () => {
       const token = await registerAndLogin();
       const res = await request(app.getHttpServer())
-        .post(`/vocab/decks/${deckAId}/guess-progress/words/${unattachedWordId}`)
+        .post(
+          `/vocab/decks/${deckAId}/guess-progress/words/${unattachedWordId}`,
+        )
         .set('Authorization', `Bearer ${token}`);
       expect(res.status).toBe(404);
     });
@@ -254,7 +266,9 @@ describe('Vocabulary Guess-the-Word progress (e2e)', () => {
     it('404s for an unpublished (hidden) deck', async () => {
       const token = await registerAndLogin();
       const res = await request(app.getHttpServer())
-        .post(`/vocab/decks/${hiddenDeckId}/guess-progress/words/${hiddenWordId}`)
+        .post(
+          `/vocab/decks/${hiddenDeckId}/guess-progress/words/${hiddenWordId}`,
+        )
         .set('Authorization', `Bearer ${token}`);
       expect(res.status).toBe(404);
     });
@@ -307,7 +321,7 @@ describe('Vocabulary Guess-the-Word progress (e2e)', () => {
       expect(after.body.learnedWordIds).toEqual([]);
     });
 
-    it('resetting deck A does not touch the same word\'s learned state in deck B', async () => {
+    it("resetting deck A does not touch the same word's learned state in deck B", async () => {
       const token = await registerAndLogin();
 
       await request(app.getHttpServer())

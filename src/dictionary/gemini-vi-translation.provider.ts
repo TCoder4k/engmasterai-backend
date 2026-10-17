@@ -6,8 +6,14 @@ import {
   ViTranslationRequest,
   ViTranslationResult,
 } from './vi-translation.provider';
-import { DEFAULT_GEMINI_MODEL_CHAIN, parseGeminiModelList } from '../shared/gemini-models';
-import { fetchGeminiWithFallback, isGeminiTimeout } from '../shared/gemini-fetch-with-fallback';
+import {
+  DEFAULT_GEMINI_MODEL_CHAIN,
+  parseGeminiModelList,
+} from '../shared/gemini-models';
+import {
+  fetchGeminiWithFallback,
+  isGeminiTimeout,
+} from '../shared/gemini-fetch-with-fallback';
 
 // Dictionary Phase A — translates an ALREADY-DETERMINISTIC English
 // definition into Vietnamese. This is the one place in the Dictionary
@@ -20,7 +26,8 @@ import { fetchGeminiWithFallback, isGeminiTimeout } from '../shared/gemini-fetch
 // as the roadmap planner: translating the same input twice should not
 // produce a different-shaped answer.
 
-const GEMINI_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models';
+const GEMINI_ENDPOINT =
+  'https://generativelanguage.googleapis.com/v1beta/models';
 
 const TRANSLATION_PROMPT = [
   'You translate English dictionary definitions into Vietnamese for a Vietnamese English-learner.',
@@ -52,7 +59,10 @@ export class GeminiViTranslationProvider implements ViTranslationProvider {
     // outage that motivated this. Falls through to the next model on
     // 429/503 — see gemini-fetch-with-fallback.ts.
     this.models = parseGeminiModelList(
-      this.config.get<string>('GEMINI_DICTIONARY_TRANSLATION_MODEL', DEFAULT_GEMINI_MODEL_CHAIN),
+      this.config.get<string>(
+        'GEMINI_DICTIONARY_TRANSLATION_MODEL',
+        DEFAULT_GEMINI_MODEL_CHAIN,
+      ),
       'GEMINI_DICTIONARY_TRANSLATION_MODEL',
     );
   }
@@ -120,7 +130,9 @@ export class GeminiViTranslationProvider implements ViTranslationProvider {
     }
 
     if (!response.ok) {
-      this.logger.warn(`Gemini VI translation returned HTTP ${response.status}`);
+      this.logger.warn(
+        `Gemini VI translation returned HTTP ${response.status}`,
+      );
       throw new ViTranslationError(
         'UNAVAILABLE',
         `VI translation failed with status ${response.status}`,
@@ -131,14 +143,20 @@ export class GeminiViTranslationProvider implements ViTranslationProvider {
     try {
       payload = (await response.json()) as GeminiResponseShape;
     } catch {
-      throw new ViTranslationError('UNAVAILABLE', 'VI translation returned no data');
+      throw new ViTranslationError(
+        'UNAVAILABLE',
+        'VI translation returned no data',
+      );
     }
 
     if (payload.promptFeedback?.blockReason) {
       this.logger.warn(
         `Gemini blocked the VI translation request: ${payload.promptFeedback.blockReason}`,
       );
-      throw new ViTranslationError('UNAVAILABLE', 'VI translation could not be generated');
+      throw new ViTranslationError(
+        'UNAVAILABLE',
+        'VI translation could not be generated',
+      );
     }
 
     const text = payload.candidates?.[0]?.content?.parts
@@ -147,7 +165,10 @@ export class GeminiViTranslationProvider implements ViTranslationProvider {
       .trim();
 
     if (!text) {
-      throw new ViTranslationError('UNAVAILABLE', 'VI translation returned an empty answer');
+      throw new ViTranslationError(
+        'UNAVAILABLE',
+        'VI translation returned an empty answer',
+      );
     }
 
     return extractTranslation(text);
@@ -160,10 +181,19 @@ export const extractTranslation = (raw: string): ViTranslationResult => {
   try {
     parsed = JSON.parse(raw) as RawTranslationShape;
   } catch {
-    throw new ViTranslationError('UNAVAILABLE', 'VI translation returned unparseable output');
+    throw new ViTranslationError(
+      'UNAVAILABLE',
+      'VI translation returned unparseable output',
+    );
   }
-  if (typeof parsed.translation !== 'string' || parsed.translation.trim().length === 0) {
-    throw new ViTranslationError('UNAVAILABLE', 'VI translation returned no translation');
+  if (
+    typeof parsed.translation !== 'string' ||
+    parsed.translation.trim().length === 0
+  ) {
+    throw new ViTranslationError(
+      'UNAVAILABLE',
+      'VI translation returned no translation',
+    );
   }
   return { translation: parsed.translation.trim() };
 };

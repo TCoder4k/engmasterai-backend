@@ -19,7 +19,11 @@ const config = (values: Record<string, unknown> = {}): ConfigService =>
   }) as unknown as ConfigService;
 
 const okResponse = (body: unknown): Response =>
-  ({ ok: true, status: 200, json: () => Promise.resolve(body) }) as unknown as Response;
+  ({
+    ok: true,
+    status: 200,
+    json: () => Promise.resolve(body),
+  }) as unknown as Response;
 
 const helloEntries = [
   {
@@ -28,12 +32,16 @@ const helloEntries = [
       { type: 'ipa', text: '/hɛˈloʊ/', tags: ['General American'] },
       { type: 'ipa', text: '/həˈləʊ/', tags: ['Received Pronunciation'] },
     ],
-    senses: [{ definition: 'Used as a greeting.', examples: ['Hello, world!'] }],
+    senses: [
+      { definition: 'Used as a greeting.', examples: ['Hello, world!'] },
+    ],
     synonyms: ['hi', 'hey'],
   },
   {
     partOfSpeech: 'noun',
-    pronunciations: [{ type: 'ipa', text: '/həˈləʊ/', tags: ['Received Pronunciation'] }],
+    pronunciations: [
+      { type: 'ipa', text: '/həˈləʊ/', tags: ['Received Pronunciation'] },
+    ],
     senses: [{ definition: 'An utterance of "hello".' }],
     synonyms: ['greeting'],
   },
@@ -64,7 +72,9 @@ describe('FreeDictionaryApiProvider', () => {
       definitionEn: 'Used as a greeting.',
       exampleEn: 'Hello, world!',
     });
-    expect(result.synonyms).toEqual(expect.arrayContaining(['hi', 'hey', 'greeting']));
+    expect(result.synonyms).toEqual(
+      expect.arrayContaining(['hi', 'hey', 'greeting']),
+    );
     expect(result.sourceUrl).toBe('https://en.wiktionary.org/wiki/hello');
   });
 
@@ -91,33 +101,43 @@ describe('FreeDictionaryApiProvider', () => {
     jest.spyOn(global, 'fetch').mockRejectedValue(abort);
     const provider = new FreeDictionaryApiProvider(config());
 
-    await expect(provider.lookup('hello')).rejects.toMatchObject({ kind: 'TIMEOUT' });
+    await expect(provider.lookup('hello')).rejects.toMatchObject({
+      kind: 'TIMEOUT',
+    });
   });
 
   it('reports a network failure as UNAVAILABLE', async () => {
     jest.spyOn(global, 'fetch').mockRejectedValue(new Error('offline'));
     const provider = new FreeDictionaryApiProvider(config());
 
-    await expect(provider.lookup('hello')).rejects.toBeInstanceOf(DictionarySourceError);
+    await expect(provider.lookup('hello')).rejects.toBeInstanceOf(
+      DictionarySourceError,
+    );
   });
 
   it('reports a non-2xx response as UNAVAILABLE', async () => {
-    jest.spyOn(global, 'fetch').mockResolvedValue({ ok: false, status: 500 } as unknown as Response);
+    jest
+      .spyOn(global, 'fetch')
+      .mockResolvedValue({ ok: false, status: 500 } as unknown as Response);
     const provider = new FreeDictionaryApiProvider(config());
 
-    await expect(provider.lookup('hello')).rejects.toMatchObject({ kind: 'UNAVAILABLE' });
+    await expect(provider.lookup('hello')).rejects.toMatchObject({
+      kind: 'UNAVAILABLE',
+    });
   });
 
   it('never sends an API key — the source needs none', async () => {
-    const fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValue(
-      okResponse({ word: 'hi', entries: helloEntries, source: {} }),
-    );
+    const fetchSpy = jest
+      .spyOn(global, 'fetch')
+      .mockResolvedValue(
+        okResponse({ word: 'hi', entries: helloEntries, source: {} }),
+      );
     const provider = new FreeDictionaryApiProvider(config());
 
     await provider.lookup('hi');
 
     const [, init] = fetchSpy.mock.calls[0];
-    expect((init as RequestInit | undefined)?.headers).toBeUndefined();
+    expect(init?.headers).toBeUndefined();
   });
 });
 
@@ -160,7 +180,9 @@ describe('extractMeanings', () => {
 
 describe('extractSynonyms', () => {
   it('de-duplicates across entries and caps at 10', () => {
-    const entries = Array.from({ length: 15 }, (_, i) => ({ synonyms: [`syn${i}`, 'shared'] }));
+    const entries = Array.from({ length: 15 }, (_, i) => ({
+      synonyms: [`syn${i}`, 'shared'],
+    }));
     const result = extractSynonyms(entries);
     expect(result.length).toBeLessThanOrEqual(10);
     expect(new Set(result).size).toBe(result.length);

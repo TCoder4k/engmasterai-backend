@@ -1,5 +1,12 @@
-import { Inject, Injectable, ServiceUnavailableException } from '@nestjs/common';
-import { SPEAKING_TRANSLATE_PROVIDER, SpeakingTranslateError } from './speaking-translate.provider';
+import {
+  Inject,
+  Injectable,
+  ServiceUnavailableException,
+} from '@nestjs/common';
+import {
+  SPEAKING_TRANSLATE_PROVIDER,
+  SpeakingTranslateError,
+} from './speaking-translate.provider';
 import type { SpeakingTranslateProvider } from './speaking-translate.provider';
 
 // Speaking Partner — the on-demand subtitle-translation seam's business
@@ -23,7 +30,9 @@ export class SpeakingTranslateService {
       return { textVi: result.textVi };
     } catch (caught) {
       if (caught instanceof SpeakingTranslateError) {
-        throw new ServiceUnavailableException('Subtitle translation is temporarily unavailable');
+        throw new ServiceUnavailableException(
+          'Subtitle translation is temporarily unavailable',
+        );
       }
       throw caught;
     }

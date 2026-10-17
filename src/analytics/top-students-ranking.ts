@@ -18,7 +18,10 @@ export interface RankedStudent {
 // All-time SUM(creditedSeconds) per user, ranked. Tie-broken by userId asc so
 // the top N is deterministic across loads even when totals are equal (small
 // data sets like the current dev DB hit this often).
-export async function rankTopStudents(prisma: PrismaService, limit: number): Promise<RankedStudent[]> {
+export async function rankTopStudents(
+  prisma: PrismaService,
+  limit: number,
+): Promise<RankedStudent[]> {
   const grouped = await prisma.studyTimeEvent.groupBy({
     by: ['userId'],
     _sum: { creditedSeconds: true },
@@ -29,7 +32,10 @@ export async function rankTopStudents(prisma: PrismaService, limit: number): Pro
       userId: group.userId,
       totalSeconds: group._sum.creditedSeconds ?? 0,
     }))
-    .sort((a, b) => b.totalSeconds - a.totalSeconds || a.userId.localeCompare(b.userId))
+    .sort(
+      (a, b) =>
+        b.totalSeconds - a.totalSeconds || a.userId.localeCompare(b.userId),
+    )
     .slice(0, limit);
 
   if (ranked.length === 0) return [];
@@ -49,7 +55,9 @@ export async function rankTopStudents(prisma: PrismaService, limit: number): Pro
   ]);
 
   const usersById = new Map(users.map((user) => [user.id, user]));
-  const completedById = new Map(taskCompletions.map((group) => [group.userId, group._count]));
+  const completedById = new Map(
+    taskCompletions.map((group) => [group.userId, group._count]),
+  );
 
   const result: RankedStudent[] = [];
   for (const entry of ranked) {

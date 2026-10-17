@@ -55,7 +55,10 @@ describe('CommunityChatTicketStore (integration — real Redis, atomic single-us
     // still present. EVAL closes it.
     const ticket = await store.issue('user-1');
 
-    const [a, b] = await Promise.all([store.consume(ticket), store.consume(ticket)]);
+    const [a, b] = await Promise.all([
+      store.consume(ticket),
+      store.consume(ticket),
+    ]);
     const winners = [a, b].filter((r) => r !== null);
 
     expect(winners).toHaveLength(1);

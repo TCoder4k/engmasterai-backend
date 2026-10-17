@@ -10,7 +10,8 @@ export class AssessmentInProgressException extends HttpException {
       {
         statusCode: HttpStatus.FORBIDDEN,
         code: 'ASSESSMENT_IN_PROGRESS',
-        message: 'Engy is unavailable while a Placement Test attempt is in progress.',
+        message:
+          'Engy is unavailable while a Placement Test attempt is in progress.',
       },
       HttpStatus.FORBIDDEN,
     );
@@ -27,7 +28,8 @@ export class ChatReplyInProgressException extends HttpException {
       {
         statusCode: HttpStatus.CONFLICT,
         code: 'CHAT_REPLY_IN_PROGRESS',
-        message: 'A reply for this message is already being generated. Please retry shortly.',
+        message:
+          'A reply for this message is already being generated. Please retry shortly.',
       },
       HttpStatus.CONFLICT,
     );

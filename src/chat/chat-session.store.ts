@@ -1,4 +1,8 @@
-import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { InjectRedis } from '@nestjs-modules/ioredis';
 import Redis from 'ioredis';
 import { ConfigService } from '@nestjs/config';
@@ -49,7 +53,10 @@ export class ChatSessionStore {
     if (typeof this.redis.appendChatTurn !== 'function') {
       this.redis.defineCommand('appendChatTurn', {
         numberOfKeys: 1,
-        lua: readFileSync(join(__dirname, 'lua', 'append-chat-turn.lua'), 'utf8'),
+        lua: readFileSync(
+          join(__dirname, 'lua', 'append-chat-turn.lua'),
+          'utf8',
+        ),
       });
     }
   }
@@ -64,7 +71,10 @@ export class ChatSessionStore {
     try {
       raw = await this.redis.get(chatSessionKey(userId));
     } catch (error) {
-      this.logger.error('Redis read failed while loading a chat session', error as Error);
+      this.logger.error(
+        'Redis read failed while loading a chat session',
+        error as Error,
+      );
       throw new ServiceUnavailableException('Chat is temporarily unavailable');
     }
     if (!raw) return [];
@@ -77,15 +87,22 @@ export class ChatSessionStore {
     let raw: string | null;
     let ttl: number;
     try {
-      [raw, ttl] = await Promise.all([this.redis.get(key), this.redis.ttl(key)]);
+      [raw, ttl] = await Promise.all([
+        this.redis.get(key),
+        this.redis.ttl(key),
+      ]);
     } catch (error) {
-      this.logger.error('Redis read failed while loading a chat session', error as Error);
+      this.logger.error(
+        'Redis read failed while loading a chat session',
+        error as Error,
+      );
       throw new ServiceUnavailableException('Chat is temporarily unavailable');
     }
     if (!raw) return { turns: [], expiresAt: null };
     return {
       turns: parseRecord(raw).turns,
-      expiresAt: ttl > 0 ? new Date(Date.now() + ttl * 1000).toISOString() : null,
+      expiresAt:
+        ttl > 0 ? new Date(Date.now() + ttl * 1000).toISOString() : null,
     };
   }
 
@@ -95,7 +112,11 @@ export class ChatSessionStore {
    * a GET-modify-SET from Node (two different messages for the same user
    * arriving concurrently would otherwise be able to lose one another's turn).
    */
-  async appendTurn(userId: string, userText: string, assistantText: string): Promise<void> {
+  async appendTurn(
+    userId: string,
+    userText: string,
+    assistantText: string,
+  ): Promise<void> {
     try {
       await this.redis.appendChatTurn(
         chatSessionKey(userId),
@@ -106,7 +127,10 @@ export class ChatSessionStore {
         String(this.ttlSeconds),
       );
     } catch (error) {
-      this.logger.error('Redis EVAL failed while appending a chat turn', error as Error);
+      this.logger.error(
+        'Redis EVAL failed while appending a chat turn',
+        error as Error,
+      );
       throw new ServiceUnavailableException('Chat is temporarily unavailable');
     }
   }
@@ -116,7 +140,10 @@ export class ChatSessionStore {
     try {
       await this.redis.del(chatSessionKey(userId));
     } catch (error) {
-      this.logger.error('Redis delete failed while clearing a chat session', error as Error);
+      this.logger.error(
+        'Redis delete failed while clearing a chat session',
+        error as Error,
+      );
       throw new ServiceUnavailableException('Chat is temporarily unavailable');
     }
   }

@@ -1,6 +1,14 @@
-import { diffRows, rowsAreEqual, destinationOnlyRows, type ContentRow } from './content-diff';
+import {
+  diffRows,
+  rowsAreEqual,
+  destinationOnlyRows,
+  type ContentRow,
+} from './content-diff';
 
-const row = (id: string, overrides: Record<string, unknown> = {}): ContentRow => ({
+const row = (
+  id: string,
+  overrides: Record<string, unknown> = {},
+): ContentRow => ({
   id,
   title: 'Example',
   isPublished: true,
@@ -15,7 +23,9 @@ describe('rowsAreEqual', () => {
   });
 
   it('is false when any field differs', () => {
-    expect(rowsAreEqual(row('1'), row('1', { title: 'Different' }))).toBe(false);
+    expect(rowsAreEqual(row('1'), row('1', { title: 'Different' }))).toBe(
+      false,
+    );
   });
 
   it('treats equal Date instants as equal', () => {
@@ -41,7 +51,10 @@ describe('diffRows', () => {
   });
 
   it('reports a conflict — never a silent update — when the same id differs', () => {
-    const result = diffRows([row('1', { title: 'New' })], [row('1', { title: 'Old' })]);
+    const result = diffRows(
+      [row('1', { title: 'New' })],
+      [row('1', { title: 'Old' })],
+    );
     expect(result.toInsert).toHaveLength(0);
     expect(result.inSync).toHaveLength(0);
     expect(result.conflicts).toHaveLength(1);

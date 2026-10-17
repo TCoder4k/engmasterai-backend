@@ -1,4 +1,13 @@
-import { Body, Controller, Get, Post, Query, Req, UseGuards, ValidationPipe } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Post,
+  Query,
+  Req,
+  UseGuards,
+  ValidationPipe,
+} from '@nestjs/common';
 import type { Request } from 'express';
 import { JwtAuthGuard } from '../auth/guards';
 import { CommunityChatRateLimitGuard } from './rate-limit/community-chat-rate-limit.guard';
@@ -42,8 +51,15 @@ export class CommunityChatController {
   @UseGuards(JwtAuthGuard, CommunityChatRateLimitGuard)
   @CommunityChatRateLimit({ kind: 'send', max: 20, windowSeconds: 60 })
   @Post('messages')
-  async sendMessage(@Req() req: RequestWithUser, @Body(bodyPipe) dto: SendCommunityMessageDto) {
-    return this.communityChatService.sendMessage(req.user.userId, dto.clientMessageId, dto.content);
+  async sendMessage(
+    @Req() req: RequestWithUser,
+    @Body(bodyPipe) dto: SendCommunityMessageDto,
+  ) {
+    return this.communityChatService.sendMessage(
+      req.user.userId,
+      dto.clientMessageId,
+      dto.content,
+    );
   }
 
   /** No rate-limit-worthy cost beyond the `read` bucket — a cheap count query. */
@@ -51,7 +67,9 @@ export class CommunityChatController {
   @CommunityChatRateLimit({ kind: 'read', max: 60, windowSeconds: 60 })
   @Get('messages/unread-count')
   async unreadCount(@Req() req: RequestWithUser) {
-    return { count: await this.communityChatService.unreadCount(req.user.userId) };
+    return {
+      count: await this.communityChatService.unreadCount(req.user.userId),
+    };
   }
 
   /**

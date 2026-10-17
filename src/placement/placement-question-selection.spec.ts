@@ -42,13 +42,41 @@ describe('sampleQuestionIds', () => {
     const difficulties = ids.map((id) => byId.get(id)!.difficulty);
 
     expect(sections).toEqual([
-      'GRAMMAR', 'GRAMMAR', 'GRAMMAR', 'GRAMMAR', 'GRAMMAR', 'GRAMMAR', 'GRAMMAR', 'GRAMMAR',
-      'VOCABULARY', 'VOCABULARY', 'VOCABULARY', 'VOCABULARY', 'VOCABULARY', 'VOCABULARY', 'VOCABULARY', 'VOCABULARY',
-      'LISTENING', 'LISTENING', 'LISTENING', 'LISTENING', 'LISTENING', 'LISTENING', 'LISTENING', 'LISTENING',
+      'GRAMMAR',
+      'GRAMMAR',
+      'GRAMMAR',
+      'GRAMMAR',
+      'GRAMMAR',
+      'GRAMMAR',
+      'GRAMMAR',
+      'GRAMMAR',
+      'VOCABULARY',
+      'VOCABULARY',
+      'VOCABULARY',
+      'VOCABULARY',
+      'VOCABULARY',
+      'VOCABULARY',
+      'VOCABULARY',
+      'VOCABULARY',
+      'LISTENING',
+      'LISTENING',
+      'LISTENING',
+      'LISTENING',
+      'LISTENING',
+      'LISTENING',
+      'LISTENING',
+      'LISTENING',
     ]);
     // 3 EASY / 3 MEDIUM / 2 HARD within each section's block.
     expect(difficulties.slice(0, 8)).toEqual([
-      'EASY', 'EASY', 'EASY', 'MEDIUM', 'MEDIUM', 'MEDIUM', 'HARD', 'HARD',
+      'EASY',
+      'EASY',
+      'EASY',
+      'MEDIUM',
+      'MEDIUM',
+      'MEDIUM',
+      'HARD',
+      'HARD',
     ]);
   });
 
@@ -73,7 +101,9 @@ describe('sampleQuestionIds', () => {
     const short = fullBank().filter(
       (q) => !(q.section === 'LISTENING' && q.difficulty === 'HARD'),
     );
-    expect(() => sampleQuestionIds(short)).toThrow(InsufficientQuestionBankError);
+    expect(() => sampleQuestionIds(short)).toThrow(
+      InsufficientQuestionBankError,
+    );
     try {
       sampleQuestionIds(short);
       fail('expected throw');

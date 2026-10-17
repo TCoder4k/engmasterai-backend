@@ -1,5 +1,13 @@
 import { Transform, Type } from 'class-transformer';
-import { IsBoolean, IsIn, IsInt, IsOptional, IsString, IsTimeZone, Min } from 'class-validator';
+import {
+  IsBoolean,
+  IsIn,
+  IsInt,
+  IsOptional,
+  IsString,
+  IsTimeZone,
+  Min,
+} from 'class-validator';
 
 // The mockup's 4 stat-card buckets collapse LearningState's 5 real values
 // into 3 presentation buckets (`new` = NEW, `mastered` = MASTERED,

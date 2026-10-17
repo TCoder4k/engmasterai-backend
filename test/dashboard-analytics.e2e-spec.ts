@@ -452,7 +452,9 @@ describe('Dashboard analytics (e2e) — Sprint 09', () => {
         .expect(201);
 
     it('rejects an unauthenticated request', async () => {
-      await request(app.getHttpServer()).get('/analytics/top-students').expect(401);
+      await request(app.getHttpServer())
+        .get('/analytics/top-students')
+        .expect(401);
     });
 
     it('a regular non-admin student can call it, and the real response never contains an email', async () => {

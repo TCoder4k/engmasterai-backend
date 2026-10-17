@@ -50,7 +50,8 @@ export class SseFrameBuffer {
     // `\r\n\r\n` never contains `\n\n` as a substring (the two `\n`s are
     // separated by a `\r`), so the two searches never collide — take
     // whichever boundary starts earlier in the buffer.
-    if (crlf !== -1 && (lf === -1 || crlf < lf)) return { start: crlf, end: crlf + 4 };
+    if (crlf !== -1 && (lf === -1 || crlf < lf))
+      return { start: crlf, end: crlf + 4 };
     return { start: lf, end: lf + 2 };
   }
 }
@@ -60,7 +61,8 @@ const parseSseFrame = (raw: string): SseFrame | null => {
   const dataLines: string[] = [];
   for (const line of raw.split(/\r\n|\n/)) {
     if (line.startsWith('event:')) event = line.slice('event:'.length).trim();
-    else if (line.startsWith('data:')) dataLines.push(line.slice('data:'.length).trimStart());
+    else if (line.startsWith('data:'))
+      dataLines.push(line.slice('data:'.length).trimStart());
   }
   // A comment-only or empty frame (e.g. a keep-alive ping) carries no data —
   // nothing for a caller to act on.

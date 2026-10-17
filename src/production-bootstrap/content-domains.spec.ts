@@ -32,7 +32,10 @@ describe('content-domains', () => {
   });
 
   it('throws if the allowlist were ever polluted with an excluded model', () => {
-    const polluted = [...CONTENT_MODELS, { ...CONTENT_MODELS[0], name: 'User' }];
+    const polluted = [
+      ...CONTENT_MODELS,
+      { ...CONTENT_MODELS[0], name: 'User' },
+    ];
     expect(() => assertAllowlistExcludesUserData(polluted)).toThrow(/User/);
   });
 

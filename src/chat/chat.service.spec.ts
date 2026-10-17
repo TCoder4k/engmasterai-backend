@@ -1,6 +1,9 @@
 import { NotFoundException } from '@nestjs/common';
 import { ChatService } from './chat.service';
-import { AssessmentInProgressException, ChatReplyInProgressException } from './chat.exceptions';
+import {
+  AssessmentInProgressException,
+  ChatReplyInProgressException,
+} from './chat.exceptions';
 import { EngyChatError } from './engy-chat.provider';
 import { ChatContextInput } from './chat-context.types';
 
@@ -22,7 +25,8 @@ const buildService = (overrides: {
 }) => {
   const assessmentLock = {
     assertNotInPlacementAttempt:
-      overrides.assertNotInPlacementAttempt ?? jest.fn().mockResolvedValue(undefined),
+      overrides.assertNotInPlacementAttempt ??
+      jest.fn().mockResolvedValue(undefined),
   };
   const contextResolver = {
     resolve: overrides.resolveContext ?? jest.fn().mockResolvedValue(null),
@@ -30,18 +34,21 @@ const buildService = (overrides: {
   const sessionStore = {
     getTurns: overrides.getTurns ?? jest.fn().mockResolvedValue([]),
     getSnapshot:
-      overrides.getSnapshot ?? jest.fn().mockResolvedValue({ turns: [], expiresAt: null }),
+      overrides.getSnapshot ??
+      jest.fn().mockResolvedValue({ turns: [], expiresAt: null }),
     clear: overrides.clear ?? jest.fn().mockResolvedValue(undefined),
     appendTurn: overrides.appendTurn ?? jest.fn().mockResolvedValue(undefined),
     ttlSeconds: overrides.ttlSeconds ?? 1800,
   };
   const idempotency = {
-    claim: overrides.claim ?? jest.fn().mockResolvedValue({ outcome: 'claimed' }),
+    claim:
+      overrides.claim ?? jest.fn().mockResolvedValue({ outcome: 'claimed' }),
     commit: overrides.commit ?? jest.fn().mockResolvedValue(undefined),
     release: overrides.release ?? jest.fn().mockResolvedValue(undefined),
   };
   const provider = {
-    reply: overrides.reply ?? jest.fn().mockResolvedValue({ reply: 'Hi there!' }),
+    reply:
+      overrides.reply ?? jest.fn().mockResolvedValue({ reply: 'Hi there!' }),
   };
   const config = { get: (_key: string, fallback?: unknown) => fallback };
 
@@ -54,7 +61,14 @@ const buildService = (overrides: {
     config as never,
   );
 
-  return { service, assessmentLock, contextResolver, sessionStore, idempotency, provider };
+  return {
+    service,
+    assessmentLock,
+    contextResolver,
+    sessionStore,
+    idempotency,
+    provider,
+  };
 };
 
 describe('ChatService.prepareSend', () => {
@@ -64,7 +78,9 @@ describe('ChatService.prepareSend', () => {
       assertNotInPlacementAttempt: jest.fn().mockRejectedValue(lockError),
     });
 
-    await expect(service.prepareSend('user-1', 'msg-1', 'hello', GENERAL)).rejects.toBe(lockError);
+    await expect(
+      service.prepareSend('user-1', 'msg-1', 'hello', GENERAL),
+    ).rejects.toBe(lockError);
     expect(contextResolver.resolve).not.toHaveBeenCalled();
     expect(idempotency.claim).not.toHaveBeenCalled();
     expect(provider.reply).not.toHaveBeenCalled();
@@ -77,7 +93,10 @@ describe('ChatService.prepareSend', () => {
     });
 
     await expect(
-      service.prepareSend('user-1', 'msg-1', 'hello', { type: 'LESSON', resourceId: 'lesson-1' }),
+      service.prepareSend('user-1', 'msg-1', 'hello', {
+        type: 'LESSON',
+        resourceId: 'lesson-1',
+      }),
     ).rejects.toBe(notFound);
     expect(idempotency.claim).not.toHaveBeenCalled();
     expect(provider.reply).not.toHaveBeenCalled();
@@ -92,7 +111,12 @@ describe('ChatService.prepareSend', () => {
       }),
     });
 
-    const prepared = await service.prepareSend('user-1', 'msg-1', 'hello', GENERAL);
+    const prepared = await service.prepareSend(
+      'user-1',
+      'msg-1',
+      'hello',
+      GENERAL,
+    );
 
     expect(prepared).toEqual({
       kind: 'replay',
@@ -110,23 +134,32 @@ describe('ChatService.prepareSend', () => {
       claim: jest.fn().mockResolvedValue({ outcome: 'conflict' }),
     });
 
-    await expect(service.prepareSend('user-1', 'msg-1', 'hello', GENERAL)).rejects.toBeInstanceOf(
-      ChatReplyInProgressException,
-    );
+    await expect(
+      service.prepareSend('user-1', 'msg-1', 'hello', GENERAL),
+    ).rejects.toBeInstanceOf(ChatReplyInProgressException);
     expect(provider.reply).not.toHaveBeenCalled();
   });
 
   it('the claim owner gets `kind: claimed` with the resolved context text and mapped history', async () => {
     const { service, contextResolver } = buildService({
-      resolveContext: jest.fn().mockResolvedValue('The student is viewing lesson "Present Perfect".'),
-      getTurns: jest.fn().mockResolvedValue([{ role: 'user', text: 'earlier', at: 1 }]),
+      resolveContext: jest
+        .fn()
+        .mockResolvedValue('The student is viewing lesson "Present Perfect".'),
+      getTurns: jest
+        .fn()
+        .mockResolvedValue([{ role: 'user', text: 'earlier', at: 1 }]),
     });
 
-    const prepared = await service.prepareSend('user-1', 'msg-1', 'Explain more', {
-      type: 'LESSON',
-      resourceId: 'lesson-1',
-      stage: 'theory',
-    });
+    const prepared = await service.prepareSend(
+      'user-1',
+      'msg-1',
+      'Explain more',
+      {
+        type: 'LESSON',
+        resourceId: 'lesson-1',
+        stage: 'theory',
+      },
+    );
 
     expect(contextResolver.resolve).toHaveBeenCalledWith(
       {
@@ -163,7 +196,11 @@ describe('ChatService.streamReply', () => {
     );
 
     expect(provider.reply).toHaveBeenCalledWith(
-      { history: [{ role: 'user', text: 'earlier' }], message: 'hello', context: null },
+      {
+        history: [{ role: 'user', text: 'earlier' }],
+        message: 'hello',
+        context: null,
+      },
       expect.any(Function),
       expect.any(Object),
     );
@@ -174,20 +211,30 @@ describe('ChatService.streamReply', () => {
       expect.any(String),
       1800,
     );
-    expect(sessionStore.appendTurn).toHaveBeenCalledWith('user-1', 'hello', 'Hi there!');
+    expect(sessionStore.appendTurn).toHaveBeenCalledWith(
+      'user-1',
+      'hello',
+      'Hi there!',
+    );
     expect(outcome).toEqual({
       kind: 'done',
-      result: { clientMessageId: 'msg-1', reply: 'Hi there!', repliedAt: expect.any(String) },
+      result: {
+        clientMessageId: 'msg-1',
+        reply: 'Hi there!',
+        repliedAt: expect.any(String),
+      },
     });
   });
 
   it('forwards onDelta calls from the provider straight through to the caller', async () => {
     const { service } = buildService({
-      reply: jest.fn().mockImplementation(async (_req, onDelta: (t: string) => void) => {
-        onDelta('Hi ');
-        onDelta('there!');
-        return { reply: 'Hi there!' };
-      }),
+      reply: jest
+        .fn()
+        .mockImplementation(async (_req, onDelta: (t: string) => void) => {
+          onDelta('Hi ');
+          onDelta('there!');
+          return { reply: 'Hi there!' };
+        }),
     });
     const deltas: string[] = [];
 
@@ -201,13 +248,22 @@ describe('ChatService.streamReply', () => {
 
   it('a Gemini failure releases the claim and returns `kind: error`, never committing or appending', async () => {
     const { service, idempotency, sessionStore } = buildService({
-      reply: jest.fn().mockRejectedValue(new EngyChatError('UNAVAILABLE', 'down')),
+      reply: jest
+        .fn()
+        .mockRejectedValue(new EngyChatError('UNAVAILABLE', 'down')),
     });
 
-    const outcome = await service.streamReply('user-1', 'msg-1', 'hello', null, [], {
-      signal: signal(),
-      onDelta: noopOnDelta,
-    });
+    const outcome = await service.streamReply(
+      'user-1',
+      'msg-1',
+      'hello',
+      null,
+      [],
+      {
+        signal: signal(),
+        onDelta: noopOnDelta,
+      },
+    );
 
     expect(outcome).toEqual({ kind: 'error' });
     expect(idempotency.release).toHaveBeenCalledWith('user-1', 'msg-1');
@@ -227,10 +283,17 @@ describe('ChatService.streamReply', () => {
       }),
     });
 
-    const outcome = await service.streamReply('user-1', 'msg-1', 'hello', null, [], {
-      signal: controller.signal,
-      onDelta: noopOnDelta,
-    });
+    const outcome = await service.streamReply(
+      'user-1',
+      'msg-1',
+      'hello',
+      null,
+      [],
+      {
+        signal: controller.signal,
+        onDelta: noopOnDelta,
+      },
+    );
 
     expect(outcome).toEqual({ kind: 'aborted' });
     expect(idempotency.release).toHaveBeenCalledWith('user-1', 'msg-1');
@@ -256,7 +319,9 @@ describe('ChatService.streamReply', () => {
 
 describe('ChatService.getSession / clearSession', () => {
   it('getSession delegates to the session store', async () => {
-    const getSnapshot = jest.fn().mockResolvedValue({ turns: [], expiresAt: null });
+    const getSnapshot = jest
+      .fn()
+      .mockResolvedValue({ turns: [], expiresAt: null });
     const { service } = buildService({ getSnapshot });
 
     await service.getSession('user-1');

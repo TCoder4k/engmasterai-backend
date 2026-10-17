@@ -25,7 +25,9 @@ import { SpeakingAiExerciseContext } from '../speaking.types';
 // `triggerOpeningLine()`), so the opening line and every later turn share
 // the exact same voice. The system instruction below reflects that: the
 // model is told it WILL be cued, not that it already spoke.
-export const buildSpeakingLiveSystemInstruction = (exercise: SpeakingAiExerciseContext): string => {
+export const buildSpeakingLiveSystemInstruction = (
+  exercise: SpeakingAiExerciseContext,
+): string => {
   const goalClause = exercise.conversationGoal
     ? `, steering naturally toward: ${exercise.conversationGoal}`
     : '';
@@ -42,7 +44,7 @@ export const buildSpeakingLiveSystemInstruction = (exercise: SpeakingAiExerciseC
     '- Use a clear, warm, youthful conversational tone.',
     '- Speak at a moderate pace suitable for CEFR A1-B2 learners.',
     '- Keep pronunciation clear and natural.',
-    '- Use short sentences when the student\'s level is low.',
+    "- Use short sentences when the student's level is low.",
     '- Do not sound like a narrator, presenter, or advertisement.',
     '',
     'Language:',

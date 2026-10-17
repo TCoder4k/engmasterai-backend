@@ -8,18 +8,22 @@ const buildService = (findFirst: jest.Mock) => {
 
 describe('AssessmentLockService.assertNotInPlacementAttempt', () => {
   it('throws AssessmentInProgressException when an unfinished attempt exists', async () => {
-    const service = buildService(jest.fn().mockResolvedValue({ id: 'attempt-1' }));
-
-    await expect(service.assertNotInPlacementAttempt('user-1')).rejects.toBeInstanceOf(
-      AssessmentInProgressException,
+    const service = buildService(
+      jest.fn().mockResolvedValue({ id: 'attempt-1' }),
     );
+
+    await expect(
+      service.assertNotInPlacementAttempt('user-1'),
+    ).rejects.toBeInstanceOf(AssessmentInProgressException);
   });
 
   it('resolves without throwing when there is no unfinished attempt', async () => {
     const findFirst = jest.fn().mockResolvedValue(null);
     const service = buildService(findFirst);
 
-    await expect(service.assertNotInPlacementAttempt('user-1')).resolves.toBeUndefined();
+    await expect(
+      service.assertNotInPlacementAttempt('user-1'),
+    ).resolves.toBeUndefined();
     expect(findFirst).toHaveBeenCalledWith({
       where: { userId: 'user-1', completedAt: null },
       select: { id: true },
@@ -35,6 +39,8 @@ describe('AssessmentLockService.assertNotInPlacementAttempt', () => {
     const findFirst = jest.fn().mockResolvedValue(null);
     const service = buildService(findFirst);
 
-    await expect(service.assertNotInPlacementAttempt('user-1')).resolves.toBeUndefined();
+    await expect(
+      service.assertNotInPlacementAttempt('user-1'),
+    ).resolves.toBeUndefined();
   });
 });

@@ -74,7 +74,9 @@ describe('Community Chat unread count (e2e)', () => {
 
   afterAll(async () => {
     if (createdUserEmails.length) {
-      await prisma.user.deleteMany({ where: { email: { in: createdUserEmails } } });
+      await prisma.user.deleteMany({
+        where: { email: { in: createdUserEmails } },
+      });
     }
     await app.close();
   });

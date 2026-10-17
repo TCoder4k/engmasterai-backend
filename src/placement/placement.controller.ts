@@ -32,7 +32,10 @@ export class PlacementController {
   @UseGuards(JwtAuthGuard, QuizRateLimitGuard)
   @QuizRateLimit({ kind: 'placementSubmit', max: 30, windowSeconds: 600 })
   @Put('goal')
-  async setGoal(@Body() dto: SetPlacementGoalDto, @Req() req: AuthenticatedRequest) {
+  async setGoal(
+    @Body() dto: SetPlacementGoalDto,
+    @Req() req: AuthenticatedRequest,
+  ) {
     return this.placementService.setGoal(req.user.userId, dto.goal);
   }
 

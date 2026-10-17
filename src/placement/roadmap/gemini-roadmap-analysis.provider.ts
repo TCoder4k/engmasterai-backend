@@ -7,7 +7,10 @@ import {
   RoadmapAnalysisRequest,
   RoadmapAnalysisResult,
 } from './roadmap-analysis.provider';
-import { DEFAULT_GEMINI_MODEL_CHAIN, parseGeminiModelList } from '../../shared/gemini-models';
+import {
+  DEFAULT_GEMINI_MODEL_CHAIN,
+  parseGeminiModelList,
+} from '../../shared/gemini-models';
 import {
   fetchGeminiWithFallback,
   isGeminiTimeout,
@@ -110,7 +113,10 @@ export class GeminiRoadmapAnalysisProvider implements RoadmapAnalysisProvider {
     // constant IS the live default. Falls through to the next model on
     // 429/503 — see gemini-fetch-with-fallback.ts.
     this.models = parseGeminiModelList(
-      this.config.get<string>('GEMINI_ROADMAP_MODEL', DEFAULT_GEMINI_MODEL_CHAIN),
+      this.config.get<string>(
+        'GEMINI_ROADMAP_MODEL',
+        DEFAULT_GEMINI_MODEL_CHAIN,
+      ),
       'GEMINI_ROADMAP_MODEL',
     );
   }
@@ -223,7 +229,9 @@ export class GeminiRoadmapAnalysisProvider implements RoadmapAnalysisProvider {
     // narrative — reported as UNAVAILABLE so the standard retry copy
     // applies, same as an empty answer below.
     if (payload.candidates?.[0]?.finishReason === 'MAX_TOKENS') {
-      this.logger.warn('Gemini roadmap analysis was cut off at the token limit');
+      this.logger.warn(
+        'Gemini roadmap analysis was cut off at the token limit',
+      );
       throw new RoadmapAnalysisError(
         'UNAVAILABLE',
         'AI roadmap analysis was cut off',

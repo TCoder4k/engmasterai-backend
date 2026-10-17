@@ -15,7 +15,10 @@ export interface ViTranslationResult {
   translation: string;
 }
 
-export type ViTranslationFailureKind = 'UNAVAILABLE' | 'TIMEOUT' | 'NOT_CONFIGURED';
+export type ViTranslationFailureKind =
+  | 'UNAVAILABLE'
+  | 'TIMEOUT'
+  | 'NOT_CONFIGURED';
 
 export class ViTranslationError extends Error {
   constructor(

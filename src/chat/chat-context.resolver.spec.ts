@@ -5,7 +5,10 @@ import {
   formatVocabWordContext,
   MAX_THEORY_EXCERPT_CHARS,
 } from './chat-context.resolver';
-import { LessonContextProjection, VocabWordContextProjection } from './chat-context.types';
+import {
+  LessonContextProjection,
+  VocabWordContextProjection,
+} from './chat-context.types';
 
 const buildResolver = (overrides: {
   lessonFindUnique?: jest.Mock;
@@ -17,14 +20,18 @@ const buildResolver = (overrides: {
       // Backs assertLessonVisible's own read.
       findUnique:
         overrides.lessonFindUnique ??
-        jest.fn().mockResolvedValue({ isPublished: true, course: { isPublished: true } }),
+        jest.fn().mockResolvedValue({
+          isPublished: true,
+          course: { isPublished: true },
+        }),
       findUniqueOrThrow:
         overrides.lessonFindUniqueOrThrow ??
         jest.fn().mockResolvedValue({
           title: 'Present Perfect',
           description: 'Learn when to use the present perfect tense.',
           learningObjectives: ['Recognise the form', 'Use it in a sentence'],
-          notes: 'The present perfect is formed with have/has + past participle.',
+          notes:
+            'The present perfect is formed with have/has + past participle.',
         }),
     },
     vocabWord: {
@@ -68,7 +75,11 @@ describe('ChatContextResolver.resolve', () => {
   it('LESSON at the video stage also includes the theory excerpt', async () => {
     const { resolver } = buildResolver({});
 
-    const text = await resolver.resolve({ type: 'LESSON', resourceId: 'lesson-1', stage: 'video' });
+    const text = await resolver.resolve({
+      type: 'LESSON',
+      resourceId: 'lesson-1',
+      stage: 'video',
+    });
 
     expect(text).toContain('formed with have/has + past participle');
   });
@@ -78,7 +89,11 @@ describe('ChatContextResolver.resolve', () => {
     async (stage) => {
       const { resolver } = buildResolver({});
 
-      const text = await resolver.resolve({ type: 'LESSON', resourceId: 'lesson-1', stage });
+      const text = await resolver.resolve({
+        type: 'LESSON',
+        resourceId: 'lesson-1',
+        stage,
+      });
 
       expect(text).toContain('Present Perfect');
       expect(text).not.toContain('formed with have/has + past participle');
@@ -96,7 +111,11 @@ describe('ChatContextResolver.resolve', () => {
       }),
     });
 
-    const text = await resolver.resolve({ type: 'LESSON', resourceId: 'lesson-1', stage: 'theory' });
+    const text = await resolver.resolve({
+      type: 'LESSON',
+      resourceId: 'lesson-1',
+      stage: 'theory',
+    });
 
     expect(text!.length).toBeLessThan(longNotes.length);
     expect(text).toContain('…');
@@ -115,7 +134,10 @@ describe('ChatContextResolver.resolve', () => {
   it('VOCAB_WORD resolves the curated meaning/example', async () => {
     const { resolver } = buildResolver({});
 
-    const text = await resolver.resolve({ type: 'VOCAB_WORD', resourceId: 'word-1' });
+    const text = await resolver.resolve({
+      type: 'VOCAB_WORD',
+      resourceId: 'word-1',
+    });
 
     expect(text).toContain('resign');
     expect(text).toContain('/rɪˈzaɪn/');
@@ -124,7 +146,9 @@ describe('ChatContextResolver.resolve', () => {
   });
 
   it('a missing VocabWord 404s', async () => {
-    const { resolver } = buildResolver({ vocabWordFindUnique: jest.fn().mockResolvedValue(null) });
+    const { resolver } = buildResolver({
+      vocabWordFindUnique: jest.fn().mockResolvedValue(null),
+    });
 
     await expect(
       resolver.resolve({ type: 'VOCAB_WORD', resourceId: 'missing-word' }),

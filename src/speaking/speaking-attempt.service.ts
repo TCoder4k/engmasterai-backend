@@ -43,7 +43,10 @@ export class SpeakingAttemptService {
    * the one-shot ticket the frontend needs to open the Speaking Live
    * WebSocket for this attempt (see speaking-live-ticket.store.ts).
    */
-  async start(userId: string, exerciseId: string): Promise<StartSpeakingAttemptResultDto> {
+  async start(
+    userId: string,
+    exerciseId: string,
+  ): Promise<StartSpeakingAttemptResultDto> {
     const exercise = await this.prisma.speakingExercise.findFirst({
       where: { id: exerciseId, ...visibleExerciseWhere },
       select: {
@@ -58,7 +61,9 @@ export class SpeakingAttemptService {
     });
 
     if (!exercise) {
-      throw new NotFoundException(`Speaking exercise with ID ${exerciseId} not found`);
+      throw new NotFoundException(
+        `Speaking exercise with ID ${exerciseId} not found`,
+      );
     }
 
     const attempt = await this.prisma.speakingAttempt.create({
@@ -94,10 +99,16 @@ export class SpeakingAttemptService {
    * connection" — the gateway has no other way to surface this over a raw
    * WS handshake.
    */
-  async loadLiveContext(userId: string, attemptId: string): Promise<SpeakingAiExerciseContext | null> {
+  async loadLiveContext(
+    userId: string,
+    attemptId: string,
+  ): Promise<SpeakingAiExerciseContext | null> {
     const attempt = await this.prisma.speakingAttempt.findFirst({
       where: { id: attemptId, userId, exercise: visibleExerciseWhere },
-      select: { completedAt: true, exercise: { select: EXERCISE_AI_CONTEXT_SELECT } },
+      select: {
+        completedAt: true,
+        exercise: { select: EXERCISE_AI_CONTEXT_SELECT },
+      },
     });
     if (!attempt || attempt.completedAt) return null;
     return attempt.exercise;
@@ -115,14 +126,25 @@ export class SpeakingAttemptService {
    * documented limitation, the same class of tradeoff ChatSessionStore
    * already accepts for its own bounded history.
    */
-  async complete(userId: string, attemptId: string): Promise<SpeakingAttemptSummaryDto> {
+  async complete(
+    userId: string,
+    attemptId: string,
+  ): Promise<SpeakingAttemptSummaryDto> {
     const attempt = await this.prisma.speakingAttempt.findFirst({
       where: { id: attemptId, userId },
-      select: { id: true, exerciseId: true, startedAt: true, completedAt: true, turnCount: true },
+      select: {
+        id: true,
+        exerciseId: true,
+        startedAt: true,
+        completedAt: true,
+        turnCount: true,
+      },
     });
 
     if (!attempt) {
-      throw new NotFoundException(`Speaking attempt with ID ${attemptId} not found`);
+      throw new NotFoundException(
+        `Speaking attempt with ID ${attemptId} not found`,
+      );
     }
 
     if (attempt.completedAt) {
@@ -142,7 +164,13 @@ export class SpeakingAttemptService {
     const updated = await this.prisma.speakingAttempt.update({
       where: { id: attempt.id },
       data: { completedAt: now, turnCount },
-      select: { id: true, exerciseId: true, startedAt: true, completedAt: true, turnCount: true },
+      select: {
+        id: true,
+        exerciseId: true,
+        startedAt: true,
+        completedAt: true,
+        turnCount: true,
+      },
     });
 
     // The conversation is over — nothing needs the session key to survive

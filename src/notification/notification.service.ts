@@ -1,7 +1,15 @@
-import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { Notification, NotificationType, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { NotificationDto, NotificationPayload, ListNotificationsResult } from './notification.types';
+import {
+  NotificationDto,
+  NotificationPayload,
+  ListNotificationsResult,
+} from './notification.types';
 
 export const DEFAULT_NOTIFICATIONS_LIMIT = 20;
 export const MAX_NOTIFICATIONS_LIMIT = 50;
@@ -33,13 +41,24 @@ export class NotificationService {
     payload: NotificationPayload,
   ): Promise<void> {
     await tx.notification.create({
-      data: { userId, type, payload: payload as unknown as Prisma.InputJsonValue },
+      data: {
+        userId,
+        type,
+        payload: payload as unknown as Prisma.InputJsonValue,
+      },
     });
   }
 
   /** Cursor pagination, same shape as CommunityChatService.listMessages. */
-  async list(userId: string, before?: string, limit?: number): Promise<ListNotificationsResult> {
-    const take = Math.min(limit ?? DEFAULT_NOTIFICATIONS_LIMIT, MAX_NOTIFICATIONS_LIMIT);
+  async list(
+    userId: string,
+    before?: string,
+    limit?: number,
+  ): Promise<ListNotificationsResult> {
+    const take = Math.min(
+      limit ?? DEFAULT_NOTIFICATIONS_LIMIT,
+      MAX_NOTIFICATIONS_LIMIT,
+    );
 
     let cursorWhere: Prisma.NotificationWhereInput | undefined;
     if (before) {
@@ -76,7 +95,9 @@ export class NotificationService {
   }
 
   async markRead(userId: string, notificationId: string): Promise<void> {
-    const row = await this.prisma.notification.findUnique({ where: { id: notificationId } });
+    const row = await this.prisma.notification.findUnique({
+      where: { id: notificationId },
+    });
     if (!row) throw new NotFoundException('Notification not found');
     if (row.userId !== userId) throw new ForbiddenException();
     if (row.readAt) return;

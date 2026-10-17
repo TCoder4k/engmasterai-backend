@@ -6,7 +6,8 @@ import {
 } from './gemini-fetch-with-fallback';
 import { parseGeminiModelList } from './gemini-models';
 
-const okResponse = (status = 200): Response => ({ ok: status < 300, status }) as Response;
+const okResponse = (status = 200): Response =>
+  ({ ok: status < 300, status }) as Response;
 
 const silentLogger = { warn: jest.fn() } as unknown as Logger;
 
@@ -20,7 +21,9 @@ afterEach(() => {
 
 describe('fetchGeminiWithFallback', () => {
   it('behaves like a plain fetch for a single-model list', async () => {
-    const fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValue(okResponse(200));
+    const fetchSpy = jest
+      .spyOn(global, 'fetch')
+      .mockResolvedValue(okResponse(200));
 
     const result = await fetchGeminiWithFallback(
       ['model-a'],
@@ -77,7 +80,9 @@ describe('fetchGeminiWithFallback', () => {
   });
 
   it('does not fall through on a non-retryable status, even with models remaining', async () => {
-    const fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValueOnce(okResponse(400));
+    const fetchSpy = jest
+      .spyOn(global, 'fetch')
+      .mockResolvedValueOnce(okResponse(400));
 
     const result = await fetchGeminiWithFallback(
       ['model-a', 'model-b', 'model-c'],
@@ -93,7 +98,7 @@ describe('fetchGeminiWithFallback', () => {
     expect(result.response.status).toBe(400);
   });
 
-  it('returns the last model\'s failing response as-is once the chain is exhausted', async () => {
+  it("returns the last model's failing response as-is once the chain is exhausted", async () => {
     const fetchSpy = jest
       .spyOn(global, 'fetch')
       .mockResolvedValueOnce(okResponse(503))
@@ -114,7 +119,9 @@ describe('fetchGeminiWithFallback', () => {
   });
 
   it('a thrown network error on a non-last model propagates immediately as GeminiFetchError, no fallback attempted', async () => {
-    const fetchSpy = jest.spyOn(global, 'fetch').mockRejectedValueOnce(new Error('offline'));
+    const fetchSpy = jest
+      .spyOn(global, 'fetch')
+      .mockRejectedValueOnce(new Error('offline'));
 
     const promise = fetchGeminiWithFallback(
       ['model-a', 'model-b'],
@@ -156,7 +163,9 @@ describe('fetchGeminiWithFallback', () => {
     expect(result.model).toBe('model-b');
     expect(result.response.status).toBe(200);
     expect(silentLogger.warn).toHaveBeenCalledWith(
-      expect.stringContaining('Gemini fallback (timeout) from=model-a to=model-b'),
+      expect.stringContaining(
+        'Gemini fallback (timeout) from=model-a to=model-b',
+      ),
     );
   });
 
@@ -311,10 +320,12 @@ describe('fetchGeminiWithFallback — externalSignal (2026-09-12, Engy Chat disc
     const controller = new AbortController();
     const abort = new Error('aborted');
     abort.name = 'AbortError';
-    const fetchSpy = jest.spyOn(global, 'fetch').mockImplementationOnce(async () => {
-      controller.abort(); // the client disconnects WHILE this attempt is in flight
-      throw abort;
-    });
+    const fetchSpy = jest
+      .spyOn(global, 'fetch')
+      .mockImplementationOnce(async () => {
+        controller.abort(); // the client disconnects WHILE this attempt is in flight
+        throw abort;
+      });
 
     const promise = fetchGeminiWithFallback(
       ['model-a', 'model-b'],

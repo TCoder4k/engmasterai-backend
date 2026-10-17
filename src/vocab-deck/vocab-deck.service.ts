@@ -9,7 +9,10 @@ import { UpdateVocabDeckDto } from './dto/update-vocab-deck.dto';
 import { AttachVocabDeckWordsDto } from './dto/attach-vocab-deck-words.dto';
 import { ConfigService } from '@nestjs/config';
 import { ForbiddenException } from '@nestjs/common';
-import { canAccessVocabularyDeck, isPremiumVocabularyDeck } from './premium-vocabulary-policy';
+import {
+  canAccessVocabularyDeck,
+  isPremiumVocabularyDeck,
+} from './premium-vocabulary-policy';
 import { isUserPremium } from '../shared/subscription-status.util';
 
 // Structural cap on every deck's word count (see the approved Phase 2 plan
@@ -65,7 +68,14 @@ export class VocabDeckService {
     if (!deck || !deck.isPublished || !deck.library.isPublished) {
       throw new NotFoundException(`Vocabulary deck with ID ${id} not found`);
     }
-    if (!(await canAccessVocabularyDeck(this.prismaService, this.config, _user.userId, id))) {
+    if (
+      !(await canAccessVocabularyDeck(
+        this.prismaService,
+        this.config,
+        _user.userId,
+        id,
+      ))
+    ) {
       throw new ForbiddenException({
         code: 'PREMIUM_REQUIRED',
         message: 'Premium subscription is required for this vocabulary deck.',

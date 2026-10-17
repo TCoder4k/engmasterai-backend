@@ -3,7 +3,10 @@ import { Reflector } from '@nestjs/core';
 import type { Request } from 'express';
 import { RateLimiterService } from '../../auth/rate-limit/rate-limiter.service';
 import { RateLimitExceededException } from '../../auth/exceptions/rate-limit-exceeded.exception';
-import { STREAK_RATE_LIMITS_KEY, StreakRateLimitPolicy } from './streak-rate-limits.decorator';
+import {
+  STREAK_RATE_LIMITS_KEY,
+  StreakRateLimitPolicy,
+} from './streak-rate-limits.decorator';
 
 interface RequestWithUser extends Request {
   user?: { userId: string };
@@ -31,7 +34,11 @@ export class StreakRateLimitGuard implements CanActivate {
     if (!userId) return true;
 
     const key = `streak:${policy.kind}:${userId}`;
-    const result = await this.rateLimiter.checkAndIncrement(key, policy.max, policy.windowSeconds);
+    const result = await this.rateLimiter.checkAndIncrement(
+      key,
+      policy.max,
+      policy.windowSeconds,
+    );
     if (!result.allowed) {
       throw new RateLimitExceededException();
     }

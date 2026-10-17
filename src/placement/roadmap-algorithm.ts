@@ -105,11 +105,14 @@ const pickResource = (
   const inPillar = candidates.filter((c) => c.pillar === pillar);
   if (inPillar.length === 0) return null;
 
-  const bySortKey = (a: RoadmapResourceCandidate, b: RoadmapResourceCandidate) =>
-    a.sortKey - b.sortKey;
+  const bySortKey = (
+    a: RoadmapResourceCandidate,
+    b: RoadmapResourceCandidate,
+  ) => a.sortKey - b.sortKey;
 
   const leveled = inPillar.filter(
-    (c): c is RoadmapResourceCandidate & { level: CefrLevel } => c.level !== null,
+    (c): c is RoadmapResourceCandidate & { level: CefrLevel } =>
+      c.level !== null,
   );
   if (leveled.length === 0) {
     return [...inPillar].sort(bySortKey)[0];
@@ -163,7 +166,9 @@ const buildSpeakingReason = (): string =>
 
 const nextLevelUp = (level: CefrLevel): CefrLevel | null => {
   const index = LEVEL_ORDER.indexOf(level);
-  return index >= 0 && index < LEVEL_ORDER.length - 1 ? LEVEL_ORDER[index + 1] : null;
+  return index >= 0 && index < LEVEL_ORDER.length - 1
+    ? LEVEL_ORDER[index + 1]
+    : null;
 };
 
 // Consolidation phase: after the three pillars have each had one phase
@@ -225,7 +230,11 @@ export const generateRoadmap = (
   const items: RoadmapItem[] = [];
   let phase = 1;
   for (const pillar of orderedPillars) {
-    const resource = pickResource(pillar, input.estimatedLevel, availableResources);
+    const resource = pickResource(
+      pillar,
+      input.estimatedLevel,
+      availableResources,
+    );
     // No published, goal-eligible resource for this pillar exists yet — the
     // item is omitted, not a crash. A short catalog is a content gap, not a
     // reason to fail roadmap generation entirely.
@@ -235,7 +244,12 @@ export const generateRoadmap = (
       pillar,
       resourceType: resource.resourceType,
       resourceId: resource.id,
-      reason: buildReason(pillar, phase, input.levelSource, input.sectionScores),
+      reason: buildReason(
+        pillar,
+        phase,
+        input.levelSource,
+        input.sectionScores,
+      ),
     });
     phase += 1;
   }
@@ -264,7 +278,11 @@ export const generateRoadmap = (
   // GENERAL_ENGLISH). Omitted, not a crash, when no eligible candidate
   // exists — same "content gap, not a failure" discipline as every other
   // pillar above.
-  const speakingResource = pickResource('SPEAKING', input.estimatedLevel, availableResources);
+  const speakingResource = pickResource(
+    'SPEAKING',
+    input.estimatedLevel,
+    availableResources,
+  );
   if (speakingResource) {
     items.push({
       phase,

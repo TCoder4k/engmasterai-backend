@@ -1,4 +1,10 @@
-import { Controller, Get, Param, ParseUUIDPipe, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Param,
+  ParseUUIDPipe,
+  UseGuards,
+} from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards';
 import { SpeakingRateLimitGuard } from './rate-limit/speaking-rate-limit.guard';
 import { SpeakingRateLimit } from './rate-limit/speaking-rate-limits.decorator';

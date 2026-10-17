@@ -13,7 +13,9 @@ const buildContext = (userId: string | undefined): ExecutionContext =>
 
 describe('SpeakingRateLimitGuard', () => {
   it('allows a route with no policy metadata through untouched', async () => {
-    const reflector = { get: jest.fn().mockReturnValue(undefined) } as unknown as Reflector;
+    const reflector = {
+      get: jest.fn().mockReturnValue(undefined),
+    } as unknown as Reflector;
     const rateLimiter = { checkAndIncrement: jest.fn() };
     const guard = new SpeakingRateLimitGuard(reflector, rateLimiter as never);
 
@@ -23,10 +25,14 @@ describe('SpeakingRateLimitGuard', () => {
 
   it('keys the Redis counter under its own speaking namespace, not chat/speech/aiFeedback', async () => {
     const reflector = {
-      get: jest.fn().mockReturnValue({ kind: 'turn', max: 20, windowSeconds: 600 }),
+      get: jest
+        .fn()
+        .mockReturnValue({ kind: 'turn', max: 20, windowSeconds: 600 }),
     } as unknown as Reflector;
     const rateLimiter = {
-      checkAndIncrement: jest.fn().mockResolvedValue({ allowed: true, count: 1 }),
+      checkAndIncrement: jest
+        .fn()
+        .mockResolvedValue({ allowed: true, count: 1 }),
     };
     const guard = new SpeakingRateLimitGuard(reflector, rateLimiter as never);
 
@@ -41,30 +47,38 @@ describe('SpeakingRateLimitGuard', () => {
 
   it('throws RateLimitExceededException once the bucket is exhausted', async () => {
     const reflector = {
-      get: jest.fn().mockReturnValue({ kind: 'turn', max: 20, windowSeconds: 600 }),
+      get: jest
+        .fn()
+        .mockReturnValue({ kind: 'turn', max: 20, windowSeconds: 600 }),
     } as unknown as Reflector;
     const rateLimiter = {
-      checkAndIncrement: jest.fn().mockResolvedValue({ allowed: false, count: 21 }),
+      checkAndIncrement: jest
+        .fn()
+        .mockResolvedValue({ allowed: false, count: 21 }),
     };
     const guard = new SpeakingRateLimitGuard(reflector, rateLimiter as never);
 
-    await expect(guard.canActivate(buildContext('user-42'))).rejects.toBeInstanceOf(
-      RateLimitExceededException,
-    );
+    await expect(
+      guard.canActivate(buildContext('user-42')),
+    ).rejects.toBeInstanceOf(RateLimitExceededException);
   });
 
   it('fails closed when Redis itself is unavailable', async () => {
     const reflector = {
-      get: jest.fn().mockReturnValue({ kind: 'turn', max: 20, windowSeconds: 600 }),
+      get: jest
+        .fn()
+        .mockReturnValue({ kind: 'turn', max: 20, windowSeconds: 600 }),
     } as unknown as Reflector;
     const rateLimiter = {
-      checkAndIncrement: jest.fn().mockRejectedValue(new ServiceUnavailableException()),
+      checkAndIncrement: jest
+        .fn()
+        .mockRejectedValue(new ServiceUnavailableException()),
     };
     const guard = new SpeakingRateLimitGuard(reflector, rateLimiter as never);
 
-    await expect(guard.canActivate(buildContext('user-42'))).rejects.toBeInstanceOf(
-      ServiceUnavailableException,
-    );
+    await expect(
+      guard.canActivate(buildContext('user-42')),
+    ).rejects.toBeInstanceOf(ServiceUnavailableException);
   });
 
   // Defensive fallthrough only — JwtAuthGuard always runs first on every
@@ -72,12 +86,16 @@ describe('SpeakingRateLimitGuard', () => {
   // unauthenticated request.
   it('lets an unauthenticated request through rather than crashing', async () => {
     const reflector = {
-      get: jest.fn().mockReturnValue({ kind: 'turn', max: 20, windowSeconds: 600 }),
+      get: jest
+        .fn()
+        .mockReturnValue({ kind: 'turn', max: 20, windowSeconds: 600 }),
     } as unknown as Reflector;
     const rateLimiter = { checkAndIncrement: jest.fn() };
     const guard = new SpeakingRateLimitGuard(reflector, rateLimiter as never);
 
-    await expect(guard.canActivate(buildContext(undefined))).resolves.toBe(true);
+    await expect(guard.canActivate(buildContext(undefined))).resolves.toBe(
+      true,
+    );
     expect(rateLimiter.checkAndIncrement).not.toHaveBeenCalled();
   });
 });

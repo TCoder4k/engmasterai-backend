@@ -41,7 +41,9 @@ export const validateRoadmapPlan = (
     return null;
   }
 
-  const byKey = new Map(candidates.map((c) => [`${c.resourceType}:${c.id}`, c]));
+  const byKey = new Map(
+    candidates.map((c) => [`${c.resourceType}:${c.id}`, c]),
+  );
   const seen = new Set<string>();
   const items: RoadmapItem[] = [];
 

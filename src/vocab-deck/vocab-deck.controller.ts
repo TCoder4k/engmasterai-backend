@@ -27,7 +27,10 @@ export class VocabDeckController {
   // deck up by id internally for its own guard checks.
   @UseGuards(JwtAuthGuard)
   @Get(':id')
-  async findOnePublished(@Param('id', ParseUUIDPipe) id: string, @Req() req: AuthenticatedRequest) {
+  async findOnePublished(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: AuthenticatedRequest,
+  ) {
     return this.vocabDeckService.findOnePublished(id, req.user);
   }
 

@@ -1,10 +1,15 @@
 import { ConfigService } from '@nestjs/config';
-import { GeminiEngyChatProvider, MAX_ENGY_REPLY_CHARS, truncateEngyReply } from './gemini-engy-chat.provider';
+import {
+  GeminiEngyChatProvider,
+  MAX_ENGY_REPLY_CHARS,
+  truncateEngyReply,
+} from './gemini-engy-chat.provider';
 import { EngyChatError } from './engy-chat.provider';
 
 const config = (values: Record<string, unknown> = {}): ConfigService =>
   ({
-    get: (key: string, fallback?: unknown) => (key in values ? values[key] : fallback),
+    get: (key: string, fallback?: unknown) =>
+      key in values ? values[key] : fallback,
   }) as unknown as ConfigService;
 
 const encoder = new TextEncoder();
@@ -12,8 +17,10 @@ const encoder = new TextEncoder();
 const noop = (): void => {};
 
 /** One SSE `data:` frame for a Gemini streamGenerateContent chunk. */
-const sseChunk = (payload: unknown, terminator: '\n\n' | '\r\n\r\n' = '\n\n'): string =>
-  `data: ${JSON.stringify(payload)}${terminator}`;
+const sseChunk = (
+  payload: unknown,
+  terminator: '\n\n' | '\r\n\r\n' = '\n\n',
+): string => `data: ${JSON.stringify(payload)}${terminator}`;
 
 /**
  * A fake streaming Response whose body yields exactly the given raw text
@@ -40,7 +47,11 @@ const streamResponse = (
 
 /** The common case: one frame, one complete answer, normal STOP finish. */
 const answer = (text: string): Response =>
-  streamResponse([sseChunk({ candidates: [{ content: { parts: [{ text }] }, finishReason: 'STOP' }] })]);
+  streamResponse([
+    sseChunk({
+      candidates: [{ content: { parts: [{ text }] }, finishReason: 'STOP' }],
+    }),
+  ]);
 
 const request = {
   history: [
@@ -59,12 +70,16 @@ describe('GeminiEngyChatProvider', () => {
     const fetchSpy = jest
       .spyOn(global, 'fetch')
       .mockResolvedValue(answer('She resigned from her job yesterday.'));
-    const provider = new GeminiEngyChatProvider(config({ GEMINI_API_KEY: 'k' }));
+    const provider = new GeminiEngyChatProvider(
+      config({ GEMINI_API_KEY: 'k' }),
+    );
 
     const result = await provider.reply(request, noop);
 
     expect(result.reply).toBe('She resigned from her job yesterday.');
-    const body = JSON.parse((fetchSpy.mock.calls[0][1] as RequestInit).body as string) as {
+    const body = JSON.parse(
+      (fetchSpy.mock.calls[0][1] as RequestInit).body as string,
+    ) as {
       systemInstruction: { parts: { text: string }[] };
       contents: { role: string; parts: { text: string }[] }[];
     };
@@ -77,8 +92,12 @@ describe('GeminiEngyChatProvider', () => {
   });
 
   it('targets streamGenerateContent with alt=sse, not the non-streaming endpoint', async () => {
-    const fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValue(answer('ok'));
-    const provider = new GeminiEngyChatProvider(config({ GEMINI_API_KEY: 'k' }));
+    const fetchSpy = jest
+      .spyOn(global, 'fetch')
+      .mockResolvedValue(answer('ok'));
+    const provider = new GeminiEngyChatProvider(
+      config({ GEMINI_API_KEY: 'k' }),
+    );
 
     await provider.reply(request, noop);
 
@@ -91,14 +110,22 @@ describe('GeminiEngyChatProvider', () => {
     const fetchSpy = jest
       .spyOn(global, 'fetch')
       .mockResolvedValue(answer('She resigned from her job yesterday.'));
-    const provider = new GeminiEngyChatProvider(config({ GEMINI_API_KEY: 'k' }));
+    const provider = new GeminiEngyChatProvider(
+      config({ GEMINI_API_KEY: 'k' }),
+    );
 
     await provider.reply(
-      { ...request, context: 'The student is currently viewing the lesson "Present Perfect".' },
+      {
+        ...request,
+        context:
+          'The student is currently viewing the lesson "Present Perfect".',
+      },
       noop,
     );
 
-    const body = JSON.parse((fetchSpy.mock.calls[0][1] as RequestInit).body as string) as {
+    const body = JSON.parse(
+      (fetchSpy.mock.calls[0][1] as RequestInit).body as string,
+    ) as {
       systemInstruction: { parts: { text: string }[] };
       contents: { role: string; parts: { text: string }[] }[];
     };
@@ -115,16 +142,24 @@ describe('GeminiEngyChatProvider', () => {
         ],
       },
     ]);
-    expect(body.systemInstruction.parts[0].text).not.toContain('Present Perfect');
+    expect(body.systemInstruction.parts[0].text).not.toContain(
+      'Present Perfect',
+    );
   });
 
   it('omits the [Context] part entirely when context is null/absent', async () => {
-    const fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValue(answer('ok'));
-    const provider = new GeminiEngyChatProvider(config({ GEMINI_API_KEY: 'k' }));
+    const fetchSpy = jest
+      .spyOn(global, 'fetch')
+      .mockResolvedValue(answer('ok'));
+    const provider = new GeminiEngyChatProvider(
+      config({ GEMINI_API_KEY: 'k' }),
+    );
 
     await provider.reply({ ...request, context: null }, noop);
 
-    const body = JSON.parse((fetchSpy.mock.calls[0][1] as RequestInit).body as string) as {
+    const body = JSON.parse(
+      (fetchSpy.mock.calls[0][1] as RequestInit).body as string,
+    ) as {
       contents: { role: string; parts: { text: string }[] }[];
     };
     expect(body.contents[body.contents.length - 1]).toEqual({
@@ -134,19 +169,29 @@ describe('GeminiEngyChatProvider', () => {
   });
 
   it('sends the API key as a header, never in the URL', async () => {
-    const fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValue(answer('ok'));
-    const provider = new GeminiEngyChatProvider(config({ GEMINI_API_KEY: 'secret-key' }));
+    const fetchSpy = jest
+      .spyOn(global, 'fetch')
+      .mockResolvedValue(answer('ok'));
+    const provider = new GeminiEngyChatProvider(
+      config({ GEMINI_API_KEY: 'secret-key' }),
+    );
 
     await provider.reply(request, noop);
 
     const [url, init] = fetchSpy.mock.calls[0];
     expect(String(url)).not.toContain('secret-key');
-    expect((init as RequestInit).headers).toMatchObject({ 'x-goog-api-key': 'secret-key' });
+    expect((init as RequestInit).headers).toMatchObject({
+      'x-goog-api-key': 'secret-key',
+    });
   });
 
-  it('targets the default chain\'s first model when GEMINI_ENGY_MODEL is unset', async () => {
-    const fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValue(answer('ok'));
-    const provider = new GeminiEngyChatProvider(config({ GEMINI_API_KEY: 'k' }));
+  it("targets the default chain's first model when GEMINI_ENGY_MODEL is unset", async () => {
+    const fetchSpy = jest
+      .spyOn(global, 'fetch')
+      .mockResolvedValue(answer('ok'));
+    const provider = new GeminiEngyChatProvider(
+      config({ GEMINI_API_KEY: 'k' }),
+    );
 
     await provider.reply(request, noop);
 
@@ -174,7 +219,9 @@ describe('GeminiEngyChatProvider', () => {
     const fetchSpy = jest.spyOn(global, 'fetch');
     const provider = new GeminiEngyChatProvider(config({}));
 
-    await expect(provider.reply(request, noop)).rejects.toMatchObject({ kind: 'NOT_CONFIGURED' });
+    await expect(provider.reply(request, noop)).rejects.toMatchObject({
+      kind: 'NOT_CONFIGURED',
+    });
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
@@ -182,39 +229,62 @@ describe('GeminiEngyChatProvider', () => {
     const abort = new Error('aborted');
     abort.name = 'AbortError';
     jest.spyOn(global, 'fetch').mockRejectedValue(abort);
-    const provider = new GeminiEngyChatProvider(config({ GEMINI_API_KEY: 'k' }));
+    const provider = new GeminiEngyChatProvider(
+      config({ GEMINI_API_KEY: 'k' }),
+    );
 
-    await expect(provider.reply(request, noop)).rejects.toMatchObject({ kind: 'TIMEOUT' });
+    await expect(provider.reply(request, noop)).rejects.toMatchObject({
+      kind: 'TIMEOUT',
+    });
   });
 
   it('reports a network failure as UNAVAILABLE', async () => {
     jest.spyOn(global, 'fetch').mockRejectedValue(new Error('offline'));
-    const provider = new GeminiEngyChatProvider(config({ GEMINI_API_KEY: 'k' }));
+    const provider = new GeminiEngyChatProvider(
+      config({ GEMINI_API_KEY: 'k' }),
+    );
 
-    await expect(provider.reply(request, noop)).rejects.toBeInstanceOf(EngyChatError);
-    await expect(provider.reply(request, noop)).rejects.toMatchObject({ kind: 'UNAVAILABLE' });
+    await expect(provider.reply(request, noop)).rejects.toBeInstanceOf(
+      EngyChatError,
+    );
+    await expect(provider.reply(request, noop)).rejects.toMatchObject({
+      kind: 'UNAVAILABLE',
+    });
   });
 
   it('reports a non-2xx response as UNAVAILABLE', async () => {
     jest
       .spyOn(global, 'fetch')
       .mockResolvedValue({ ok: false, status: 500 } as unknown as Response);
-    const provider = new GeminiEngyChatProvider(config({ GEMINI_API_KEY: 'k' }));
+    const provider = new GeminiEngyChatProvider(
+      config({ GEMINI_API_KEY: 'k' }),
+    );
 
-    await expect(provider.reply(request, noop)).rejects.toMatchObject({ kind: 'UNAVAILABLE' });
+    await expect(provider.reply(request, noop)).rejects.toMatchObject({
+      kind: 'UNAVAILABLE',
+    });
   });
 
   it('reports a reply cut off at the token limit as UNAVAILABLE, never a truncated reply', async () => {
     jest.spyOn(global, 'fetch').mockResolvedValue(
       streamResponse([
         sseChunk({
-          candidates: [{ content: { parts: [{ text: 'She resign' }] }, finishReason: 'MAX_TOKENS' }],
+          candidates: [
+            {
+              content: { parts: [{ text: 'She resign' }] },
+              finishReason: 'MAX_TOKENS',
+            },
+          ],
         }),
       ]),
     );
-    const provider = new GeminiEngyChatProvider(config({ GEMINI_API_KEY: 'k' }));
+    const provider = new GeminiEngyChatProvider(
+      config({ GEMINI_API_KEY: 'k' }),
+    );
 
-    await expect(provider.reply(request, noop)).rejects.toMatchObject({ kind: 'UNAVAILABLE' });
+    await expect(provider.reply(request, noop)).rejects.toMatchObject({
+      kind: 'UNAVAILABLE',
+    });
   });
 
   // 2026-09-13 real production report: a user saw a short, sentence-
@@ -228,52 +298,94 @@ describe('GeminiEngyChatProvider', () => {
   // through as if the model had finished normally.
   it('reports a stream that ends with no finishReason at all as UNAVAILABLE, never a silently truncated reply', async () => {
     jest.spyOn(global, 'fetch').mockResolvedValue(
-      streamResponse([sseChunk({ candidates: [{ content: { parts: [{ text: 'Tất nhiên là' }] } }] })]),
+      streamResponse([
+        sseChunk({
+          candidates: [{ content: { parts: [{ text: 'Tất nhiên là' }] } }],
+        }),
+      ]),
     );
-    const provider = new GeminiEngyChatProvider(config({ GEMINI_API_KEY: 'k' }));
+    const provider = new GeminiEngyChatProvider(
+      config({ GEMINI_API_KEY: 'k' }),
+    );
 
-    await expect(provider.reply(request, noop)).rejects.toMatchObject({ kind: 'UNAVAILABLE' });
+    await expect(provider.reply(request, noop)).rejects.toMatchObject({
+      kind: 'UNAVAILABLE',
+    });
   });
 
   it('reports a SAFETY finishReason as UNAVAILABLE, not a truncated success', async () => {
     jest.spyOn(global, 'fetch').mockResolvedValue(
       streamResponse([
-        sseChunk({ candidates: [{ content: { parts: [{ text: 'Well,' }] }, finishReason: 'SAFETY' }] }),
+        sseChunk({
+          candidates: [
+            {
+              content: { parts: [{ text: 'Well,' }] },
+              finishReason: 'SAFETY',
+            },
+          ],
+        }),
       ]),
     );
-    const provider = new GeminiEngyChatProvider(config({ GEMINI_API_KEY: 'k' }));
+    const provider = new GeminiEngyChatProvider(
+      config({ GEMINI_API_KEY: 'k' }),
+    );
 
-    await expect(provider.reply(request, noop)).rejects.toMatchObject({ kind: 'UNAVAILABLE' });
+    await expect(provider.reply(request, noop)).rejects.toMatchObject({
+      kind: 'UNAVAILABLE',
+    });
   });
 
   it('reports a safety block as BLOCKED', async () => {
     jest
       .spyOn(global, 'fetch')
-      .mockResolvedValue(streamResponse([sseChunk({ promptFeedback: { blockReason: 'SAFETY' } })]));
-    const provider = new GeminiEngyChatProvider(config({ GEMINI_API_KEY: 'k' }));
+      .mockResolvedValue(
+        streamResponse([
+          sseChunk({ promptFeedback: { blockReason: 'SAFETY' } }),
+        ]),
+      );
+    const provider = new GeminiEngyChatProvider(
+      config({ GEMINI_API_KEY: 'k' }),
+    );
 
-    await expect(provider.reply(request, noop)).rejects.toMatchObject({ kind: 'BLOCKED' });
+    await expect(provider.reply(request, noop)).rejects.toMatchObject({
+      kind: 'BLOCKED',
+    });
   });
 
   it('reports an empty answer as UNAVAILABLE, never a blank reply', async () => {
     jest.spyOn(global, 'fetch').mockResolvedValue(answer('   '));
-    const provider = new GeminiEngyChatProvider(config({ GEMINI_API_KEY: 'k' }));
+    const provider = new GeminiEngyChatProvider(
+      config({ GEMINI_API_KEY: 'k' }),
+    );
 
-    await expect(provider.reply(request, noop)).rejects.toMatchObject({ kind: 'UNAVAILABLE' });
+    await expect(provider.reply(request, noop)).rejects.toMatchObject({
+      kind: 'UNAVAILABLE',
+    });
   });
 
   describe('streaming delivery', () => {
     it('calls onDelta once per streamed chunk, in order, and resolves with the full accumulated text', async () => {
       jest.spyOn(global, 'fetch').mockResolvedValue(
         streamResponse([
-          sseChunk({ candidates: [{ content: { parts: [{ text: 'She ' }] } }] }),
-          sseChunk({ candidates: [{ content: { parts: [{ text: 'resigned ' }] } }] }),
           sseChunk({
-            candidates: [{ content: { parts: [{ text: 'yesterday.' }] }, finishReason: 'STOP' }],
+            candidates: [{ content: { parts: [{ text: 'She ' }] } }],
+          }),
+          sseChunk({
+            candidates: [{ content: { parts: [{ text: 'resigned ' }] } }],
+          }),
+          sseChunk({
+            candidates: [
+              {
+                content: { parts: [{ text: 'yesterday.' }] },
+                finishReason: 'STOP',
+              },
+            ],
           }),
         ]),
       );
-      const provider = new GeminiEngyChatProvider(config({ GEMINI_API_KEY: 'k' }));
+      const provider = new GeminiEngyChatProvider(
+        config({ GEMINI_API_KEY: 'k' }),
+      );
       const deltas: string[] = [];
 
       const result = await provider.reply(request, (text) => deltas.push(text));
@@ -289,13 +401,25 @@ describe('GeminiEngyChatProvider', () => {
     // never catch either bug.
     it('reassembles an SSE frame whose data line is split across two network reads', async () => {
       const wholeFrame = sseChunk({
-        candidates: [{ content: { parts: [{ text: 'Hello there' }] }, finishReason: 'STOP' }],
+        candidates: [
+          {
+            content: { parts: [{ text: 'Hello there' }] },
+            finishReason: 'STOP',
+          },
+        ],
       });
       const splitPoint = Math.floor(wholeFrame.length / 2);
       jest
         .spyOn(global, 'fetch')
-        .mockResolvedValue(streamResponse([wholeFrame.slice(0, splitPoint), wholeFrame.slice(splitPoint)]));
-      const provider = new GeminiEngyChatProvider(config({ GEMINI_API_KEY: 'k' }));
+        .mockResolvedValue(
+          streamResponse([
+            wholeFrame.slice(0, splitPoint),
+            wholeFrame.slice(splitPoint),
+          ]),
+        );
+      const provider = new GeminiEngyChatProvider(
+        config({ GEMINI_API_KEY: 'k' }),
+      );
       const deltas: string[] = [];
 
       const result = await provider.reply(request, (text) => deltas.push(text));
@@ -307,9 +431,15 @@ describe('GeminiEngyChatProvider', () => {
     it('processes multiple SSE frames that arrive together in a single network read', async () => {
       const combined =
         sseChunk({ candidates: [{ content: { parts: [{ text: 'Hel' }] } }] }) +
-        sseChunk({ candidates: [{ content: { parts: [{ text: 'lo' }] }, finishReason: 'STOP' }] });
+        sseChunk({
+          candidates: [
+            { content: { parts: [{ text: 'lo' }] }, finishReason: 'STOP' },
+          ],
+        });
       jest.spyOn(global, 'fetch').mockResolvedValue(streamResponse([combined]));
-      const provider = new GeminiEngyChatProvider(config({ GEMINI_API_KEY: 'k' }));
+      const provider = new GeminiEngyChatProvider(
+        config({ GEMINI_API_KEY: 'k' }),
+      );
       const deltas: string[] = [];
 
       const result = await provider.reply(request, (text) => deltas.push(text));
@@ -322,12 +452,21 @@ describe('GeminiEngyChatProvider', () => {
       jest.spyOn(global, 'fetch').mockResolvedValue(
         streamResponse([
           sseChunk(
-            { candidates: [{ content: { parts: [{ text: 'Hi there.' }] }, finishReason: 'STOP' }] },
+            {
+              candidates: [
+                {
+                  content: { parts: [{ text: 'Hi there.' }] },
+                  finishReason: 'STOP',
+                },
+              ],
+            },
             '\r\n\r\n',
           ),
         ]),
       );
-      const provider = new GeminiEngyChatProvider(config({ GEMINI_API_KEY: 'k' }));
+      const provider = new GeminiEngyChatProvider(
+        config({ GEMINI_API_KEY: 'k' }),
+      );
       const deltas: string[] = [];
 
       const result = await provider.reply(request, (text) => deltas.push(text));
@@ -344,14 +483,25 @@ describe('GeminiEngyChatProvider', () => {
       const oversized = 'x'.repeat(MAX_ENGY_REPLY_CHARS + 50);
       jest.spyOn(global, 'fetch').mockResolvedValue(
         streamResponse(
-          [sseChunk({ candidates: [{ content: { parts: [{ text: oversized }] } }] })],
+          [
+            sseChunk({
+              candidates: [{ content: { parts: [{ text: oversized }] } }],
+            }),
+          ],
           // Deliberately never closed — if the implementation kept reading
           // instead of cancelling, this test would hang until Jest's own
           // timeout rather than resolve, making a regression here loud.
-          { close: false, onCancel: () => { cancelled = true; } },
+          {
+            close: false,
+            onCancel: () => {
+              cancelled = true;
+            },
+          },
         ),
       );
-      const provider = new GeminiEngyChatProvider(config({ GEMINI_API_KEY: 'k' }));
+      const provider = new GeminiEngyChatProvider(
+        config({ GEMINI_API_KEY: 'k' }),
+      );
       const deltas: string[] = [];
 
       const result = await provider.reply(request, (text) => deltas.push(text));
@@ -371,14 +521,25 @@ describe('GeminiEngyChatProvider', () => {
       jest.spyOn(global, 'fetch').mockResolvedValue(
         streamResponse(
           [
-            sseChunk({ candidates: [{ content: { parts: [{ text: already }] } }] }),
+            sseChunk({
+              candidates: [{ content: { parts: [{ text: already }] } }],
+            }),
             // 70 more characters land in one chunk — only 20 fit under the cap.
-            sseChunk({ candidates: [{ content: { parts: [{ text: 'b'.repeat(70) }] } }] }),
+            sseChunk({
+              candidates: [{ content: { parts: [{ text: 'b'.repeat(70) }] } }],
+            }),
           ],
-          { close: false, onCancel: () => { cancelled = true; } },
+          {
+            close: false,
+            onCancel: () => {
+              cancelled = true;
+            },
+          },
         ),
       );
-      const provider = new GeminiEngyChatProvider(config({ GEMINI_API_KEY: 'k' }));
+      const provider = new GeminiEngyChatProvider(
+        config({ GEMINI_API_KEY: 'k' }),
+      );
       const deltas: string[] = [];
 
       const result = await provider.reply(request, (text) => deltas.push(text));

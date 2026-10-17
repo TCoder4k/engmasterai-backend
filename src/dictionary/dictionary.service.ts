@@ -7,15 +7,24 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { DictionaryCacheStore } from './dictionary-cache.store';
-import { DICTIONARY_SOURCE_PROVIDER, DictionarySourceError } from './dictionary-source.provider';
+import {
+  DICTIONARY_SOURCE_PROVIDER,
+  DictionarySourceError,
+} from './dictionary-source.provider';
 // `import type` because these providers are injected by TOKEN, not by class:
 // with `emitDecoratorMetadata` a value import here would make TypeScript
 // emit a runtime reference to an interface that does not exist at runtime —
 // same convention as ShadowingService's own provider imports.
 import type { DictionarySourceProvider } from './dictionary-source.provider';
-import { VI_TRANSLATION_PROVIDER, ViTranslationError } from './vi-translation.provider';
+import {
+  VI_TRANSLATION_PROVIDER,
+  ViTranslationError,
+} from './vi-translation.provider';
 import type { ViTranslationProvider } from './vi-translation.provider';
-import { DictionaryLookupResult, DictionarySuggestion } from './dictionary.types';
+import {
+  DictionaryLookupResult,
+  DictionarySuggestion,
+} from './dictionary.types';
 
 const MEANING_SELECT = { partOfSpeech: true, meaning: true, orderIndex: true };
 const EXAMPLE_SELECT = { sentence: true, orderIndex: true };
@@ -64,7 +73,10 @@ export class DictionaryService {
    * app already curated. Exact lookup (with its 3 tiers) still runs
    * separately once the student selects a suggestion or submits.
    */
-  async suggest(rawPrefix: string, limit: number): Promise<DictionarySuggestion[]> {
+  async suggest(
+    rawPrefix: string,
+    limit: number,
+  ): Promise<DictionarySuggestion[]> {
     const normalizedPrefix = rawPrefix.trim().toLowerCase();
 
     const words = await this.prisma.vocabWord.findMany({
@@ -153,7 +165,9 @@ export class DictionaryService {
     } catch (error) {
       if (error instanceof DictionarySourceError) {
         if (error.kind === 'NOT_FOUND') {
-          throw new NotFoundException(`No dictionary entry for "${displayWord}"`);
+          throw new NotFoundException(
+            `No dictionary entry for "${displayWord}"`,
+          );
         }
         throw new ServiceUnavailableException(
           'Dictionary source is temporarily unavailable',
@@ -164,7 +178,8 @@ export class DictionaryService {
 
     const firstDefinition = sourceLookup.meanings[0]?.definitionEn;
     let viTranslation: string | null = null;
-    let viTranslationSource: DictionaryLookupResult['viTranslationSource'] = 'NONE';
+    let viTranslationSource: DictionaryLookupResult['viTranslationSource'] =
+      'NONE';
 
     if (firstDefinition) {
       try {
@@ -198,7 +213,10 @@ export class DictionaryService {
       // hit (see lookupVocabWord) — this tier only AI-translates the FIRST
       // definition, into the top-level `viTranslation` above, not one
       // translation per meaning.
-      meanings: sourceLookup.meanings.map((m) => ({ ...m, definitionVi: null })),
+      meanings: sourceLookup.meanings.map((m) => ({
+        ...m,
+        definitionVi: null,
+      })),
       synonyms: sourceLookup.synonyms,
       viTranslation,
       viTranslationSource,

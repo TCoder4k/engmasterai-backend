@@ -100,7 +100,7 @@ export class PaymentService {
         return this.config.get<number>(
           'PAYMENT_PREMIUM_MONTHLY_PRICE_VND',
           119000,
-        ) as number;
+        );
       default: {
         // Exhaustiveness guard — SubscriptionPlan members; a new plan added
         // to the enum without a price here is a compile error via this `never`
@@ -366,8 +366,7 @@ export class PaymentService {
     await tx.$executeRaw`
       INSERT INTO subscriptions (id, "userId", plan, "startsAt", "expiresAt", "lastPaymentId", "createdAt", "updatedAt")
       VALUES (${id}, ${payment.userId}, ${payment.plan}::"SubscriptionPlan", NOW(), NOW() + (${days} * INTERVAL '1 day'), ${payment.id}, NOW(), NOW())
-      ON CONFLICT ("userId") DO UPDATE SET
-        plan            = EXCLUDED.plan,
+      ON CONFLICT ("userId", plan) DO UPDATE SET
         "expiresAt"     = GREATEST(subscriptions."expiresAt", NOW()) + (${days} * INTERVAL '1 day'),
         "lastPaymentId" = EXCLUDED."lastPaymentId",
         "updatedAt"     = NOW()

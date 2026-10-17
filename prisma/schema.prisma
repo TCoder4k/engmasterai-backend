@@ -340,7 +340,7 @@ model User {
   // entitlement cache derived from it, at most one row per user. See
   // Payment/Subscription models below for the full design.
   payments     Payment[]
-  subscription Subscription?
+  subscriptions Subscription[]
 
   // 2026-09-16 pricing relaunch (Phase B/C).
   usageCounters    UsageCounter[]
@@ -2402,7 +2402,7 @@ model Payment {
 // concurrently cannot lose one payment's extension to write-skew.
 model Subscription {
   id            String           @id @default(uuid())
-  userId        String           @unique
+  userId        String
   plan          SubscriptionPlan
   startsAt      DateTime // set once, at first-ever purchase; renewals never touch this
   expiresAt     DateTime // the only field a renewal ever changes
@@ -2418,6 +2418,7 @@ model Subscription {
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  @@unique([userId, plan])
   @@map("subscriptions")
 }
 

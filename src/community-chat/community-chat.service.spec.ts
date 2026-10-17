@@ -4,7 +4,13 @@ import { CommunityChatGateway } from './live/community-chat.gateway';
 
 const resolve = <T>(value: T) => Promise.resolve(value);
 
-const AUTHOR = { id: 'author-1', name: 'Alice', avatarUrl: null, level: 5, role: 'USER' };
+const AUTHOR = {
+  id: 'author-1',
+  name: 'Alice',
+  avatarUrl: null,
+  level: 5,
+  role: 'USER',
+};
 
 const buildHarness = () => {
   const create = jest.fn();
@@ -15,7 +21,10 @@ const buildHarness = () => {
   const readStateUpdateMany = jest.fn();
   const prisma = {
     communityMessage: { create, findUnique, findMany, count },
-    communityReadState: { upsert: readStateUpsert, updateMany: readStateUpdateMany },
+    communityReadState: {
+      upsert: readStateUpsert,
+      updateMany: readStateUpdateMany,
+    },
   };
   const gateway = { broadcast: jest.fn() } as unknown as CommunityChatGateway;
   const service = new CommunityChatService(prisma as never, gateway);
@@ -32,7 +41,11 @@ const buildHarness = () => {
   };
 };
 
-const row = (id: string, createdAt: string, overrides: Record<string, unknown> = {}) => ({
+const row = (
+  id: string,
+  createdAt: string,
+  overrides: Record<string, unknown> = {},
+) => ({
   id,
   content: `content-${id}`,
   clientMessageId: `client-${id}`,
@@ -52,7 +65,12 @@ describe('CommunityChatService.sendMessage', () => {
         // the DTO mapper must still only ever copy through the safe fields
         // (role included, now that it's used to compute isAdmin), never
         // whatever else the row happens to carry.
-        user: { ...AUTHOR, email: 'leaked@test.com', role: 'ADMIN', totalPoints: 999 },
+        user: {
+          ...AUTHOR,
+          email: 'leaked@test.com',
+          role: 'ADMIN',
+          totalPoints: 999,
+        },
       }),
     );
 
@@ -65,12 +83,26 @@ describe('CommunityChatService.sendMessage', () => {
       createdAt: '2026-01-01T00:00:00.000Z',
       // role itself never appears on the DTO — only the computed isAdmin
       // boolean does (see community-chat.types.ts's comment on why).
-      author: { id: 'author-1', name: 'Alice', avatarUrl: null, level: 5, isAdmin: true },
+      author: {
+        id: 'author-1',
+        name: 'Alice',
+        avatarUrl: null,
+        level: 5,
+        isAdmin: true,
+      },
     });
     expect(create).toHaveBeenCalledWith({
       data: { userId: 'user-1', clientMessageId: 'c1', content: 'hello' },
       include: {
-        user: { select: { id: true, name: true, avatarUrl: true, level: true, role: true } },
+        user: {
+          select: {
+            id: true,
+            name: true,
+            avatarUrl: true,
+            level: true,
+            role: true,
+          },
+        },
       },
     });
   });
@@ -78,7 +110,10 @@ describe('CommunityChatService.sendMessage', () => {
   it('a USER-role sender maps to isAdmin: false', async () => {
     const { service, create } = buildHarness();
     create.mockResolvedValue(
-      row('msg-2', '2026-01-01T00:00:00.000Z', { content: 'hi', clientMessageId: 'c2' }),
+      row('msg-2', '2026-01-01T00:00:00.000Z', {
+        content: 'hi',
+        clientMessageId: 'c2',
+      }),
     );
 
     const result = await service.sendMessage('user-1', 'c2', 'hi');
@@ -88,30 +123,55 @@ describe('CommunityChatService.sendMessage', () => {
 
   it('broadcasts exactly once on a first-time send', async () => {
     const { service, create, gateway } = buildHarness();
-    create.mockResolvedValue(row('msg-1', '2026-01-01T00:00:00.000Z', { content: 'hi', clientMessageId: 'c1' }));
+    create.mockResolvedValue(
+      row('msg-1', '2026-01-01T00:00:00.000Z', {
+        content: 'hi',
+        clientMessageId: 'c1',
+      }),
+    );
 
     await service.sendMessage('user-1', 'c1', 'hi');
 
     expect(gateway.broadcast).toHaveBeenCalledTimes(1);
-    expect(gateway.broadcast).toHaveBeenCalledWith(expect.objectContaining({ id: 'msg-1', content: 'hi' }));
+    expect(gateway.broadcast).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'msg-1', content: 'hi' }),
+    );
   });
 
   it('a retried send with the same (userId, clientMessageId) returns the original row and does not create a duplicate or re-broadcast', async () => {
     const { service, create, findUnique, gateway } = buildHarness();
-    const p2002 = new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
-      code: 'P2002',
-      clientVersion: 'test',
-    });
+    const p2002 = new Prisma.PrismaClientKnownRequestError(
+      'Unique constraint failed',
+      {
+        code: 'P2002',
+        clientVersion: 'test',
+      },
+    );
     create.mockRejectedValue(p2002);
-    findUnique.mockResolvedValue(row('msg-1', '2026-01-01T00:00:00.000Z', { content: 'hi', clientMessageId: 'c1' }));
+    findUnique.mockResolvedValue(
+      row('msg-1', '2026-01-01T00:00:00.000Z', {
+        content: 'hi',
+        clientMessageId: 'c1',
+      }),
+    );
 
     const result = await service.sendMessage('user-1', 'c1', 'hi');
 
     expect(result.id).toBe('msg-1');
     expect(findUnique).toHaveBeenCalledWith({
-      where: { userId_clientMessageId: { userId: 'user-1', clientMessageId: 'c1' } },
+      where: {
+        userId_clientMessageId: { userId: 'user-1', clientMessageId: 'c1' },
+      },
       include: {
-        user: { select: { id: true, name: true, avatarUrl: true, level: true, role: true } },
+        user: {
+          select: {
+            id: true,
+            name: true,
+            avatarUrl: true,
+            level: true,
+            role: true,
+          },
+        },
       },
     });
     expect(gateway.broadcast).not.toHaveBeenCalled();
@@ -121,7 +181,9 @@ describe('CommunityChatService.sendMessage', () => {
     const { service, create } = buildHarness();
     create.mockRejectedValue(new Error('connection lost'));
 
-    await expect(service.sendMessage('user-1', 'c1', 'hi')).rejects.toThrow('connection lost');
+    await expect(service.sendMessage('user-1', 'c1', 'hi')).rejects.toThrow(
+      'connection lost',
+    );
   });
 });
 
@@ -162,9 +224,15 @@ describe('CommunityChatService.listMessages', () => {
 
   it('a `before` cursor resolves the anchor row then queries strictly older rows, returned oldest -> newest', async () => {
     const { service, findMany, findUnique } = buildHarness();
-    findUnique.mockResolvedValue({ id: 'anchor', createdAt: new Date('2026-01-05T00:00:00.000Z') });
+    findUnique.mockResolvedValue({
+      id: 'anchor',
+      createdAt: new Date('2026-01-05T00:00:00.000Z'),
+    });
     findMany.mockReturnValue(
-      resolve([row('2', '2026-01-02T00:00:00.000Z'), row('1', '2026-01-01T00:00:00.000Z')]),
+      resolve([
+        row('2', '2026-01-02T00:00:00.000Z'),
+        row('1', '2026-01-01T00:00:00.000Z'),
+      ]),
     );
 
     const result = await service.listMessages('anchor', 10);
@@ -175,7 +243,10 @@ describe('CommunityChatService.listMessages', () => {
         where: {
           OR: [
             { createdAt: { lt: new Date('2026-01-05T00:00:00.000Z') } },
-            { createdAt: new Date('2026-01-05T00:00:00.000Z'), id: { lt: 'anchor' } },
+            {
+              createdAt: new Date('2026-01-05T00:00:00.000Z'),
+              id: { lt: 'anchor' },
+            },
           ],
         },
       }),
@@ -188,7 +259,10 @@ describe('CommunityChatService.listMessages', () => {
 
     const result = await service.listMessages('missing-id', 10);
 
-    expect(result).toEqual({ data: [], meta: { hasMore: false, oldestId: null } });
+    expect(result).toEqual({
+      data: [],
+      meta: { hasMore: false, oldestId: null },
+    });
     expect(findMany).not.toHaveBeenCalled();
   });
 
@@ -198,7 +272,10 @@ describe('CommunityChatService.listMessages', () => {
 
     const result = await service.listMessages(undefined, 10);
 
-    expect(result).toEqual({ data: [], meta: { hasMore: false, oldestId: null } });
+    expect(result).toEqual({
+      data: [],
+      meta: { hasMore: false, oldestId: null },
+    });
   });
 });
 
@@ -227,7 +304,10 @@ describe('CommunityChatService.unreadCount', () => {
     // Simulates the create branch firing (no row existed): upsert resolves
     // with whatever lastReadAt Prisma's own @default(now()) produced.
     const justNow = new Date();
-    readStateUpsert.mockResolvedValue({ userId: 'user-2', lastReadAt: justNow });
+    readStateUpsert.mockResolvedValue({
+      userId: 'user-2',
+      lastReadAt: justNow,
+    });
     count.mockResolvedValue(0);
 
     const result = await service.unreadCount('user-2');
@@ -253,7 +333,10 @@ describe('CommunityChatService.markRead', () => {
   it('falls back to upsert (create) when updateMany matches nothing because no row exists yet', async () => {
     const { service, readStateUpdateMany, readStateUpsert } = buildHarness();
     readStateUpdateMany.mockResolvedValue({ count: 0 });
-    readStateUpsert.mockResolvedValue({ userId: 'user-1', lastReadAt: new Date() });
+    readStateUpsert.mockResolvedValue({
+      userId: 'user-1',
+      lastReadAt: new Date(),
+    });
 
     await service.markRead('user-1');
 
@@ -264,13 +347,16 @@ describe('CommunityChatService.markRead', () => {
     });
   });
 
-  it('monotonic cursor: when updateMany matches nothing because a later call already advanced past this call\'s timestamp, the upsert fallback is a true no-op (update: {}), never regressing lastReadAt', async () => {
+  it("monotonic cursor: when updateMany matches nothing because a later call already advanced past this call's timestamp, the upsert fallback is a true no-op (update: {}), never regressing lastReadAt", async () => {
     const { service, readStateUpdateMany, readStateUpsert } = buildHarness();
     // count:0 here represents BOTH possible reasons (no row yet, or the row
     // is already >= now) — the fix is that the fallback's `update: {}`
     // never writes a stale timestamp over a newer one in either case.
     readStateUpdateMany.mockResolvedValue({ count: 0 });
-    readStateUpsert.mockResolvedValue({ userId: 'user-1', lastReadAt: new Date('2099-01-01') });
+    readStateUpsert.mockResolvedValue({
+      userId: 'user-1',
+      lastReadAt: new Date('2099-01-01'),
+    });
 
     await service.markRead('user-1');
 

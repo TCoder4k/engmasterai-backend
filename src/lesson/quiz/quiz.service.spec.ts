@@ -61,7 +61,11 @@ describe('QuizService', () => {
           }),
         ),
       };
-      const service = new QuizService(prisma as any, buildConfig(65), stubGamification());
+      const service = new QuizService(
+        prisma as any,
+        buildConfig(65),
+        stubGamification(),
+      );
 
       const res = await service.startQuizAttempt('lesson-1', 'user-1');
       expect(res.quiz.passingScorePercent).toBe(65);
@@ -97,7 +101,11 @@ describe('QuizService', () => {
           }),
         ),
       };
-      const service = new QuizService(prisma as any, buildConfig(65), stubGamification());
+      const service = new QuizService(
+        prisma as any,
+        buildConfig(65),
+        stubGamification(),
+      );
 
       const res = await service.startQuizAttempt('lesson-1', 'user-1');
       expect(res.quiz.passingScorePercent).toBe(90);

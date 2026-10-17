@@ -74,7 +74,10 @@ describe('BrevoMailProvider', () => {
       ok: true,
       status: 201,
       json: () =>
-        Promise.resolve({ messageId: 'brevo-message-id-1', secret: 'leak-me-not' }),
+        Promise.resolve({
+          messageId: 'brevo-message-id-1',
+          secret: 'leak-me-not',
+        }),
     };
     fetchMock.mockResolvedValue(rawResponse);
 

@@ -1,7 +1,15 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { CreateSpeakingExerciseDto, QuerySpeakingManageDto, UpdateSpeakingExerciseDto } from './dto';
+import {
+  CreateSpeakingExerciseDto,
+  QuerySpeakingManageDto,
+  UpdateSpeakingExerciseDto,
+} from './dto';
 import { ManageSpeakingExerciseDto } from './speaking.types';
 
 const MAX_LIMIT = 100;
@@ -32,9 +40,10 @@ const MANAGE_SELECT = {
 export class SpeakingExerciseService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async findAllManage(
-    query: QuerySpeakingManageDto,
-  ): Promise<{ data: ManageSpeakingExerciseDto[]; meta: { total: number; page: number; limit: number; totalPages: number } }> {
+  async findAllManage(query: QuerySpeakingManageDto): Promise<{
+    data: ManageSpeakingExerciseDto[];
+    meta: { total: number; page: number; limit: number; totalPages: number };
+  }> {
     const take = Math.min(query.limit || 20, MAX_LIMIT);
     const skip = query.page ? (query.page - 1) * take : 0;
 
@@ -55,7 +64,12 @@ export class SpeakingExerciseService {
 
     return {
       data: exercises,
-      meta: { total, page: query.page || 1, limit: take, totalPages: Math.ceil(total / take) },
+      meta: {
+        total,
+        page: query.page || 1,
+        limit: take,
+        totalPages: Math.ceil(total / take),
+      },
     };
   }
 
@@ -63,16 +77,21 @@ export class SpeakingExerciseService {
     return this.findOneOrThrow(id);
   }
 
-  async create(dto: CreateSpeakingExerciseDto): Promise<ManageSpeakingExerciseDto> {
+  async create(
+    dto: CreateSpeakingExerciseDto,
+  ): Promise<ManageSpeakingExerciseDto> {
     const scenario = await this.prisma.speakingScenario.findUnique({
       where: { id: dto.scenarioId },
       select: { id: true },
     });
     if (!scenario) {
-      throw new NotFoundException(`Speaking scenario with ID ${dto.scenarioId} not found`);
+      throw new NotFoundException(
+        `Speaking scenario with ID ${dto.scenarioId} not found`,
+      );
     }
 
-    const orderIndex = dto.orderIndex ?? (await this.nextOrderIndex(dto.scenarioId));
+    const orderIndex =
+      dto.orderIndex ?? (await this.nextOrderIndex(dto.scenarioId));
 
     // Explicit field construction, never a DTO spread — same discipline as
     // every other admin-authored model in this codebase.
@@ -94,7 +113,10 @@ export class SpeakingExerciseService {
     });
   }
 
-  async update(id: string, dto: UpdateSpeakingExerciseDto): Promise<ManageSpeakingExerciseDto> {
+  async update(
+    id: string,
+    dto: UpdateSpeakingExerciseDto,
+  ): Promise<ManageSpeakingExerciseDto> {
     await this.findOneOrThrow(id);
 
     if (dto.scenarioId !== undefined) {
@@ -103,7 +125,9 @@ export class SpeakingExerciseService {
         select: { id: true },
       });
       if (!scenario) {
-        throw new NotFoundException(`Speaking scenario with ID ${dto.scenarioId} not found`);
+        throw new NotFoundException(
+          `Speaking scenario with ID ${dto.scenarioId} not found`,
+        );
       }
     }
 
@@ -113,12 +137,20 @@ export class SpeakingExerciseService {
         ...(dto.scenarioId !== undefined && { scenarioId: dto.scenarioId }),
         ...(dto.title !== undefined && { title: dto.title.trim() }),
         ...(dto.titleVi !== undefined && { titleVi: dto.titleVi.trim() }),
-        ...(dto.description !== undefined && { description: dto.description.trim() }),
-        ...(dto.descriptionVi !== undefined && { descriptionVi: dto.descriptionVi.trim() }),
+        ...(dto.description !== undefined && {
+          description: dto.description.trim(),
+        }),
+        ...(dto.descriptionVi !== undefined && {
+          descriptionVi: dto.descriptionVi.trim(),
+        }),
         ...(dto.level !== undefined && { level: dto.level }),
         ...(dto.aiRole !== undefined && { aiRole: dto.aiRole.trim() }),
-        ...(dto.openingLine !== undefined && { openingLine: dto.openingLine.trim() }),
-        ...(dto.conversationGoal !== undefined && { conversationGoal: dto.conversationGoal.trim() }),
+        ...(dto.openingLine !== undefined && {
+          openingLine: dto.openingLine.trim(),
+        }),
+        ...(dto.conversationGoal !== undefined && {
+          conversationGoal: dto.conversationGoal.trim(),
+        }),
         ...(dto.targetTurns !== undefined && { targetTurns: dto.targetTurns }),
         ...(dto.orderIndex !== undefined && { orderIndex: dto.orderIndex }),
       },
@@ -165,7 +197,10 @@ export class SpeakingExerciseService {
     }
   }
 
-  private async setPublished(id: string, isPublished: boolean): Promise<ManageSpeakingExerciseDto> {
+  private async setPublished(
+    id: string,
+    isPublished: boolean,
+  ): Promise<ManageSpeakingExerciseDto> {
     await this.findOneOrThrow(id);
 
     return this.prisma.speakingExercise.update({

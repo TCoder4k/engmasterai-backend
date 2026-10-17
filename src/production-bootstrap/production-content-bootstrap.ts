@@ -41,7 +41,12 @@ import {
   type ContentModelDefinition,
   type DomainName,
 } from './content-domains';
-import { diffRows, destinationOnlyRows, type ContentRow, type RowDiffResult } from './content-diff';
+import {
+  diffRows,
+  destinationOnlyRows,
+  type ContentRow,
+  type RowDiffResult,
+} from './content-diff';
 import {
   assertConfirmedDestinationName,
   assertMigrationNameSetsMatch,
@@ -60,14 +65,21 @@ import {
   assertProductionMigrationMatchesCanonical,
   classifySourceMigrationChecksum,
 } from './migration-checksum-guard';
-import { buildInitialManifest, persistManifest, withDomainStatus } from './run-manifest';
+import {
+  buildInitialManifest,
+  persistManifest,
+  withDomainStatus,
+} from './run-manifest';
 import { parseCliArgs } from './cli-args';
 import {
   assertNoFixtureContamination,
   findFixtureMarkerHits,
   type FixtureMarkerHit,
 } from './fixture-marker-guard';
-import { PLACEMENT_SECTIONS, DIFFICULTY_REQUIREMENTS } from '../placement/placement.constants';
+import {
+  PLACEMENT_SECTIONS,
+  DIFFICULTY_REQUIREMENTS,
+} from '../placement/placement.constants';
 
 // Narrow, explicit `any` boundary. Prisma's generated client is strongly
 // typed per model, but this tool is intentionally generic across the 14
@@ -84,16 +96,21 @@ interface GenericDelegate {
   // cleanly with zero rows written, then fixed here rather than by simply
   // raising the timeout, since the same issue would recur harder on the
   // 9,601-row vocabulary domain.
-  createMany: (args: { data: readonly ContentRow[] }) => Promise<{ count: number }>;
+  createMany: (args: {
+    data: readonly ContentRow[];
+  }) => Promise<{ count: number }>;
 }
 
-const getDelegate = (client: PrismaClient, delegateName: string): GenericDelegate =>
+const getDelegate = (
+  client: PrismaClient,
+  delegateName: string,
+): GenericDelegate =>
   (client as unknown as Record<string, GenericDelegate>)[delegateName];
 
 const currentDatabaseName = async (client: PrismaClient): Promise<string> => {
-  const rows = await client.$queryRawUnsafe<Array<{ current_database: string }>>(
-    'SELECT current_database()',
-  );
+  const rows = await client.$queryRawUnsafe<
+    Array<{ current_database: string }>
+  >('SELECT current_database()');
   return rows[0].current_database;
 };
 
@@ -102,7 +119,9 @@ const currentDatabaseName = async (client: PrismaClient): Promise<string> => {
 // below — this is the "does this history need investigation at all" check,
 // run BEFORE any fingerprint comparison so a rolled-back migration can never
 // just quietly vanish from the result.
-const fetchMigrationHealth = async (client: PrismaClient): Promise<MigrationHealth> => {
+const fetchMigrationHealth = async (
+  client: PrismaClient,
+): Promise<MigrationHealth> => {
   const rows = await client.$queryRawUnsafe<
     Array<{ failed_count: bigint; rolled_back_count: bigint }>
   >(
@@ -117,7 +136,9 @@ const fetchMigrationHealth = async (client: PrismaClient): Promise<MigrationHeal
   };
 };
 
-const fetchMigrationRecords = async (client: PrismaClient): Promise<MigrationRecord[]> => {
+const fetchMigrationRecords = async (
+  client: PrismaClient,
+): Promise<MigrationRecord[]> => {
   const rows = await client.$queryRawUnsafe<
     Array<{ migration_name: string; checksum: string }>
   >(
@@ -130,7 +151,10 @@ const fetchMigrationRecords = async (client: PrismaClient): Promise<MigrationRec
       'WHERE finished_at IS NOT NULL AND rolled_back_at IS NULL ' +
       'ORDER BY migration_name ASC',
   );
-  return rows.map((row) => ({ migrationName: row.migration_name, checksum: row.checksum }));
+  return rows.map((row) => ({
+    migrationName: row.migration_name,
+    checksum: row.checksum,
+  }));
 };
 
 // "Canonical" = the migration.sql content at the currently checked-out Git
@@ -155,13 +179,19 @@ const fetchWorkingTreeMigrationBytes = (migrationName: string): Buffer =>
 // otherwise embed its full argv (including --from-url/--to-url) in the
 // thrown Error's own message.
 const redactSecrets = (text: string, secrets: readonly string[]): string =>
-  secrets.reduce((acc, secret) => (secret ? acc.split(secret).join('[REDACTED_URL]') : acc), text);
+  secrets.reduce(
+    (acc, secret) => (secret ? acc.split(secret).join('[REDACTED_URL]') : acc),
+    text,
+  );
 
 // Invoking the Prisma CLI's JS entry point directly via `node`, rather than
 // shelling out to `npx`/`npx.cmd`, sidesteps a Windows-specific
 // spawn(ENOENT)/spawn(EINVAL) failure when a non-shell child_process call
 // targets a .cmd wrapper script.
-const PRISMA_CLI_ENTRYPOINT = resolvePath(process.cwd(), 'node_modules/prisma/build/index.js');
+const PRISMA_CLI_ENTRYPOINT = resolvePath(
+  process.cwd(),
+  'node_modules/prisma/build/index.js',
+);
 
 // Rule 5 — actual schema parity is a required preflight, independent of the
 // per-migration checksum verification above: two databases can have
@@ -174,7 +204,16 @@ const assertSchemaParity = (sourceUrl: string, destUrl: string): void => {
   try {
     execFileSync(
       process.execPath,
-      [PRISMA_CLI_ENTRYPOINT, 'migrate', 'diff', '--from-url', sourceUrl, '--to-url', destUrl, '--exit-code'],
+      [
+        PRISMA_CLI_ENTRYPOINT,
+        'migrate',
+        'diff',
+        '--from-url',
+        sourceUrl,
+        '--to-url',
+        destUrl,
+        '--exit-code',
+      ],
       { stdio: ['ignore', 'pipe', 'pipe'], timeout: 60_000 },
     );
   } catch (error) {
@@ -259,21 +298,30 @@ const printDryRunReport = (
         String(diff.conflicts.length).padStart(10),
     );
   }
-  const totalConflicts = diffs.reduce((sum, d) => sum + d.diff.conflicts.length, 0);
+  const totalConflicts = diffs.reduce(
+    (sum, d) => sum + d.diff.conflicts.length,
+    0,
+  );
   console.log('');
   if (totalConflicts > 0) {
     console.log(
       `${totalConflicts} conflicting row(s) found — --apply would HARD FAIL the affected domain(s). No content is ever overwritten.`,
     );
   }
-  console.log('*** DRY RUN ONLY — no row was written. Re-run with --apply to write. ***');
+  console.log(
+    '*** DRY RUN ONLY — no row was written. Re-run with --apply to write. ***',
+  );
 };
 
-const runPlacementCheckpoint = async (destPrisma: PrismaClient): Promise<boolean> => {
+const runPlacementCheckpoint = async (
+  destPrisma: PrismaClient,
+): Promise<boolean> => {
   console.log('\n=== Placement Question Bank Checkpoint (destination) ===');
   let allSatisfied = true;
   for (const section of PLACEMENT_SECTIONS) {
-    for (const difficulty of Object.keys(DIFFICULTY_REQUIREMENTS) as QuestionDifficulty[]) {
+    for (const difficulty of Object.keys(
+      DIFFICULTY_REQUIREMENTS,
+    ) as QuestionDifficulty[]) {
       const required = DIFFICULTY_REQUIREMENTS[difficulty];
       const available = await destPrisma.placementQuestion.count({
         where: { section, difficulty, isPublished: true },
@@ -317,14 +365,18 @@ const runVerification = async (
   let orphanCount = 0;
   for (const model of CONTENT_MODELS) {
     for (const fk of model.foreignKeys) {
-      const parentModel = CONTENT_MODELS.find((m) => m.name === fk.referencesModel);
+      const parentModel = CONTENT_MODELS.find(
+        (m) => m.name === fk.referencesModel,
+      );
       if (!parentModel) continue;
       const [childRows, parentRows] = await Promise.all([
         fetchAllRows(destPrisma, model),
         fetchAllRows(destPrisma, parentModel),
       ]);
       const parentIds = new Set(parentRows.map((row) => row.id));
-      const orphans = childRows.filter((row) => !parentIds.has(row[fk.field] as string));
+      const orphans = childRows.filter(
+        (row) => !parentIds.has(row[fk.field] as string),
+      );
       if (orphans.length > 0) {
         orphanCount += orphans.length;
         console.warn(
@@ -333,7 +385,11 @@ const runVerification = async (
       }
     }
   }
-  console.log(orphanCount === 0 ? 'FK orphan checks: PASS (0 orphans)' : `FK orphan checks: FAIL (${orphanCount} orphans)`);
+  console.log(
+    orphanCount === 0
+      ? 'FK orphan checks: PASS (0 orphans)'
+      : `FK orphan checks: FAIL (${orphanCount} orphans)`,
+  );
 
   await runPlacementCheckpoint(destPrisma);
 };
@@ -349,10 +405,17 @@ async function main(): Promise<void> {
 
   const destUrl = requireDestinationConnectionString(process.env);
   const declaredDestIdentity = parseDatabaseIdentity(destUrl);
-  assertSourceAndDestinationDiffer(declaredSourceIdentity, declaredDestIdentity);
+  assertSourceAndDestinationDiffer(
+    declaredSourceIdentity,
+    declaredDestIdentity,
+  );
 
-  const sourcePrisma = new PrismaClient({ datasources: { db: { url: sourceUrl } } });
-  const destPrisma = new PrismaClient({ datasources: { db: { url: destUrl } } });
+  const sourcePrisma = new PrismaClient({
+    datasources: { db: { url: sourceUrl } },
+  });
+  const destPrisma = new PrismaClient({
+    datasources: { db: { url: destUrl } },
+  });
 
   try {
     // Re-verify identity against the LIVE connection, not just the URL —
@@ -380,12 +443,20 @@ async function main(): Promise<void> {
     ]);
     assertMigrationNameSetsMatch(sourceMigrations, destMigrations);
 
-    console.log('\n=== Migration checksum verification (canonical Git vs recorded) ===');
+    console.log(
+      '\n=== Migration checksum verification (canonical Git vs recorded) ===',
+    );
     for (const destRecord of destMigrations) {
-      const canonicalBytes = fetchCanonicalMigrationBytes(destRecord.migrationName);
+      const canonicalBytes = fetchCanonicalMigrationBytes(
+        destRecord.migrationName,
+      );
       const canonicalChecksum = sha256Hex(canonicalBytes);
       // Production: zero tolerance, must match canonical exactly.
-      assertProductionMigrationMatchesCanonical(destRecord.migrationName, destRecord.checksum, canonicalChecksum);
+      assertProductionMigrationMatchesCanonical(
+        destRecord.migrationName,
+        destRecord.checksum,
+        canonicalChecksum,
+      );
 
       // Local dev: allowed exactly one narrow, proven exception — see
       // migration-checksum-guard.ts. classifySourceMigrationChecksum throws
@@ -393,17 +464,30 @@ async function main(): Promise<void> {
       const sourceRecord = sourceMigrations.find(
         (record) => record.migrationName === destRecord.migrationName,
       )!;
-      const workingTreeBytes = fetchWorkingTreeMigrationBytes(destRecord.migrationName);
-      const classification = classifySourceMigrationChecksum(destRecord.migrationName, {
-        recordedChecksum: sourceRecord.checksum,
-        canonicalChecksum,
-        canonicalNormalizedChecksum: sha256Hex(normalizeLineEndings(canonicalBytes)),
-        workingTreeChecksum: sha256Hex(workingTreeBytes),
-        workingTreeNormalizedChecksum: sha256Hex(normalizeLineEndings(workingTreeBytes)),
-      });
-      console.log(`  ${destRecord.migrationName}: production=CANONICAL source=${classification}`);
+      const workingTreeBytes = fetchWorkingTreeMigrationBytes(
+        destRecord.migrationName,
+      );
+      const classification = classifySourceMigrationChecksum(
+        destRecord.migrationName,
+        {
+          recordedChecksum: sourceRecord.checksum,
+          canonicalChecksum,
+          canonicalNormalizedChecksum: sha256Hex(
+            normalizeLineEndings(canonicalBytes),
+          ),
+          workingTreeChecksum: sha256Hex(workingTreeBytes),
+          workingTreeNormalizedChecksum: sha256Hex(
+            normalizeLineEndings(workingTreeBytes),
+          ),
+        },
+      );
+      console.log(
+        `  ${destRecord.migrationName}: production=CANONICAL source=${classification}`,
+      );
     }
-    console.log(`Migration checksum verification: PASS (${destMigrations.length} migration(s))`);
+    console.log(
+      `Migration checksum verification: PASS (${destMigrations.length} migration(s))`,
+    );
 
     console.log('\n=== Schema parity check (prisma migrate diff) ===');
     assertSchemaParity(sourceUrl, destUrl);
@@ -414,7 +498,10 @@ async function main(): Promise<void> {
       return;
     }
 
-    const { diffs, fixtureHits } = await computeAllDiffs(sourcePrisma, destPrisma);
+    const { diffs, fixtureHits } = await computeAllDiffs(
+      sourcePrisma,
+      destPrisma,
+    );
     // Applies to BOTH modes below, not just --apply — a contaminated dry
     // run report is exactly as unsafe to act on as a contaminated apply.
     assertNoFixtureContamination(fixtureHits);
@@ -428,11 +515,16 @@ async function main(): Promise<void> {
     assertProductionApplyAcknowledged(args.confirmProduction);
 
     const diffByModelName = new Map(diffs.map((d) => [d.model.name, d.diff]));
-    const plannedIdsByDomain = {} as Record<DomainName, Record<string, readonly string[]>>;
+    const plannedIdsByDomain = {} as Record<
+      DomainName,
+      Record<string, readonly string[]>
+    >;
     for (const domain of DOMAIN_ORDER) {
       const plannedIds: Record<string, readonly string[]> = {};
       for (const model of modelsForDomain(domain)) {
-        plannedIds[model.name] = diffByModelName.get(model.name)!.toInsert.map((row) => row.id);
+        plannedIds[model.name] = diffByModelName
+          .get(model.name)!
+          .toInsert.map((row) => row.id);
       }
       plannedIdsByDomain[domain] = plannedIds;
     }
@@ -444,7 +536,9 @@ async function main(): Promise<void> {
       plannedIdsByDomain,
     );
     persistManifest(manifest);
-    console.log(`Run manifest written before any write: bootstrap-logs/${manifest.runId}.json`);
+    console.log(
+      `Run manifest written before any write: bootstrap-logs/${manifest.runId}.json`,
+    );
 
     for (const domain of DOMAIN_ORDER) {
       const domainModels = modelsForDomain(domain);
@@ -479,7 +573,10 @@ async function main(): Promise<void> {
               if (rowsToInsert.length === 0) {
                 continue;
               }
-              await getDelegate(tx as unknown as PrismaClient, model.delegate).createMany({
+              await getDelegate(
+                tx as unknown as PrismaClient,
+                model.delegate,
+              ).createMany({
                 data: rowsToInsert,
               });
             }
@@ -497,7 +594,9 @@ async function main(): Promise<void> {
         );
         manifest = withDomainStatus(manifest, domain, 'committed');
         persistManifest(manifest);
-        console.log(`Domain "${domain}": committed (${toInsertCount} row(s) inserted).`);
+        console.log(
+          `Domain "${domain}": committed (${toInsertCount} row(s) inserted).`,
+        );
       } catch (error) {
         manifest = withDomainStatus(manifest, domain, 'failed');
         persistManifest(manifest);

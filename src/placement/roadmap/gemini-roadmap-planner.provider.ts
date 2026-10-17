@@ -8,7 +8,10 @@ import {
   RoadmapPlanningRequest,
   RoadmapPlanningResult,
 } from './roadmap-planner.provider';
-import { DEFAULT_GEMINI_MODEL_CHAIN, parseGeminiModelList } from '../../shared/gemini-models';
+import {
+  DEFAULT_GEMINI_MODEL_CHAIN,
+  parseGeminiModelList,
+} from '../../shared/gemini-models';
 import {
   fetchGeminiWithFallback,
   isGeminiTimeout,
@@ -63,7 +66,7 @@ const PLANNING_PROMPT = [
   'If section scores are given, order the Grammar/Vocabulary/Listening phases weakest-pillar-first. If no section scores are given, keep those three in the order Grammar, then Vocabulary, then Listening. The Speaking pillar has no section score and is never placement-tested — if a Speaking candidate is given, its phase must always be placed LAST, after every other phase, regardless of section scores.',
   'Return resourceType and resourceId values ONLY from the candidate list given in this request — never invent, rename, or reference any resource, id, pillar, or resourceType that was not explicitly listed.',
   'For each phase, write one short, encouraging reason (under 30 words) explaining why that resource fits this student. For the Speaking phase, describe it as natural conversation practice with an AI partner — never state or imply a score, percentage, or CEFR level for it, since it is never tested.',
-  "Also write one overallReason: 2-3 short sentences (under 40 words total) summarizing why the whole plan is prioritized this way across all phases, written directly to the student (\"bạn\") so it reads like personal advice, not a generic label. Wrap the 1-2 most important keywords or phrases (e.g. the student's weakest skill, or the pillar they should focus on first) in double asterisks for bold emphasis, like **kỹ năng nghe yếu nhất** — plain Markdown bold syntax, nothing else (no headings, lists, or other Markdown).",
+  'Also write one overallReason: 2-3 short sentences (under 40 words total) summarizing why the whole plan is prioritized this way across all phases, written directly to the student ("bạn") so it reads like personal advice, not a generic label. Wrap the 1-2 most important keywords or phrases (e.g. the student\'s weakest skill, or the pillar they should focus on first) in double asterisks for bold emphasis, like **kỹ năng nghe yếu nhất** — plain Markdown bold syntax, nothing else (no headings, lists, or other Markdown).',
   'Do not state or imply any score, percentage, CEFR level, duration, lesson count, deck count, word count, or recording count that was not explicitly given to you in this request.',
   'Answer in Vietnamese.',
 ].join(' ');
@@ -93,7 +96,10 @@ export class GeminiRoadmapPlannerProvider implements RoadmapPlannerProvider {
     // default unless .env overrides it. Falls through to the next model on
     // 429/503 — see gemini-fetch-with-fallback.ts.
     this.models = parseGeminiModelList(
-      this.config.get<string>('GEMINI_ROADMAP_PLANNER_MODEL', DEFAULT_GEMINI_MODEL_CHAIN),
+      this.config.get<string>(
+        'GEMINI_ROADMAP_PLANNER_MODEL',
+        DEFAULT_GEMINI_MODEL_CHAIN,
+      ),
       'GEMINI_ROADMAP_PLANNER_MODEL',
     );
   }
@@ -272,7 +278,9 @@ export const describeRequest = (request: RoadmapPlanningRequest): string => {
  *
  * Exported for tests.
  */
-export const extractPlan = (raw: string): Omit<RoadmapPlanningResult, 'model'> => {
+export const extractPlan = (
+  raw: string,
+): Omit<RoadmapPlanningResult, 'model'> => {
   let parsed: RawPlanShape;
   try {
     parsed = JSON.parse(raw) as RawPlanShape;

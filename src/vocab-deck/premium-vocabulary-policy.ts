@@ -20,7 +20,10 @@ export const isPremiumVocabularyDeck = async (
 
   const isCommonWords = deck.library.name === COMMON_WORDS_LIBRARY_NAME;
   const grammarLibraryId = config.get<string>('PREMIUM_GRAMMAR_LIBRARY_ID');
-  if (!isCommonWords && (!grammarLibraryId || deck.libraryId !== grammarLibraryId)) {
+  if (
+    !isCommonWords &&
+    (!grammarLibraryId || deck.libraryId !== grammarLibraryId)
+  ) {
     return false;
   }
 

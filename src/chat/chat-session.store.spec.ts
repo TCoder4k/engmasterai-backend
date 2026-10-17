@@ -16,7 +16,8 @@ const TEST_REDIS_DB = 13;
 
 const config = (values: Record<string, unknown> = {}): ConfigService =>
   ({
-    get: (key: string, fallback?: unknown) => (key in values ? values[key] : fallback),
+    get: (key: string, fallback?: unknown) =>
+      key in values ? values[key] : fallback,
   }) as unknown as ConfigService;
 
 describe('ChatSessionStore (integration — real Redis, atomic bounded append)', () => {
@@ -33,7 +34,10 @@ describe('ChatSessionStore (integration — real Redis, atomic bounded append)',
 
   beforeEach(async () => {
     await redis.flushdb();
-    store = new ChatSessionStore(redis, config({ CHAT_SESSION_TTL_SECONDS: 1800 }));
+    store = new ChatSessionStore(
+      redis,
+      config({ CHAT_SESSION_TTL_SECONDS: 1800 }),
+    );
   });
 
   afterAll(async () => {
@@ -43,7 +47,10 @@ describe('ChatSessionStore (integration — real Redis, atomic bounded append)',
 
   it('a fresh session has no turns', async () => {
     await expect(store.getTurns('user-1')).resolves.toEqual([]);
-    await expect(store.getSnapshot('user-1')).resolves.toEqual({ turns: [], expiresAt: null });
+    await expect(store.getSnapshot('user-1')).resolves.toEqual({
+      turns: [],
+      expiresAt: null,
+    });
   });
 
   it('appendTurn stores the user+assistant pair, oldest-first', async () => {
@@ -61,7 +68,8 @@ describe('ChatSessionStore (integration — real Redis, atomic bounded append)',
     const snapshot = await store.getSnapshot('user-1');
     expect(snapshot.turns).toHaveLength(2);
     expect(snapshot.expiresAt).not.toBeNull();
-    const secondsOut = (new Date(snapshot.expiresAt as string).getTime() - Date.now()) / 1000;
+    const secondsOut =
+      (new Date(snapshot.expiresAt as string).getTime() - Date.now()) / 1000;
     expect(secondsOut).toBeGreaterThan(1700);
     expect(secondsOut).toBeLessThanOrEqual(1800);
   });
@@ -75,7 +83,10 @@ describe('ChatSessionStore (integration — real Redis, atomic bounded append)',
     expect(turns).toHaveLength(12);
     // Exchange 1 was dropped; exchange 2 is now the oldest surviving pair.
     expect(turns[0]).toMatchObject({ role: 'user', text: 'question 2' });
-    expect(turns[turns.length - 1]).toMatchObject({ role: 'assistant', text: 'answer 7' });
+    expect(turns[turns.length - 1]).toMatchObject({
+      role: 'assistant',
+      text: 'answer 7',
+    });
   });
 
   it('refreshes the TTL on every append (sliding window)', async () => {
@@ -99,7 +110,9 @@ describe('ChatSessionStore (integration — real Redis, atomic bounded append)',
     const turns = await store.getTurns('user-1');
     expect(turns).toHaveLength(4);
     const texts = turns.map((t) => t.text).sort();
-    expect(texts).toEqual(['answer A', 'answer B', 'question A', 'question B'].sort());
+    expect(texts).toEqual(
+      ['answer A', 'answer B', 'question A', 'question B'].sort(),
+    );
   });
 
   it('clear() removes the session, idempotently', async () => {
@@ -134,9 +147,9 @@ describe('ChatSessionStore (integration — real Redis, atomic bounded append)',
       const broken = brokenClient();
       const brokenStore = new ChatSessionStore(broken, config());
 
-      await expect(brokenStore.appendTurn('user-1', 'q', 'a')).rejects.toBeInstanceOf(
-        ServiceUnavailableException,
-      );
+      await expect(
+        brokenStore.appendTurn('user-1', 'q', 'a'),
+      ).rejects.toBeInstanceOf(ServiceUnavailableException);
       broken.disconnect();
     });
 

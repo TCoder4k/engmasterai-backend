@@ -95,7 +95,8 @@ export const alignTranscript = (
 
   for (let i = 1; i <= n; i += 1) {
     for (let j = 1; j <= m; j += 1) {
-      const substitute = cost[i - 1][j - 1] + (reference[i - 1] === spoken[j - 1] ? 0 : 1);
+      const substitute =
+        cost[i - 1][j - 1] + (reference[i - 1] === spoken[j - 1] ? 0 : 1);
       const deleteRef = cost[i - 1][j] + 1;
       const insertSpoken = cost[i][j - 1] + 1;
       cost[i][j] = Math.min(substitute, deleteRef, insertSpoken);
@@ -118,7 +119,8 @@ export const alignTranscript = (
     if (
       i > 0 &&
       j > 0 &&
-      cost[i][j] === cost[i - 1][j - 1] + (reference[i - 1] === spoken[j - 1] ? 0 : 1)
+      cost[i][j] ===
+        cost[i - 1][j - 1] + (reference[i - 1] === spoken[j - 1] ? 0 : 1)
     ) {
       const matched = reference[i - 1] === spoken[j - 1];
       tokens.push({

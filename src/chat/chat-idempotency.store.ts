@@ -1,4 +1,8 @@
-import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { InjectRedis } from '@nestjs-modules/ioredis';
 import Redis from 'ioredis';
 import { chatClaimKey } from './chat-redis.constants';
@@ -43,9 +47,12 @@ export type ChatClaimResult =
   | { outcome: 'done'; reply: string; repliedAt: string }
   | { outcome: 'conflict' };
 
-type ClaimValue = { status: 'pending' } | { status: 'done'; reply: string; repliedAt: string };
+type ClaimValue =
+  | { status: 'pending' }
+  | { status: 'done'; reply: string; repliedAt: string };
 
-const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+const sleep = (ms: number): Promise<void> =>
+  new Promise((resolve) => setTimeout(resolve, ms));
 
 @Injectable()
 export class ChatIdempotencyStore {
@@ -70,7 +77,10 @@ export class ChatIdempotencyStore {
         'NX',
       );
     } catch (error) {
-      this.logger.error('Redis SET NX failed while claiming a chat message', error as Error);
+      this.logger.error(
+        'Redis SET NX failed while claiming a chat message',
+        error as Error,
+      );
       throw new ServiceUnavailableException('Chat is temporarily unavailable');
     }
     if (setResult === 'OK') return { outcome: 'claimed' };
@@ -84,14 +94,23 @@ export class ChatIdempotencyStore {
       try {
         raw = await this.redis.get(key);
       } catch (error) {
-        this.logger.error('Redis GET failed while polling a chat claim', error as Error);
-        throw new ServiceUnavailableException('Chat is temporarily unavailable');
+        this.logger.error(
+          'Redis GET failed while polling a chat claim',
+          error as Error,
+        );
+        throw new ServiceUnavailableException(
+          'Chat is temporarily unavailable',
+        );
       }
       if (!raw) break; // the claim vanished (released/expired) — fall through to conflict
 
       const parsed = JSON.parse(raw) as ClaimValue;
       if (parsed.status === 'done') {
-        return { outcome: 'done', reply: parsed.reply, repliedAt: parsed.repliedAt };
+        return {
+          outcome: 'done',
+          reply: parsed.reply,
+          repliedAt: parsed.repliedAt,
+        };
       }
     }
 
@@ -109,12 +128,19 @@ export class ChatIdempotencyStore {
     try {
       await this.redis.set(
         chatClaimKey(userId, clientMessageId),
-        JSON.stringify({ status: 'done', reply, repliedAt } satisfies ClaimValue),
+        JSON.stringify({
+          status: 'done',
+          reply,
+          repliedAt,
+        } satisfies ClaimValue),
         'EX',
         doneTtlSeconds,
       );
     } catch (error) {
-      this.logger.error('Redis SET failed while committing a chat reply', error as Error);
+      this.logger.error(
+        'Redis SET failed while committing a chat reply',
+        error as Error,
+      );
       throw new ServiceUnavailableException('Chat is temporarily unavailable');
     }
   }

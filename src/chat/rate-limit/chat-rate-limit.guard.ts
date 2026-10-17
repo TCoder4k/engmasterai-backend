@@ -3,7 +3,10 @@ import { Reflector } from '@nestjs/core';
 import type { Request } from 'express';
 import { RateLimiterService } from '../../auth/rate-limit/rate-limiter.service';
 import { RateLimitExceededException } from '../../auth/exceptions/rate-limit-exceeded.exception';
-import { CHAT_RATE_LIMITS_KEY, ChatRateLimitPolicy } from './chat-rate-limits.decorator';
+import {
+  CHAT_RATE_LIMITS_KEY,
+  ChatRateLimitPolicy,
+} from './chat-rate-limits.decorator';
 
 interface RequestWithUser extends Request {
   user?: { userId: string };
@@ -33,7 +36,11 @@ export class ChatRateLimitGuard implements CanActivate {
     if (!userId) return true;
 
     const key = `chat:${policy.kind}:${userId}`;
-    const result = await this.rateLimiter.checkAndIncrement(key, policy.max, policy.windowSeconds);
+    const result = await this.rateLimiter.checkAndIncrement(
+      key,
+      policy.max,
+      policy.windowSeconds,
+    );
     if (!result.allowed) {
       throw new RateLimitExceededException();
     }

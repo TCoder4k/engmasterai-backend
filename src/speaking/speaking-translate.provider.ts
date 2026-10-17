@@ -19,7 +19,11 @@ export const SPEAKING_TRANSLATE_PROVIDER = 'SPEAKING_TRANSLATE_PROVIDER';
  * Deliberately its own union, not shared with SpeakingAiFailureKind or any
  * other provider's.
  */
-export type SpeakingTranslateFailureKind = 'NOT_CONFIGURED' | 'TIMEOUT' | 'UNAVAILABLE' | 'BLOCKED';
+export type SpeakingTranslateFailureKind =
+  | 'NOT_CONFIGURED'
+  | 'TIMEOUT'
+  | 'UNAVAILABLE'
+  | 'BLOCKED';
 
 export class SpeakingTranslateError extends Error {
   constructor(
@@ -42,5 +46,7 @@ export interface SpeakingTranslateResult {
 }
 
 export interface SpeakingTranslateProvider {
-  translate(request: SpeakingTranslateRequest): Promise<SpeakingTranslateResult>;
+  translate(
+    request: SpeakingTranslateRequest,
+  ): Promise<SpeakingTranslateResult>;
 }

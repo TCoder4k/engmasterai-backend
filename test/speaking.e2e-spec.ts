@@ -122,19 +122,28 @@ class FakeSpeakingLiveConnectionProvider implements SpeakingLiveConnectionProvid
     FakeSpeakingLiveConnectionProvider.turnScripts = [];
   }
 
-  async connect(options: SpeakingLiveConnectOptions): Promise<SpeakingLiveConnectionHandle> {
+  async connect(
+    options: SpeakingLiveConnectOptions,
+  ): Promise<SpeakingLiveConnectionHandle> {
     if (FakeSpeakingLiveConnectionProvider.connectError) {
       throw FakeSpeakingLiveConnectionProvider.connectError;
     }
-    FakeSpeakingLiveConnectionProvider.lastSystemInstruction = options.systemInstruction;
-    const connection = new FakeLiveConnection(options.callbacks, FakeSpeakingLiveConnectionProvider);
+    FakeSpeakingLiveConnectionProvider.lastSystemInstruction =
+      options.systemInstruction;
+    const connection = new FakeLiveConnection(
+      options.callbacks,
+      FakeSpeakingLiveConnectionProvider,
+    );
     FakeSpeakingLiveConnectionProvider.connections.push(connection);
     return connection;
   }
 }
 
 /** One scripted transcript+reply pair, delivered as the standard delta+turnComplete shape. */
-const scriptOf = (userText: string, aiText: string): SpeakingLiveServerMessage[] => [
+const scriptOf = (
+  userText: string,
+  aiText: string,
+): SpeakingLiveServerMessage[] => [
   { serverContent: { inputTranscription: { text: userText } } },
   { serverContent: { outputTranscription: { text: aiText } } },
   { serverContent: { turnComplete: true } },
@@ -154,7 +163,10 @@ describe('Speaking Partner (e2e)', () => {
       .post('/auth/register')
       .send({ name: 'Speaking Student', email, password: 'password123' });
     const user = await prisma.user.findUniqueOrThrow({ where: { email } });
-    return { token: (res.body as { accessToken: string }).accessToken, id: user.id };
+    return {
+      token: (res.body as { accessToken: string }).accessToken,
+      id: user.id,
+    };
   };
 
   /** One scenario + one published exercise. Returns raw ids for direct manipulation. */
@@ -164,7 +176,11 @@ describe('Speaking Partner (e2e)', () => {
     const scenario = await request(app.getHttpServer())
       .post('/speaking/manage/scenarios')
       .set('Authorization', `Bearer ${adminToken}`)
-      .send({ name: testFixtureName('Scenario'), nameVi: 'Kịch bản', level: 'A2' })
+      .send({
+        name: testFixtureName('Scenario'),
+        nameVi: 'Kịch bản',
+        level: 'A2',
+      })
       .expect(201);
     const scenarioId = (scenario.body as { id: string }).id;
     await request(app.getHttpServer())
@@ -202,7 +218,8 @@ describe('Speaking Partner (e2e)', () => {
       .post(`/speaking/exercises/${exerciseId}/attempts`)
       .set('Authorization', `Bearer ${token}`);
 
-  const liveUrl = (ticket: string) => `ws://127.0.0.1:${port}/speaking/live?ticket=${ticket}`;
+  const liveUrl = (ticket: string) =>
+    `ws://127.0.0.1:${port}/speaking/live?ticket=${ticket}`;
 
   type LiveEvent = { type: string; [key: string]: unknown };
 
@@ -222,13 +239,25 @@ describe('Speaking Partner (e2e)', () => {
    */
   const liveSocketState = new Map<
     WebSocket,
-    { events: LiveEvent[]; waiters: { predicate: (e: LiveEvent) => boolean; resolve: (e: LiveEvent) => void }[] }
+    {
+      events: LiveEvent[];
+      waiters: {
+        predicate: (e: LiveEvent) => boolean;
+        resolve: (e: LiveEvent) => void;
+      }[];
+    }
   >();
 
   const connectLive = (ticket: string): Promise<WebSocket> =>
     new Promise((resolve, reject) => {
       const ws = new WebSocket(liveUrl(ticket));
-      const state = { events: [] as LiveEvent[], waiters: [] as { predicate: (e: LiveEvent) => boolean; resolve: (e: LiveEvent) => void }[] };
+      const state = {
+        events: [] as LiveEvent[],
+        waiters: [] as {
+          predicate: (e: LiveEvent) => boolean;
+          resolve: (e: LiveEvent) => void;
+        }[],
+      };
       liveSocketState.set(ws, state);
       ws.on('message', (raw: WebSocket.RawData) => {
         const event = JSON.parse(raw.toString()) as LiveEvent;
@@ -244,9 +273,13 @@ describe('Speaking Partner (e2e)', () => {
       ws.once('error', reject);
     });
 
-  const waitForClose = (ws: WebSocket): Promise<{ code: number; reason: string }> =>
+  const waitForClose = (
+    ws: WebSocket,
+  ): Promise<{ code: number; reason: string }> =>
     new Promise((resolve) => {
-      ws.once('close', (code, reasonBuf) => resolve({ code, reason: reasonBuf.toString() }));
+      ws.once('close', (code, reasonBuf) =>
+        resolve({ code, reason: reasonBuf.toString() }),
+      );
     });
 
   const waitForEvent = (
@@ -255,7 +288,10 @@ describe('Speaking Partner (e2e)', () => {
     timeoutMs = 3000,
   ): Promise<LiveEvent> => {
     const state = liveSocketState.get(ws);
-    if (!state) throw new Error('waitForEvent called on a socket never opened via connectLive');
+    if (!state)
+      throw new Error(
+        'waitForEvent called on a socket never opened via connectLive',
+      );
 
     const bufferedIndex = state.events.findIndex(predicate);
     if (bufferedIndex !== -1) {
@@ -281,8 +317,14 @@ describe('Speaking Partner (e2e)', () => {
   };
 
   /** Tap-to-talk: activityStart, one audio chunk, activityEnd — waits for turnFinalized. */
-  const doOneTurn = async (ws: WebSocket, userText: string, aiText: string): Promise<void> => {
-    FakeSpeakingLiveConnectionProvider.turnScripts.push(scriptOf(userText, aiText));
+  const doOneTurn = async (
+    ws: WebSocket,
+    userText: string,
+    aiText: string,
+  ): Promise<void> => {
+    FakeSpeakingLiveConnectionProvider.turnScripts.push(
+      scriptOf(userText, aiText),
+    );
     ws.send(JSON.stringify({ type: 'activityStart' }));
     ws.send(JSON.stringify({ type: 'audioChunk', data: 'ZmFrZS1hdWRpbw==' }));
     ws.send(JSON.stringify({ type: 'activityEnd' }));
@@ -310,10 +352,15 @@ describe('Speaking Partner (e2e)', () => {
     prisma = app.get(PrismaService);
 
     const adminEmail = `speaking-admin-${randomUUID()}@example.test`;
-    await request(app.getHttpServer())
-      .post('/auth/register')
-      .send({ name: 'Speaking Admin', email: adminEmail, password: 'password123' });
-    await prisma.user.update({ where: { email: adminEmail }, data: { role: 'ADMIN' } });
+    await request(app.getHttpServer()).post('/auth/register').send({
+      name: 'Speaking Admin',
+      email: adminEmail,
+      password: 'password123',
+    });
+    await prisma.user.update({
+      where: { email: adminEmail },
+      data: { role: 'ADMIN' },
+    });
     const adminLogin = await request(app.getHttpServer())
       .post('/auth/login')
       .send({ email: adminEmail, password: 'password123', role: 'ADMIN' });
@@ -350,7 +397,9 @@ describe('Speaking Partner (e2e)', () => {
         .get('/speaking/manage/scenarios')
         .set('Authorization', `Bearer ${adminToken}`)
         .expect(200);
-      expect((scenarios.body as { id: string }[]).some((s) => s.id === scenarioId)).toBe(true);
+      expect(
+        (scenarios.body as { id: string }[]).some((s) => s.id === scenarioId),
+      ).toBe(true);
 
       const exercise = await request(app.getHttpServer())
         .get(`/speaking/manage/exercises/${exerciseId}`)
@@ -417,8 +466,14 @@ describe('Speaking Partner (e2e)', () => {
         .set('Authorization', `Bearer ${studentToken}`)
         .expect(404);
 
-      expect(draftRes.body).toMatchObject({ statusCode: 404, error: 'Not Found' });
-      expect(missingRes.body).toMatchObject({ statusCode: 404, error: 'Not Found' });
+      expect(draftRes.body).toMatchObject({
+        statusCode: 404,
+        error: 'Not Found',
+      });
+      expect(missingRes.body).toMatchObject({
+        statusCode: 404,
+        error: 'Not Found',
+      });
     });
 
     it('NEVER returns aiRole, conversationGoal or targetTurns to a student', async () => {
@@ -518,15 +573,24 @@ describe('Speaking Partner (e2e)', () => {
     it('a valid ticket connects, one scripted turn round-trips transcript+audio, and the system instruction carries the exercise persona', async () => {
       const { exerciseId } = await seedPublishedExercise();
       const start = await startAttempt(exerciseId).expect(201);
-      const { attemptId, liveTicket } = start.body as { attemptId: string; liveTicket: string };
+      const { attemptId, liveTicket } = start.body as {
+        attemptId: string;
+        liveTicket: string;
+      };
 
       const ws = await connectLive(liveTicket);
-      await doOneTurn(ws, 'My name is Minh and I love football.', 'Great to meet you, Minh! Do you play often?');
-
-      expect(FakeSpeakingLiveConnectionProvider.lastSystemInstruction).toContain('a friendly English tutor');
-      expect(FakeSpeakingLiveConnectionProvider.lastSystemInstruction).toContain(
-        'getting the student to mention their hometown',
+      await doOneTurn(
+        ws,
+        'My name is Minh and I love football.',
+        'Great to meet you, Minh! Do you play often?',
       );
+
+      expect(
+        FakeSpeakingLiveConnectionProvider.lastSystemInstruction,
+      ).toContain('a friendly English tutor');
+      expect(
+        FakeSpeakingLiveConnectionProvider.lastSystemInstruction,
+      ).toContain('getting the student to mention their hometown');
       ws.close();
 
       const complete = await request(app.getHttpServer())
@@ -539,14 +603,19 @@ describe('Speaking Partner (e2e)', () => {
     it('cues the opening line through Gemini Live on connect, and it never counts as a turn', async () => {
       const { exerciseId } = await seedPublishedExercise();
       const start = await startAttempt(exerciseId).expect(201);
-      const { attemptId, liveTicket } = start.body as { attemptId: string; liveTicket: string };
+      const { attemptId, liveTicket } = start.body as {
+        attemptId: string;
+        liveTicket: string;
+      };
 
       const ws = await connectLive(liveTicket);
       await waitForEvent(ws, (e) => e.type === 'openingReady');
 
       const connection = FakeSpeakingLiveConnectionProvider.connections.at(-1)!;
       expect(connection.sentClientTurns).toHaveLength(1);
-      expect(connection.sentClientTurns[0]).toContain('Hi! Can you tell me a bit about yourself?');
+      expect(connection.sentClientTurns[0]).toContain(
+        'Hi! Can you tell me a bit about yourself?',
+      );
 
       await doOneTurn(ws, 'hi', 'hello');
       ws.close();
@@ -565,7 +634,11 @@ describe('Speaking Partner (e2e)', () => {
 
       const ws = await connectLive(liveTicket);
       FakeSpeakingLiveConnectionProvider.turnScripts.push([
-        { serverContent: { modelTurn: { parts: [{ inlineData: { data: 'QUFBQQ==' } }] } } },
+        {
+          serverContent: {
+            modelTurn: { parts: [{ inlineData: { data: 'QUFBQQ==' } }] },
+          },
+        },
         { serverContent: { inputTranscription: { text: 'Hi' } } },
         { serverContent: { outputTranscription: { text: 'Hello!' } } },
         { serverContent: { turnComplete: true } },
@@ -574,17 +647,25 @@ describe('Speaking Partner (e2e)', () => {
       ws.send(JSON.stringify({ type: 'activityEnd' }));
 
       const audioEvent = await waitForEvent(ws, (e) => e.type === 'audioChunk');
-      expect(audioEvent).toMatchObject({ type: 'audioChunk', data: 'QUFBQQ==' });
+      expect(audioEvent).toMatchObject({
+        type: 'audioChunk',
+        data: 'QUFBQQ==',
+      });
       ws.close();
     });
 
     it('a turn with an empty transcript on either side is not counted', async () => {
       const { exerciseId } = await seedPublishedExercise();
       const start = await startAttempt(exerciseId).expect(201);
-      const { attemptId, liveTicket } = start.body as { attemptId: string; liveTicket: string };
+      const { attemptId, liveTicket } = start.body as {
+        attemptId: string;
+        liveTicket: string;
+      };
 
       const ws = await connectLive(liveTicket);
-      FakeSpeakingLiveConnectionProvider.turnScripts.push([{ serverContent: { turnComplete: true } }]);
+      FakeSpeakingLiveConnectionProvider.turnScripts.push([
+        { serverContent: { turnComplete: true } },
+      ]);
       ws.send(JSON.stringify({ type: 'activityStart' }));
       ws.send(JSON.stringify({ type: 'activityEnd' }));
       await waitForEvent(ws, (e) => e.type === 'turnEmpty');
@@ -600,7 +681,10 @@ describe('Speaking Partner (e2e)', () => {
     it('multiple turns over the SAME connection all count, oldest-first', async () => {
       const { exerciseId } = await seedPublishedExercise();
       const start = await startAttempt(exerciseId).expect(201);
-      const { attemptId, liveTicket } = start.body as { attemptId: string; liveTicket: string };
+      const { attemptId, liveTicket } = start.body as {
+        attemptId: string;
+        liveTicket: string;
+      };
 
       const ws = await connectLive(liveTicket);
       await doOneTurn(ws, 'first turn', 'first reply');
@@ -633,7 +717,10 @@ describe('Speaking Partner (e2e)', () => {
     it("a turn on someone ELSE's ticket cannot happen — a ticket is bound to the userId who started the attempt", async () => {
       const { exerciseId } = await seedPublishedExercise();
       const start = await startAttempt(exerciseId).expect(201);
-      const { attemptId, liveTicket } = start.body as { attemptId: string; liveTicket: string };
+      const { attemptId, liveTicket } = start.body as {
+        attemptId: string;
+        liveTicket: string;
+      };
 
       const ws = await connectLive(liveTicket);
       await doOneTurn(ws, 'hello', 'hi there');
@@ -664,7 +751,10 @@ describe('Speaking Partner (e2e)', () => {
     it('is idempotent — a second call returns the same result and does not error', async () => {
       const { exerciseId } = await seedPublishedExercise();
       const start = await startAttempt(exerciseId).expect(201);
-      const { attemptId, liveTicket } = start.body as { attemptId: string; liveTicket: string };
+      const { attemptId, liveTicket } = start.body as {
+        attemptId: string;
+        liveTicket: string;
+      };
       const ws = await connectLive(liveTicket);
       await doOneTurn(ws, 'hi', 'hello');
       ws.close();
@@ -694,7 +784,9 @@ describe('Speaking Partner (e2e)', () => {
 
       expect(res.body).toEqual({ textVi: 'Bạn có khỏe không?' });
       expect(FakeSpeakingTranslate.callCount).toBe(1);
-      expect(FakeSpeakingTranslate.seenRequests[0]).toEqual({ text: 'How are you doing?' });
+      expect(FakeSpeakingTranslate.seenRequests[0]).toEqual({
+        text: 'How are you doing?',
+      });
     });
 
     it('trims the text before validating and before calling the provider', async () => {
@@ -704,7 +796,9 @@ describe('Speaking Partner (e2e)', () => {
         .send({ text: '  How are you doing?  ' })
         .expect(201);
 
-      expect(FakeSpeakingTranslate.seenRequests[0]).toEqual({ text: 'How are you doing?' });
+      expect(FakeSpeakingTranslate.seenRequests[0]).toEqual({
+        text: 'How are you doing?',
+      });
     });
 
     it('rejects empty or whitespace-only text without calling the provider', async () => {
@@ -733,7 +827,10 @@ describe('Speaking Partner (e2e)', () => {
     });
 
     it('maps a provider failure to 503, never a raw 500', async () => {
-      FakeSpeakingTranslate.failWith = new SpeakingTranslateError('UNAVAILABLE', 'down');
+      FakeSpeakingTranslate.failWith = new SpeakingTranslateError(
+        'UNAVAILABLE',
+        'down',
+      );
 
       await request(app.getHttpServer())
         .post('/speaking/translate')

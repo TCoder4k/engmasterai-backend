@@ -11,11 +11,15 @@ describe('parseCliArgs', () => {
   });
 
   it('recognizes --confirm-production as its own independent flag', () => {
-    expect(parseCliArgs(['--apply', '--confirm-production']).confirmProduction).toBe(true);
+    expect(
+      parseCliArgs(['--apply', '--confirm-production']).confirmProduction,
+    ).toBe(true);
   });
 
   it('does not infer --confirm-production from --confirm-db', () => {
-    expect(parseCliArgs(['--apply', '--confirm-db', 'railway']).confirmProduction).toBe(false);
+    expect(
+      parseCliArgs(['--apply', '--confirm-db', 'railway']).confirmProduction,
+    ).toBe(false);
   });
 
   it('recognizes --apply', () => {
@@ -27,7 +31,9 @@ describe('parseCliArgs', () => {
   });
 
   it('reads the value following --confirm-db', () => {
-    expect(parseCliArgs(['--apply', '--confirm-db', 'railway']).confirmDb).toBe('railway');
+    expect(parseCliArgs(['--apply', '--confirm-db', 'railway']).confirmDb).toBe(
+      'railway',
+    );
   });
 
   it('leaves confirmDb undefined when --confirm-db has no following value', () => {

@@ -2,7 +2,10 @@ import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CommunityChatGateway } from './live/community-chat.gateway';
-import { CommunityMessageDto, ListCommunityMessagesResult } from './community-chat.types';
+import {
+  CommunityMessageDto,
+  ListCommunityMessagesResult,
+} from './community-chat.types';
 import {
   DEFAULT_COMMUNITY_MESSAGES_LIMIT,
   MAX_COMMUNITY_MESSAGES_LIMIT,
@@ -27,7 +30,9 @@ type CommunityMessageRow = Prisma.CommunityMessageGetPayload<{
   include: { user: { select: typeof SAFE_AUTHOR_SELECT } };
 }>;
 
-const toCommunityMessageDto = (row: CommunityMessageRow): CommunityMessageDto => ({
+const toCommunityMessageDto = (
+  row: CommunityMessageRow,
+): CommunityMessageDto => ({
   id: row.id,
   content: row.content,
   clientMessageId: row.clientMessageId,
@@ -69,7 +74,10 @@ export class CommunityChatService {
       this.gateway.broadcast(dto);
       return dto;
     } catch (error) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002'
+      ) {
         const existing = await this.prisma.communityMessage.findUnique({
           where: { userId_clientMessageId: { userId, clientMessageId } },
           include: { user: { select: SAFE_AUTHOR_SELECT } },
@@ -90,8 +98,14 @@ export class CommunityChatService {
    * oldest→newest so the caller can prepend without re-sorting, on both the
    * initial load and every later page.
    */
-  async listMessages(before?: string, limit?: number): Promise<ListCommunityMessagesResult> {
-    const take = Math.min(limit ?? DEFAULT_COMMUNITY_MESSAGES_LIMIT, MAX_COMMUNITY_MESSAGES_LIMIT);
+  async listMessages(
+    before?: string,
+    limit?: number,
+  ): Promise<ListCommunityMessagesResult> {
+    const take = Math.min(
+      limit ?? DEFAULT_COMMUNITY_MESSAGES_LIMIT,
+      MAX_COMMUNITY_MESSAGES_LIMIT,
+    );
 
     let cursorWhere: Prisma.CommunityMessageWhereInput | undefined;
     if (before) {

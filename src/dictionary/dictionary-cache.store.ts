@@ -44,7 +44,10 @@ export class DictionaryCacheStore {
     }
   }
 
-  async set(normalizedWord: string, entry: DictionaryLookupResult): Promise<void> {
+  async set(
+    normalizedWord: string,
+    entry: DictionaryLookupResult,
+  ): Promise<void> {
     const ttlSeconds = this.config.get<number>(
       'DICTIONARY_CACHE_TTL_SECONDS',
       2592000,

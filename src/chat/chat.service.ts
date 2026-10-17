@@ -4,7 +4,11 @@ import { AssessmentLockService } from './assessment-lock.service';
 import { ChatContextResolver } from './chat-context.resolver';
 import { ChatIdempotencyStore } from './chat-idempotency.store';
 import { ChatSessionStore } from './chat-session.store';
-import { ENGY_CHAT_PROVIDER, EngyChatError, EngyChatHistoryTurn } from './engy-chat.provider';
+import {
+  ENGY_CHAT_PROVIDER,
+  EngyChatError,
+  EngyChatHistoryTurn,
+} from './engy-chat.provider';
 import type { EngyChatProvider } from './engy-chat.provider';
 import { ChatReplyInProgressException } from './chat.exceptions';
 import { ChatContextInput } from './chat-context.types';
@@ -13,7 +17,11 @@ import { ChatSessionSnapshot, SendChatMessageResult } from './chat.types';
 /** `prepareSend`'s result — see its own doc comment for why this is split from `streamReply`. */
 export type PreparedChatSend =
   | { kind: 'replay'; result: SendChatMessageResult }
-  | { kind: 'claimed'; contextText: string | null; history: EngyChatHistoryTurn[] };
+  | {
+      kind: 'claimed';
+      contextText: string | null;
+      history: EngyChatHistoryTurn[];
+    };
 
 export type StreamReplyOutcome =
   | { kind: 'done'; result: SendChatMessageResult }
@@ -62,9 +70,20 @@ export class ChatService {
 
     const contextText = await this.contextResolver.resolve(context, userId);
 
-    const claim = await this.idempotency.claim(userId, clientMessageId, this.pendingClaimTtlSeconds());
+    const claim = await this.idempotency.claim(
+      userId,
+      clientMessageId,
+      this.pendingClaimTtlSeconds(),
+    );
     if (claim.outcome === 'done') {
-      return { kind: 'replay', result: { clientMessageId, reply: claim.reply, repliedAt: claim.repliedAt } };
+      return {
+        kind: 'replay',
+        result: {
+          clientMessageId,
+          reply: claim.reply,
+          repliedAt: claim.repliedAt,
+        },
+      };
     }
     if (claim.outcome === 'conflict') {
       throw new ChatReplyInProgressException();
@@ -115,7 +134,10 @@ export class ChatService {
         this.sessionStore.ttlSeconds,
       );
       await this.sessionStore.appendTurn(userId, message, result.reply);
-      return { kind: 'done', result: { clientMessageId, reply: result.reply, repliedAt } };
+      return {
+        kind: 'done',
+        result: { clientMessageId, reply: result.reply, repliedAt },
+      };
     } catch (error) {
       // Release the claim so a legitimate retry with the SAME
       // clientMessageId is not stuck behind its own abandoned claim —
@@ -127,7 +149,9 @@ export class ChatService {
         // provider itself (see gemini-fetch-with-fallback.ts) — a chain can
         // try several models per request, so there is no single "the model"
         // to name here.
-        this.logger.warn(`Engy reply failed (kind=${error.kind}, userId=${userId})`);
+        this.logger.warn(
+          `Engy reply failed (kind=${error.kind}, userId=${userId})`,
+        );
         return { kind: 'error' };
       }
       throw error;

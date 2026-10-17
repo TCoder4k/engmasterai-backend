@@ -1,4 +1,8 @@
-import { combine, SpeakingLiveServerEvent, SpeakingLiveSession } from './speaking-live-session';
+import {
+  combine,
+  SpeakingLiveServerEvent,
+  SpeakingLiveSession,
+} from './speaking-live-session';
 import {
   SpeakingLiveConnectCallbacks,
   SpeakingLiveConnectionHandle,
@@ -36,7 +40,9 @@ class FakeConnectionProvider implements SpeakingLiveConnectionProvider {
   callbacks: SpeakingLiveConnectCallbacks | null = null;
   connectError: Error | null = null;
 
-  async connect(options: SpeakingLiveConnectOptions): Promise<SpeakingLiveConnectionHandle> {
+  async connect(
+    options: SpeakingLiveConnectOptions,
+  ): Promise<SpeakingLiveConnectionHandle> {
     if (this.connectError) throw this.connectError;
     this.callbacks = options.callbacks;
     return this.connection;
@@ -99,7 +105,9 @@ describe('SpeakingLiveSession — opening line', () => {
 
     completeOpening(provider);
     session.handleActivityStart();
-    expect(provider.connection.sendRealtimeInput).toHaveBeenCalledWith({ activityStart: {} });
+    expect(provider.connection.sendRealtimeInput).toHaveBeenCalledWith({
+      activityStart: {},
+    });
   });
 
   it("the opening line's turnComplete emits openingReady, not turnFinalized, and never touches the store", async () => {
@@ -110,16 +118,27 @@ describe('SpeakingLiveSession — opening line', () => {
     // audio + an output transcript while phase === 'opening' — none of it
     // should be persisted or reported as a real turn.
     provider.callbacks!.onmessage({
-      serverContent: { modelTurn: { parts: [{ inlineData: { data: 'GREETING_AUDIO' } }] } },
+      serverContent: {
+        modelTurn: { parts: [{ inlineData: { data: 'GREETING_AUDIO' } }] },
+      },
     });
-    provider.callbacks!.onmessage({ serverContent: { outputTranscription: { text: 'Hi! What can I get you today?' } } });
+    provider.callbacks!.onmessage({
+      serverContent: {
+        outputTranscription: { text: 'Hi! What can I get you today?' },
+      },
+    });
     completeOpening(provider);
 
     expect(store.appendTurn).not.toHaveBeenCalled();
     expect(events).toContainEqual({ type: 'openingReady' });
-    expect(events).not.toContainEqual(expect.objectContaining({ type: 'turnFinalized' }));
+    expect(events).not.toContainEqual(
+      expect.objectContaining({ type: 'turnFinalized' }),
+    );
     // The audio itself still relays live, same as any other turn's audio.
-    expect(events).toContainEqual({ type: 'audioChunk', data: 'GREETING_AUDIO' });
+    expect(events).toContainEqual({
+      type: 'audioChunk',
+      data: 'GREETING_AUDIO',
+    });
   });
 
   it('a duplicate/late turnComplete for the opening line is a no-op', async () => {
@@ -140,16 +159,29 @@ describe('SpeakingLiveSession', () => {
     completeOpening(provider);
 
     session.handleActivityStart();
-    provider.callbacks!.onmessage({ serverContent: { inputTranscription: { text: 'A latte' } } });
-    provider.callbacks!.onmessage({ serverContent: { inputTranscription: { text: ', please.' } } });
+    provider.callbacks!.onmessage({
+      serverContent: { inputTranscription: { text: 'A latte' } },
+    });
+    provider.callbacks!.onmessage({
+      serverContent: { inputTranscription: { text: ', please.' } },
+    });
     session.handleActivityEnd();
-    provider.callbacks!.onmessage({ serverContent: { outputTranscription: { text: 'Great' } } });
-    provider.callbacks!.onmessage({ serverContent: { outputTranscription: { text: ' choice!' } } });
+    provider.callbacks!.onmessage({
+      serverContent: { outputTranscription: { text: 'Great' } },
+    });
+    provider.callbacks!.onmessage({
+      serverContent: { outputTranscription: { text: ' choice!' } },
+    });
     provider.callbacks!.onmessage({ serverContent: { turnComplete: true } });
     await flushMicrotasks(); // finalizeTurn's sendToClient runs after appendTurn's promise resolves
 
     expect(store.appendTurn).toHaveBeenCalledTimes(1);
-    expect(store.appendTurn).toHaveBeenCalledWith('user-1', 'attempt-1', 'A latte, please.', 'Great choice!');
+    expect(store.appendTurn).toHaveBeenCalledWith(
+      'user-1',
+      'attempt-1',
+      'A latte, please.',
+      'Great choice!',
+    );
     expect(events).toContainEqual({
       type: 'turnFinalized',
       userText: 'A latte, please.',
@@ -163,8 +195,12 @@ describe('SpeakingLiveSession', () => {
     completeOpening(provider);
 
     session.handleActivityStart();
-    provider.callbacks!.onmessage({ serverContent: { inputTranscription: { text: 'Hi' } } });
-    provider.callbacks!.onmessage({ serverContent: { outputTranscription: { text: 'Hello!' } } });
+    provider.callbacks!.onmessage({
+      serverContent: { inputTranscription: { text: 'Hi' } },
+    });
+    provider.callbacks!.onmessage({
+      serverContent: { outputTranscription: { text: 'Hello!' } },
+    });
     provider.callbacks!.onmessage({ serverContent: { turnComplete: true } });
     provider.callbacks!.onmessage({ serverContent: { turnComplete: true } }); // duplicate/late
 
@@ -179,10 +215,18 @@ describe('SpeakingLiveSession', () => {
     session.handleActivityStart();
     // Deliberately mixed order — the accumulators are independent, so
     // interleaving between the two fields must not corrupt either one.
-    provider.callbacks!.onmessage({ serverContent: { inputTranscription: { text: 'Two' } } });
-    provider.callbacks!.onmessage({ serverContent: { outputTranscription: { text: 'Sure' } } });
-    provider.callbacks!.onmessage({ serverContent: { inputTranscription: { text: ' coffees' } } });
-    provider.callbacks!.onmessage({ serverContent: { outputTranscription: { text: ', coming up!' } } });
+    provider.callbacks!.onmessage({
+      serverContent: { inputTranscription: { text: 'Two' } },
+    });
+    provider.callbacks!.onmessage({
+      serverContent: { outputTranscription: { text: 'Sure' } },
+    });
+    provider.callbacks!.onmessage({
+      serverContent: { inputTranscription: { text: ' coffees' } },
+    });
+    provider.callbacks!.onmessage({
+      serverContent: { outputTranscription: { text: ', coming up!' } },
+    });
     provider.callbacks!.onmessage({ serverContent: { turnComplete: true } });
 
     expect(store.appendTurn).toHaveBeenCalledWith(
@@ -212,7 +256,9 @@ describe('SpeakingLiveSession', () => {
     completeOpening(provider);
 
     session.handleActivityStart();
-    provider.callbacks!.onmessage({ serverContent: { inputTranscription: { text: 'Hello?' } } });
+    provider.callbacks!.onmessage({
+      serverContent: { inputTranscription: { text: 'Hello?' } },
+    });
     provider.callbacks!.onmessage({ serverContent: { turnComplete: true } }); // no output transcription arrived
 
     expect(store.appendTurn).not.toHaveBeenCalled();
@@ -225,7 +271,9 @@ describe('SpeakingLiveSession', () => {
     completeOpening(provider);
 
     session.handleActivityStart();
-    provider.callbacks!.onmessage({ serverContent: { inputTranscription: { text: 'partial' } } });
+    provider.callbacks!.onmessage({
+      serverContent: { inputTranscription: { text: 'partial' } },
+    });
     provider.callbacks!.onerror(new Error('transport dropped'));
 
     // A late-arriving turnComplete after the fatal error must also be inert.
@@ -233,7 +281,10 @@ describe('SpeakingLiveSession', () => {
 
     expect(store.appendTurn).not.toHaveBeenCalled();
     expect(events).toContainEqual({ type: 'turnError' });
-    expect(events).toContainEqual({ type: 'sessionClosed', reason: 'error: transport dropped' });
+    expect(events).toContainEqual({
+      type: 'sessionClosed',
+      reason: 'error: transport dropped',
+    });
   });
 
   it('a Gemini error with NO in-flight turn does not emit turnError, only sessionClosed', async () => {
@@ -253,7 +304,9 @@ describe('SpeakingLiveSession', () => {
     completeOpening(provider);
 
     session.handleActivityStart();
-    provider.callbacks!.onmessage({ serverContent: { inputTranscription: { text: 'unfinished' } } });
+    provider.callbacks!.onmessage({
+      serverContent: { inputTranscription: { text: 'unfinished' } },
+    });
     session.close();
 
     // A stray late message must also be inert once closed.
@@ -269,18 +322,38 @@ describe('SpeakingLiveSession', () => {
     completeOpening(provider);
 
     session.handleActivityStart();
-    provider.callbacks!.onmessage({ serverContent: { inputTranscription: { text: 'One' } } });
-    provider.callbacks!.onmessage({ serverContent: { outputTranscription: { text: 'First reply' } } });
+    provider.callbacks!.onmessage({
+      serverContent: { inputTranscription: { text: 'One' } },
+    });
+    provider.callbacks!.onmessage({
+      serverContent: { outputTranscription: { text: 'First reply' } },
+    });
     provider.callbacks!.onmessage({ serverContent: { turnComplete: true } });
 
     session.handleActivityStart(); // accumulators reset for the second turn
-    provider.callbacks!.onmessage({ serverContent: { inputTranscription: { text: 'Two' } } });
-    provider.callbacks!.onmessage({ serverContent: { outputTranscription: { text: 'Second reply' } } });
+    provider.callbacks!.onmessage({
+      serverContent: { inputTranscription: { text: 'Two' } },
+    });
+    provider.callbacks!.onmessage({
+      serverContent: { outputTranscription: { text: 'Second reply' } },
+    });
     provider.callbacks!.onmessage({ serverContent: { turnComplete: true } });
 
     expect(store.appendTurn).toHaveBeenCalledTimes(2);
-    expect(store.appendTurn).toHaveBeenNthCalledWith(1, 'user-1', 'attempt-1', 'One', 'First reply');
-    expect(store.appendTurn).toHaveBeenNthCalledWith(2, 'user-1', 'attempt-1', 'Two', 'Second reply');
+    expect(store.appendTurn).toHaveBeenNthCalledWith(
+      1,
+      'user-1',
+      'attempt-1',
+      'One',
+      'First reply',
+    );
+    expect(store.appendTurn).toHaveBeenNthCalledWith(
+      2,
+      'user-1',
+      'attempt-1',
+      'Two',
+      'Second reply',
+    );
   });
 
   it('relays each audio chunk to the client as it arrives, independent of transcript finalization', async () => {
@@ -290,7 +363,9 @@ describe('SpeakingLiveSession', () => {
 
     session.handleActivityStart();
     provider.callbacks!.onmessage({
-      serverContent: { modelTurn: { parts: [{ inlineData: { data: 'AAAA' } }] } },
+      serverContent: {
+        modelTurn: { parts: [{ inlineData: { data: 'AAAA' } }] },
+      },
     });
 
     expect(events).toContainEqual({ type: 'audioChunk', data: 'AAAA' });
@@ -315,11 +390,15 @@ describe('SpeakingLiveSession', () => {
     session.handleAudioChunk('base64chunk');
     session.handleActivityEnd();
 
-    expect(provider.connection.sendRealtimeInput).toHaveBeenNthCalledWith(1, { activityStart: {} });
+    expect(provider.connection.sendRealtimeInput).toHaveBeenNthCalledWith(1, {
+      activityStart: {},
+    });
     expect(provider.connection.sendRealtimeInput).toHaveBeenNthCalledWith(2, {
       audio: { data: 'base64chunk', mimeType: 'audio/pcm;rate=16000' },
     });
-    expect(provider.connection.sendRealtimeInput).toHaveBeenNthCalledWith(3, { activityEnd: {} });
+    expect(provider.connection.sendRealtimeInput).toHaveBeenNthCalledWith(3, {
+      activityEnd: {},
+    });
   });
 
   it('ignores an audio chunk sent outside an active turn (defensive — should not happen given the mic gating)', async () => {

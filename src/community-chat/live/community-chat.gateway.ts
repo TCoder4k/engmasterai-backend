@@ -34,7 +34,9 @@ const RATE_LIMIT_MAX = 20;
 const RATE_LIMIT_WINDOW_SECONDS = 600;
 
 @WebSocketGateway({ path: '/community/live' })
-export class CommunityChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
+export class CommunityChatGateway
+  implements OnGatewayConnection, OnGatewayDisconnect
+{
   private readonly logger = new Logger(CommunityChatGateway.name);
   // A plain Set, not a Map: unlike SpeakingLiveGateway, there is no
   // per-connection state to store — a socket is either part of the
@@ -46,7 +48,10 @@ export class CommunityChatGateway implements OnGatewayConnection, OnGatewayDisco
     private readonly rateLimiter: RateLimiterService,
   ) {}
 
-  async handleConnection(client: WebSocket, request: IncomingMessage): Promise<void> {
+  async handleConnection(
+    client: WebSocket,
+    request: IncomingMessage,
+  ): Promise<void> {
     try {
       const ticket = this.extractTicket(request);
       if (!ticket) {
@@ -73,7 +78,10 @@ export class CommunityChatGateway implements OnGatewayConnection, OnGatewayDisco
       this.clients.add(client);
       this.sendToClient(client, { type: 'connected' });
     } catch (error) {
-      this.logger.warn('Failed to establish a Community Live connection', error as Error);
+      this.logger.warn(
+        'Failed to establish a Community Live connection',
+        error as Error,
+      );
       client.close(4500, 'Could not start Community Live');
     }
   }

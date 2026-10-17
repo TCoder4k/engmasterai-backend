@@ -13,7 +13,7 @@ export const isUserPro = async (
   userId: string,
 ): Promise<boolean> => {
   const subscription = await prisma.subscription.findUnique({
-    where: { userId },
+    where: { userId_plan: { userId, plan: 'PRO_MONTHLY' } },
     select: { expiresAt: true },
   });
   return subscription !== null && subscription.expiresAt > new Date();
@@ -24,13 +24,10 @@ export const isUserPremium = async (
   userId: string,
 ): Promise<boolean> => {
   const subscription = await prisma.subscription.findUnique({
-    where: { userId },
-    select: { plan: true, expiresAt: true },
+    where: { userId_plan: { userId, plan: 'PREMIUM_MONTHLY' } },
+    select: { expiresAt: true },
   });
-  return (
-    subscription?.plan === 'PREMIUM_MONTHLY' &&
-    subscription.expiresAt > new Date()
-  );
+  return subscription !== null && subscription.expiresAt > new Date();
 };
 
 /**
@@ -45,11 +42,17 @@ export const getProStatusAndTimeZone = async (
 ): Promise<{ isPro: boolean; timeZone: string }> => {
   const user = await prisma.user.findUniqueOrThrow({
     where: { id: userId },
-    select: { timezone: true, subscription: { select: { expiresAt: true } } },
+    select: {
+      timezone: true,
+      subscriptions: { select: { plan: true, expiresAt: true } },
+    },
   });
+  const now = new Date();
+  const isPro = user.subscriptions.some(
+    (s) => s.plan === 'PRO_MONTHLY' && s.expiresAt > now,
+  );
   return {
-    isPro:
-      user.subscription !== null && user.subscription.expiresAt > new Date(),
+    isPro,
     timeZone: user.timezone ?? 'UTC',
   };
 };

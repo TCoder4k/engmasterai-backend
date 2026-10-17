@@ -25,7 +25,10 @@ export class LessonController {
   // Authenticated users — a single published lesson of an accessible course.
   @UseGuards(JwtAuthGuard)
   @Get(':id')
-  async findOnePublished(@Param('id', ParseUUIDPipe) id: string, @Req() req: AuthenticatedRequest) {
+  async findOnePublished(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: AuthenticatedRequest,
+  ) {
     return this.lessonService.findOnePublished(id, req.user);
   }
 

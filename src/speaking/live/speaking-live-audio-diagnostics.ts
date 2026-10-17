@@ -35,7 +35,9 @@ const BYTES_PER_SAMPLE = 2; // Int16, little-endian
 const CLIPPED_THRESHOLD = 32760; // near the Int16 ceiling (32767) — counts near-full-scale samples
 
 export const isAudioDebugDumpEnabled = (): boolean => {
-  const raw = (process.env.SPEAKING_LIVE_AUDIO_DEBUG_DUMP ?? '').trim().toLowerCase();
+  const raw = (process.env.SPEAKING_LIVE_AUDIO_DEBUG_DUMP ?? '')
+    .trim()
+    .toLowerCase();
   return raw === 'true' || raw === '1';
 };
 
@@ -67,7 +69,10 @@ export interface AudioDiagnosticsStats {
   wavPath: string | null;
 }
 
-const computeStats = (pcm: Buffer, chunkCount: number): Omit<AudioDiagnosticsStats, 'wavPath'> => {
+const computeStats = (
+  pcm: Buffer,
+  chunkCount: number,
+): Omit<AudioDiagnosticsStats, 'wavPath'> => {
   const sampleCount = Math.floor(pcm.length / BYTES_PER_SAMPLE);
   let sumSquares = 0;
   let peak = 0;
@@ -129,10 +134,19 @@ export class SpeakingLiveAudioDiagnostics {
     try {
       const dir = path.join(os.tmpdir(), 'engmasterai-speaking-live-debug');
       await fsp.mkdir(dir, { recursive: true });
-      wavPath = path.join(dir, `${label}-${Date.now()}-${randomUUID().slice(0, 8)}.wav`);
-      await fsp.writeFile(wavPath, Buffer.concat([buildWavHeader(pcm.length), pcm]));
+      wavPath = path.join(
+        dir,
+        `${label}-${Date.now()}-${randomUUID().slice(0, 8)}.wav`,
+      );
+      await fsp.writeFile(
+        wavPath,
+        Buffer.concat([buildWavHeader(pcm.length), pcm]),
+      );
     } catch (error) {
-      SpeakingLiveAudioDiagnostics.logger.warn('Failed to write Speaking Live debug WAV', error as Error);
+      SpeakingLiveAudioDiagnostics.logger.warn(
+        'Failed to write Speaking Live debug WAV',
+        error as Error,
+      );
       wavPath = null;
     }
 

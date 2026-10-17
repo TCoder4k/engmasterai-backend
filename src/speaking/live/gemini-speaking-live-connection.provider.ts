@@ -53,7 +53,9 @@ const parseLanguageCodes = (raw: string): string[] =>
 
 @Injectable()
 export class GeminiSpeakingLiveConnectionProvider implements SpeakingLiveConnectionProvider {
-  private readonly logger = new Logger(GeminiSpeakingLiveConnectionProvider.name);
+  private readonly logger = new Logger(
+    GeminiSpeakingLiveConnectionProvider.name,
+  );
 
   constructor(private readonly config: ConfigService) {}
 
@@ -68,21 +70,31 @@ export class GeminiSpeakingLiveConnectionProvider implements SpeakingLiveConnect
   /** Empty ("") means no hint — Gemini's own automatic language detection, the original behaviour. */
   get inputLanguageCodes(): string[] {
     return parseLanguageCodes(
-      this.config.get<string>('GEMINI_LIVE_INPUT_LANGUAGE_CODES', DEFAULT_INPUT_LANGUAGE_CODES),
+      this.config.get<string>(
+        'GEMINI_LIVE_INPUT_LANGUAGE_CODES',
+        DEFAULT_INPUT_LANGUAGE_CODES,
+      ),
     );
   }
 
   get outputLanguageCodes(): string[] {
     return parseLanguageCodes(
-      this.config.get<string>('GEMINI_LIVE_OUTPUT_LANGUAGE_CODES', DEFAULT_OUTPUT_LANGUAGE_CODES),
+      this.config.get<string>(
+        'GEMINI_LIVE_OUTPUT_LANGUAGE_CODES',
+        DEFAULT_OUTPUT_LANGUAGE_CODES,
+      ),
     );
   }
 
-  private buildTranscriptionConfig(languageCodes: string[]): AudioTranscriptionConfig {
+  private buildTranscriptionConfig(
+    languageCodes: string[],
+  ): AudioTranscriptionConfig {
     return languageCodes.length > 0 ? { languageCodes } : {};
   }
 
-  async connect(options: SpeakingLiveConnectOptions): Promise<SpeakingLiveConnectionHandle> {
+  async connect(
+    options: SpeakingLiveConnectOptions,
+  ): Promise<SpeakingLiveConnectionHandle> {
     const apiKey = this.config.get<string>('GEMINI_API_KEY');
     if (!apiKey) {
       throw new SpeakingLiveError(
@@ -101,44 +113,67 @@ export class GeminiSpeakingLiveConnectionProvider implements SpeakingLiveConnect
         callbacks: {
           onopen: () => {},
           onmessage: (message) =>
-            options.callbacks.onmessage(message as unknown as SpeakingLiveServerMessage),
+            options.callbacks.onmessage(
+              message as unknown as SpeakingLiveServerMessage,
+            ),
           // Conversation content is NEVER logged, here or anywhere — only
           // the shape of the failure is, same discipline as every other
           // Gemini provider in this module.
           onerror: (event) => {
             this.logger.warn(`Speaking Live connection error (model=${model})`);
             options.callbacks.onerror(
-              event instanceof Error ? event : new Error('Speaking Live connection error'),
+              event instanceof Error
+                ? event
+                : new Error('Speaking Live connection error'),
             );
           },
           onclose: (event) => {
-            this.logger.log(`Speaking Live connection closed (model=${model}, reason=${event?.reason ?? 'n/a'})`);
+            this.logger.log(
+              `Speaking Live connection closed (model=${model}, reason=${event?.reason ?? 'n/a'})`,
+            );
             options.callbacks.onclose();
           },
         },
         config: {
           responseModalities: [Modality.AUDIO],
-          speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: this.voiceName } } },
+          speechConfig: {
+            voiceConfig: { prebuiltVoiceConfig: { voiceName: this.voiceName } },
+          },
           systemInstruction: options.systemInstruction,
-          inputAudioTranscription: this.buildTranscriptionConfig(this.inputLanguageCodes),
-          outputAudioTranscription: this.buildTranscriptionConfig(this.outputLanguageCodes),
+          inputAudioTranscription: this.buildTranscriptionConfig(
+            this.inputLanguageCodes,
+          ),
+          outputAudioTranscription: this.buildTranscriptionConfig(
+            this.outputLanguageCodes,
+          ),
           // Client sends explicit activityStart/audio/activityEnd instead of
           // relying on server-side voice-activity-detection — this is what
           // preserves the existing tap-to-talk gesture over a streaming
           // connection instead of an "always listening, AI can interrupt
           // you" phone call.
-          realtimeInputConfig: { automaticActivityDetection: { disabled: true } },
+          realtimeInputConfig: {
+            automaticActivityDetection: { disabled: true },
+          },
         },
       });
     } catch (caught) {
-      this.logger.warn(`Failed to open a Speaking Live connection (model=${model})`, caught as Error);
-      throw new SpeakingLiveError('CONNECT_FAILED', 'Could not start Speaking Live');
+      this.logger.warn(
+        `Failed to open a Speaking Live connection (model=${model})`,
+        caught as Error,
+      );
+      throw new SpeakingLiveError(
+        'CONNECT_FAILED',
+        'Could not start Speaking Live',
+      );
     }
 
     return {
       sendRealtimeInput: (input) => session.sendRealtimeInput(input),
       sendClientTurn: (text) =>
-        session.sendClientContent({ turns: [{ role: 'user', parts: [{ text }] }], turnComplete: true }),
+        session.sendClientContent({
+          turns: [{ role: 'user', parts: [{ text }] }],
+          turnComplete: true,
+        }),
       close: () => session.close(),
     };
   }

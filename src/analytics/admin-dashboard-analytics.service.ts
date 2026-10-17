@@ -81,7 +81,10 @@ interface PassedGroup {
 // PrismaService. See admin-dashboard-analytics.service.spec.ts.
 
 /** previous <= 0 → null, never Infinity/NaN from a zero or negative baseline. */
-export function computeChangePercent(current: number, previous: number): number | null {
+export function computeChangePercent(
+  current: number,
+  previous: number,
+): number | null {
   if (previous <= 0) return null;
   return Math.round(((current - previous) / previous) * 1000) / 10;
 }
@@ -151,12 +154,18 @@ export class AdminDashboardAnalyticsService {
       this.computeDailyCompletedActivities(days7, current7dStart, current7dEnd),
       this.prisma.lessonTaskAttempt.groupBy({
         by: ['passed'],
-        where: { submittedAt: { gte: current7dStart, lt: current7dEnd }, task: publishedTask },
+        where: {
+          submittedAt: { gte: current7dStart, lt: current7dEnd },
+          task: publishedTask,
+        },
         _count: true,
       }),
       this.prisma.lessonTaskAttempt.groupBy({
         by: ['passed'],
-        where: { submittedAt: { gte: previous7dStart, lt: previous7dEnd }, task: publishedTask },
+        where: {
+          submittedAt: { gte: previous7dStart, lt: previous7dEnd },
+          task: publishedTask,
+        },
         _count: true,
       }),
       this.prisma.speakingAttempt.aggregate({
@@ -202,7 +211,10 @@ export class AdminDashboardAnalyticsService {
           ? computeChangePercent(passRatePercent, passRatePreviousPercent)
           : null,
       aiSessions7d: currentAi._count,
-      aiSessions7dChangePercent: computeChangePercent(currentAi._count, previousAi._count),
+      aiSessions7dChangePercent: computeChangePercent(
+        currentAi._count,
+        previousAi._count,
+      ),
       aiTurns7d: currentAi._sum.turnCount ?? 0,
       aiTurns7dChangePercent: computeChangePercent(
         currentAi._sum.turnCount ?? 0,
@@ -270,7 +282,10 @@ export class AdminDashboardAnalyticsService {
         select: { completedAt: true },
       }),
       this.prisma.lessonStepProgress.findMany({
-        where: { completedAt: { gte: start, lt: end }, lesson: publishedLesson },
+        where: {
+          completedAt: { gte: start, lt: end },
+          lesson: publishedLesson,
+        },
         select: { completedAt: true },
       }),
     ]);
@@ -294,25 +309,32 @@ export class AdminDashboardAnalyticsService {
   // AdminSkillBreakdownDto's own comment on why this matters (mixing minutes
   // for two skills with a raw attempt-count for the third would look real
   // while silently misrepresenting proportion).
-  private async getSkillBreakdown(start: Date, end: Date): Promise<AdminSkillBreakdownDto[]> {
-    const [listeningSessions, vocabGrammarSessions, speakingSessionCount] = await Promise.all([
-      this.prisma.studyTimeEvent.findMany({
-        where: { activityType: StudyActivityType.LISTENING, occurredAt: { gte: start, lt: end } },
-        select: { clientSessionId: true },
-        distinct: ['clientSessionId'],
-      }),
-      this.prisma.studyTimeEvent.findMany({
-        where: {
-          activityType: { in: VOCAB_GRAMMAR_ACTIVITY_TYPES },
-          occurredAt: { gte: start, lt: end },
-        },
-        select: { clientSessionId: true },
-        distinct: ['clientSessionId'],
-      }),
-      this.prisma.speakingAttempt.count({
-        where: { completedAt: { gte: start, lt: end } },
-      }),
-    ]);
+  private async getSkillBreakdown(
+    start: Date,
+    end: Date,
+  ): Promise<AdminSkillBreakdownDto[]> {
+    const [listeningSessions, vocabGrammarSessions, speakingSessionCount] =
+      await Promise.all([
+        this.prisma.studyTimeEvent.findMany({
+          where: {
+            activityType: StudyActivityType.LISTENING,
+            occurredAt: { gte: start, lt: end },
+          },
+          select: { clientSessionId: true },
+          distinct: ['clientSessionId'],
+        }),
+        this.prisma.studyTimeEvent.findMany({
+          where: {
+            activityType: { in: VOCAB_GRAMMAR_ACTIVITY_TYPES },
+            occurredAt: { gte: start, lt: end },
+          },
+          select: { clientSessionId: true },
+          distinct: ['clientSessionId'],
+        }),
+        this.prisma.speakingAttempt.count({
+          where: { completedAt: { gte: start, lt: end } },
+        }),
+      ]);
 
     return [
       { type: 'LISTENING', sessionCount: listeningSessions.length },
@@ -342,7 +364,10 @@ export class AdminDashboardAnalyticsService {
         where: { role: UserRole.USER, createdAt: { lt: window30dStart } },
       }),
       this.prisma.user.findMany({
-        where: { role: UserRole.USER, createdAt: { gte: window30dStart, lt: now } },
+        where: {
+          role: UserRole.USER,
+          createdAt: { gte: window30dStart, lt: now },
+        },
         select: { createdAt: true },
         orderBy: { createdAt: 'asc' },
       }),

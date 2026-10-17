@@ -495,14 +495,18 @@ export class LearningService {
         // report a streak one day short and deliver the 3-day badge on day four.
         const justMastered =
           before.state !== 'MASTERED' && result.state === 'MASTERED';
-        const gamification = await this.gamification.recordProgress(tx, userId, {
-          at: now,
-          awards: [
-            wordReviewedAward(dto.clientReviewId),
-            ...(justMastered ? [wordMasteredAward(wordId)] : []),
-          ],
-          countsAsActivity: true,
-        });
+        const gamification = await this.gamification.recordProgress(
+          tx,
+          userId,
+          {
+            at: now,
+            awards: [
+              wordReviewedAward(dto.clientReviewId),
+              ...(justMastered ? [wordMasteredAward(wordId)] : []),
+            ],
+            countsAsActivity: true,
+          },
+        );
 
         return this.snapshotResponse(log, gamification);
       });
@@ -626,14 +630,15 @@ export class LearningService {
   // never a live re-read of UserWordProgress. This is precisely what makes
   // an idempotent replay return the *original* recorded outcome regardless
   // of anything that has happened to the word since (§10).
-  private snapshotResponse(log: {
-    newState: LearningState;
-    newIntervalDays: number;
-    newDueAt: Date;
-    newEaseFactor: number;
-    newRepetitions: number;
-    newLapses: number;
-    resultVersion: number;
+  private snapshotResponse(
+    log: {
+      newState: LearningState;
+      newIntervalDays: number;
+      newDueAt: Date;
+      newEaseFactor: number;
+      newRepetitions: number;
+      newLapses: number;
+      resultVersion: number;
     },
     // Sprint 10 — passed in rather than derived here: this helper is called
     // from both the replay path (nothing earned) and the fresh-review path
