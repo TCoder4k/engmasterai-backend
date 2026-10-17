@@ -4,6 +4,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CourseProgressService } from '../lesson/progress/course-progress.service';
 import { DashboardAnalyticsService } from '../analytics/dashboard-analytics.service';
 import { RefreshTokenService } from '../auth/refresh-token.service';
+import { SubscriptionGrantService } from '../payment/subscription-grant.service';
 import { publishedTask } from '../shared/published-scope';
 import { normalizeRoadmapItem } from '../placement/roadmap-item-compat';
 import {
@@ -33,7 +34,48 @@ export class AdminStudentOverviewService {
     private readonly courseProgress: CourseProgressService,
     private readonly dashboardAnalytics: DashboardAnalyticsService,
     private readonly refreshTokenService: RefreshTokenService,
+    private readonly subscriptionGrant: SubscriptionGrantService,
   ) {}
+
+  async grantSubscription(
+    userId: string,
+    plan: 'PRO' | 'HOC_TAP',
+    durationDays: number,
+  ): Promise<{ userId: string; plan: string; durationDays: number }> {
+    await this.assertUserExists(userId);
+    await this.subscriptionGrant.grantSubscription(
+      this.prisma,
+      userId,
+      plan,
+      durationDays,
+    );
+    return { userId, plan, durationDays };
+  }
+
+  async renewSubscription(
+    userId: string,
+    plan: 'PRO' | 'HOC_TAP',
+    durationDays: number,
+  ): Promise<{ userId: string; plan: string; durationDays: number }> {
+    return this.grantSubscription(userId, plan, durationDays);
+  }
+
+  async revokeSubscription(
+    userId: string,
+    plan: 'PRO' | 'HOC_TAP',
+  ): Promise<{ userId: string; plan: string; revoked: boolean }> {
+    await this.assertUserExists(userId);
+    await this.subscriptionGrant.revokeSubscription(this.prisma, userId, plan);
+    return { userId, plan, revoked: true };
+  }
+
+  private async assertUserExists(userId: string): Promise<void> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true },
+    });
+    if (!user) throw new NotFoundException('Student not found');
+  }
 
   async listOverview(
     page?: number,

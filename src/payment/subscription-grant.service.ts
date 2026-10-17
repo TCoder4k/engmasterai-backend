@@ -26,6 +26,39 @@ type PrismaLike = PrismaService | Prisma.TransactionClient;
  */
 @Injectable()
 export class SubscriptionGrantService {
+  async revokeSubscription(
+    prisma: PrismaLike,
+    userId: string,
+    plan: 'PRO' | 'HOC_TAP',
+  ): Promise<void> {
+    const subscriptionPlan =
+      plan === 'HOC_TAP' ? 'PREMIUM_MONTHLY' : 'PRO_MONTHLY';
+    await prisma.$executeRaw`
+      UPDATE subscriptions
+      SET "expiresAt" = NOW(), "updatedAt" = NOW()
+      WHERE "userId" = ${userId}
+        AND plan = ${subscriptionPlan}::"SubscriptionPlan"
+    `;
+  }
+
+  async grantSubscription(
+    prisma: PrismaLike,
+    userId: string,
+    plan: 'PRO' | 'HOC_TAP',
+    days: number,
+  ): Promise<void> {
+    const subscriptionPlan =
+      plan === 'HOC_TAP' ? 'PREMIUM_MONTHLY' : 'PRO_MONTHLY';
+    const id = randomUUID();
+    await prisma.$executeRaw`
+      INSERT INTO subscriptions (id, "userId", plan, "startsAt", "expiresAt", "lastPaymentId", "createdAt", "updatedAt")
+      VALUES (${id}, ${userId}, ${subscriptionPlan}::"SubscriptionPlan", NOW(), NOW() + (${days} * INTERVAL '1 day'), NULL, NOW(), NOW())
+      ON CONFLICT ("userId", plan) DO UPDATE SET
+        "expiresAt" = GREATEST(subscriptions."expiresAt", NOW()) + (${days} * INTERVAL '1 day'),
+        "updatedAt" = NOW()
+    `;
+  }
+
   async grantBonusDays(
     prisma: PrismaLike,
     userId: string,

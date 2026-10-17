@@ -6,6 +6,7 @@ import { PrismaModule } from '../prisma/prisma.module';
 import { SharedModule } from '../shared/shared.module';
 import { LessonModule } from '../lesson/lesson.module';
 import { AnalyticsModule } from '../analytics/analytics.module';
+import { PaymentModule } from '../payment/payment.module';
 
 @Module({
   // LessonModule (CourseProgressService) and AnalyticsModule
@@ -14,7 +15,13 @@ import { AnalyticsModule } from '../analytics/analytics.module';
   // dependency. AuthModule's RefreshTokenService needs no import here: per
   // auth.module.ts's own convention, AuthModule is @Global() and every
   // exported provider resolves from any module's DI scope without it.
-  imports: [PrismaModule, SharedModule, LessonModule, AnalyticsModule],
+  imports: [
+    PrismaModule,
+    SharedModule,
+    LessonModule,
+    AnalyticsModule,
+    PaymentModule,
+  ],
   controllers: [UserController],
   providers: [UserService, AdminStudentOverviewService],
   exports: [UserService],

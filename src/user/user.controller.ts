@@ -28,6 +28,8 @@ import {
   ChangePasswordDto,
   QueryUserDto,
   UpdateUserStatusDto,
+  ManageSubscriptionDto,
+  RevokeSubscriptionDto,
 } from './dto';
 import { JwtAuthGuard, RolesGuard } from '../auth/guards';
 import { Roles } from '../auth/decorators';
@@ -94,6 +96,41 @@ export class UserController {
   @Roles(UserRole.ADMIN)
   async getStudentOverview(@Param('id', ParseUUIDPipe) id: string) {
     return this.adminStudentOverview.getDetail(id);
+  }
+
+  @Post(':id/subscriptions/grant')
+  @Roles(UserRole.ADMIN)
+  async grantSubscription(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: ManageSubscriptionDto,
+  ) {
+    return this.adminStudentOverview.grantSubscription(
+      id,
+      dto.plan,
+      dto.durationDays,
+    );
+  }
+
+  @Post(':id/subscriptions/renew')
+  @Roles(UserRole.ADMIN)
+  async renewSubscription(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: ManageSubscriptionDto,
+  ) {
+    return this.adminStudentOverview.renewSubscription(
+      id,
+      dto.plan,
+      dto.durationDays,
+    );
+  }
+
+  @Post(':id/subscriptions/revoke')
+  @Roles(UserRole.ADMIN)
+  async revokeSubscription(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: RevokeSubscriptionDto,
+  ) {
+    return this.adminStudentOverview.revokeSubscription(id, dto.plan);
   }
 
   // Block / unblock — Sprint 15. An admin may not block their own currently
