@@ -40,7 +40,7 @@ const SAFE_USER_SELECT = {
   // column (see its schema comment): "is this user PRO" is a pure function
   // of expiresAt, derived fresh below, never a persisted flag that could go
   // stale. One relational select, not a second query.
-  subscriptions: { select: { plan: true, expiresAt: true } },
+  subscriptions: { select: { plan: true, startsAt: true, expiresAt: true } },
 };
 
 type SafeUserRow = Prisma.UserGetPayload<{ select: typeof SAFE_USER_SELECT }>;
@@ -63,8 +63,10 @@ const toSafeUser = ({
     emailVerified: emailVerifiedAt !== null,
     onboarded: onboardedAt !== null,
     isPro: proSub !== undefined,
+    proStartsAt: proSub?.startsAt ?? null,
     proExpiresAt: proSub?.expiresAt ?? null,
     isHocTap: hocTapSub !== undefined,
+    hocTapStartsAt: hocTapSub?.startsAt ?? null,
     hocTapExpiresAt: hocTapSub?.expiresAt ?? null,
     isPremium: hocTapSub !== undefined,
     premiumExpiresAt: hocTapSub?.expiresAt ?? null,
