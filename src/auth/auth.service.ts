@@ -866,6 +866,17 @@ export class AuthService {
     return { message, delivered: result.success };
   }
 
+  async getEmailVerificationStatus(
+    email: string,
+  ): Promise<{ verified: boolean }> {
+    const user = await this.prismaService.user.findUnique({
+      where: { email: normalizeEmail(email) },
+      select: { emailVerifiedAt: true },
+    });
+
+    return { verified: user?.emailVerifiedAt != null };
+  }
+
   /**
    * POST /auth/password/forgot — public, never reveals account existence,
    * password-having status, provider type, or mail-delivery outcome (Sprint

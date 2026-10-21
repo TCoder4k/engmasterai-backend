@@ -626,4 +626,27 @@ describe('AuthService — email verification (Sprint 02B)', () => {
       ).rejects.toBeInstanceOf(NotFoundException);
     });
   });
+
+  describe('getEmailVerificationStatus()', () => {
+    it('reads the authoritative verification timestamp from the database', async () => {
+      prisma.user.findUnique.mockResolvedValue({ emailVerifiedAt: new Date() });
+
+      await expect(
+        service.getEmailVerificationStatus(' Jane@Example.com '),
+      ).resolves.toEqual({ verified: true });
+
+      expect(prisma.user.findUnique).toHaveBeenCalledWith({
+        where: { email: 'jane@example.com' },
+        select: { emailVerifiedAt: true },
+      });
+    });
+
+    it('does not treat an unknown account as verified', async () => {
+      prisma.user.findUnique.mockResolvedValue(null);
+
+      await expect(
+        service.getEmailVerificationStatus('unknown@example.com'),
+      ).resolves.toEqual({ verified: false });
+    });
+  });
 });

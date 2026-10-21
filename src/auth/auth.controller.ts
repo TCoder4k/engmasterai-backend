@@ -4,6 +4,7 @@ import { ConfigService } from '@nestjs/config';
 import { AuthService } from './auth.service';
 import {
   ForgotPasswordDTO,
+  EmailVerificationStatusDTO,
   GoogleAuthDTO,
   GoogleLinkDTO,
   LoginDTO,
@@ -214,12 +215,8 @@ export class AuthController {
   }
 
   // POST:.../auth/email-verification/resend
-  // Authenticated — identity comes exclusively from req.user (the verified
-  // JWT subject), never a client-supplied identifier. The class-level
-  // AuthRateLimitGuard evaluates the IP-only bucket below; the user-scoped
-  // bucket is checked inside AuthService.resendVerification() itself, since
-  // req.user isn't populated until JwtAuthGuard runs, which is after this
-  // class-level guard (see rate-limit-key.util.ts).
+  // Public — a user whose login is blocked must still be able to request a
+  // fresh link. The email is only a lookup input; the response is generic.
   @RateLimits([
     {
       kind: 'email-verify-resend-ip',
@@ -236,6 +233,21 @@ export class AuthController {
       dto.email,
       this.logContext(req),
     );
+  }
+
+  // Public and deliberately read-only. The response is derived from the
+  // database, never from client state, so the verification page can refresh
+  // its status after the user clicks the link in another tab.
+  @RateLimits([
+    {
+      kind: 'email-verify-ip',
+      maxConfigKey: 'AUTH_EMAIL_VERIFY_IP_RATE_LIMIT_MAX',
+      windowConfigKey: 'AUTH_EMAIL_VERIFY_RATE_LIMIT_WINDOW_SECONDS',
+    },
+  ])
+  @Post('email-verification/status')
+  async emailVerificationStatus(@Body() dto: EmailVerificationStatusDTO) {
+    return this.authService.getEmailVerificationStatus(dto.email);
   }
 
   // POST:.../auth/email-verification/verify
