@@ -1,6 +1,10 @@
 // Import Injectable để NestJS biết đây là một provider (service/strategy)
 // Import UnauthorizedException để ném lỗi khi token không hợp lệ
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import {
+  ForbiddenException,
+  Injectable,
+  UnauthorizedException,
+} from '@nestjs/common';
 
 // ConfigService dùng để đọc biến môi trường từ .env (JWT_SECRET)
 import { ConfigService } from '@nestjs/config';
@@ -13,6 +17,7 @@ import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 
 import { UserRole } from '@prisma/client';
+import { PrismaService } from '../../prisma/prisma.service';
 
 /**
  * Interface mô tả payload bên trong JWT
@@ -32,7 +37,11 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
    * Constructor chạy khi NestJS khởi tạo JwtStrategy
    * super(...) dùng để cấu hình cho passport-jwt
    */
-  constructor(private readonly configService: ConfigService) {
+  constructor(
+    private readonly configService: ConfigService,
+    private readonly prismaService: PrismaService,
+  ) {
+    /* eslint-disable @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access */
     super({
       /**
        * jwtFromRequest:
@@ -54,6 +63,7 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
        */
       secretOrKey: configService.get<string>('JWT_SECRET'),
     });
+    /* eslint-enable @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access */
   }
 
   /**
@@ -70,6 +80,20 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
     // Nếu payload không có sub => token sai cấu trúc
     if (!payload.sub) {
       throw new UnauthorizedException('Invalid token payload');
+    }
+
+    const user = await this.prismaService.user.findUnique({
+      where: { id: payload.sub },
+      select: { emailVerifiedAt: true, isActive: true },
+    });
+    if (!user || !user.isActive) {
+      throw new UnauthorizedException('Invalid session');
+    }
+    if (!user.emailVerifiedAt) {
+      throw new ForbiddenException({
+        code: 'EMAIL_NOT_VERIFIED',
+        message: 'Email chưa được xác thực.',
+      });
     }
 
     /**

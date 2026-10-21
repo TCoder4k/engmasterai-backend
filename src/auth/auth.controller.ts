@@ -9,6 +9,7 @@ import {
   LoginDTO,
   RegisterDTO,
   ResetPasswordDTO,
+  ResendVerificationDTO,
   VerifyEmailDTO,
 } from './dto';
 import {
@@ -17,7 +18,6 @@ import {
 } from './refresh-token.constants';
 import { buildRefreshCookieOptions } from './utils/refresh-cookie.util';
 import { AuthRateLimitGuard } from './guards/auth-rate-limit.guard';
-import { JwtAuthGuard } from './guards';
 import { TrustedOriginGuard } from './guards/trusted-origin.guard';
 import { RateLimits } from './decorators/rate-limits.decorator';
 import { getClientIp, hashClientIp } from './utils/client-ip.util';
@@ -86,19 +86,13 @@ export class AuthController {
   //@Body là decorator nói với Nestjs là dùng để lấy dữ liệu từ request body
   //RegisterDTO để định nghĩa CTDL và áp luật validation
   //dto dữ liệu người dùng gửi lên request body
-  async register(
-    @Body() dto: RegisterDTO,
-    @Req() req: Request,
-    @Res({ passthrough: true }) res: Response,
-  ) {
-    const { refreshCookieValue, ...body } = await this.authService.register(
+  async register(@Body() dto: RegisterDTO, @Req() req: Request) {
+    return this.authService.register(
       dto,
       req.headers['user-agent'] ?? null,
       this.logContext(req),
       getClientIp(req),
     );
-    this.setRefreshCookie(res, refreshCookieValue);
-    return body;
   }
   //now controller calls service
   //POST:.../auth/login
@@ -226,7 +220,6 @@ export class AuthController {
   // bucket is checked inside AuthService.resendVerification() itself, since
   // req.user isn't populated until JwtAuthGuard runs, which is after this
   // class-level guard (see rate-limit-key.util.ts).
-  @UseGuards(JwtAuthGuard)
   @RateLimits([
     {
       kind: 'email-verify-resend-ip',
@@ -235,9 +228,12 @@ export class AuthController {
     },
   ])
   @Post('email-verification/resend')
-  async resendVerification(@Req() req: Request & { user: { userId: string } }) {
-    return this.authService.resendVerification(
-      req.user.userId,
+  async resendVerification(
+    @Body() dto: ResendVerificationDTO,
+    @Req() req: Request,
+  ) {
+    return this.authService.resendVerificationByEmail(
+      dto.email,
       this.logContext(req),
     );
   }

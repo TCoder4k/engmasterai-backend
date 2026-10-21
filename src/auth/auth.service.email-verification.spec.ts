@@ -233,7 +233,7 @@ describe('AuthService — email verification (Sprint 02B)', () => {
 
       expect(result.emailDeliveryStatus).toBe('failed');
       expect(result.message).toBe('Registration successful');
-      expect(result.accessToken).toBeTruthy();
+      expect(result.accessToken).toBeUndefined();
     });
 
     it('does not roll back / does not throw when the provider rejects the send — the already-created user is still returned', async () => {
@@ -262,7 +262,7 @@ describe('AuthService — email verification (Sprint 02B)', () => {
       );
 
       expect(result.emailDeliveryStatus).toBe('failed');
-      expect(result.accessToken).toBeTruthy();
+      expect(result.accessToken).toBeUndefined();
     });
 
     it('never includes the raw token, raw email, or provider error detail in any logged payload', async () => {
@@ -314,7 +314,7 @@ describe('AuthService — email verification (Sprint 02B)', () => {
         '203.0.113.42',
       );
       expect(prisma.user.create).toHaveBeenCalledTimes(1);
-      expect(result.accessToken).toBeTruthy();
+      expect(result.accessToken).toBeUndefined();
     });
 
     it('rejects and never creates a user row when TurnstileVerifierService.verify rejects — the core requirement of this feature', async () => {
@@ -363,7 +363,7 @@ describe('AuthService — email verification (Sprint 02B)', () => {
       expect(calledIp).toBe('198.51.100.7');
     });
 
-    it('proceeds normally end-to-end when the token is valid — user row created, session issued', async () => {
+    it('creates the user without issuing a session until email verification', async () => {
       const result = await service.register(
         dto,
         null,
@@ -372,7 +372,7 @@ describe('AuthService — email verification (Sprint 02B)', () => {
       );
 
       expect(prisma.user.create).toHaveBeenCalledTimes(1);
-      expect(result.accessToken).toBeTruthy();
+      expect(result.accessToken).toBeUndefined();
     });
   });
 

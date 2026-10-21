@@ -72,6 +72,14 @@ export interface AuthResult {
   emailDeliveryStatus?: 'sent' | 'failed';
 }
 
+export type RegisterResult = Omit<
+  AuthResult,
+  'accessToken' | 'refreshCookieValue'
+> & {
+  accessToken?: never;
+  refreshCookieValue?: never;
+};
+
 export interface RefreshResult {
   accessToken: string;
   refreshCookieValue: string;
@@ -106,7 +114,7 @@ export class AuthService {
     userAgent: string | null,
     logContext: AuthLogContext,
     remoteIp: string | null,
-  ): Promise<AuthResult> {
+  ): Promise<RegisterResult> {
     const startedAt = Date.now();
     const route = 'POST /auth/register';
 
@@ -189,12 +197,17 @@ export class AuthService {
         );
       }
 
-      const session = await this.issueSession(
-        user,
-        userAgent,
-        'Registration successful',
-      );
-      return { ...session, emailDeliveryStatus };
+      return {
+        message: 'Registration successful',
+        user: {
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          role: user.role,
+          emailVerified: user.emailVerifiedAt !== null,
+        },
+        emailDeliveryStatus,
+      };
     } catch (error) {
       if (error instanceof ServiceUnavailableException) throw error;
 
@@ -211,7 +224,10 @@ export class AuthService {
         failureCategory: 'registration_failed',
       });
 
-      if (error.code === 'P2002') {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002'
+      ) {
         throw new ForbiddenException('Email already exists');
       }
       this.logger.error('Registration failed', error as Error);
@@ -312,6 +328,15 @@ export class AuthService {
       throw new ForbiddenException(
         'Tài khoản của bạn đã bị khóa. Vui lòng liên hệ quản trị viên.',
       );
+    }
+
+    if (!user.emailVerifiedAt) {
+      logFailure();
+      throw new ForbiddenException({
+        code: 'EMAIL_NOT_VERIFIED',
+        message:
+          'Email của bạn chưa được xác thực. Vui lòng kiểm tra hộp thư đến hoặc thư mục Spam/Junk để xác thực tài khoản.',
+      });
     }
 
     this.authEventLogger.log('auth.login.succeeded', {
@@ -801,6 +826,44 @@ export class AuthService {
         : 'We could not send the verification email right now. Please try again shortly.',
       delivered: result.success,
     };
+  }
+
+  async resendVerificationByEmail(
+    email: string,
+    logContext: AuthLogContext,
+  ): Promise<{ message: string; delivered: boolean }> {
+    const route = 'POST /auth/email-verification/resend';
+    const normalizedEmail = normalizeEmail(email);
+    const maxPerEmail = this.configService.get<number>(
+      'AUTH_EMAIL_VERIFY_RESEND_USER_RATE_LIMIT_MAX',
+    ) as number;
+    const windowSeconds = this.configService.get<number>(
+      'AUTH_EMAIL_VERIFY_RESEND_RATE_LIMIT_WINDOW_SECONDS',
+    ) as number;
+    const rateResult = await this.rateLimiterService.checkAndIncrement(
+      emailVerifyResendUserKey(emailHashPrefix(normalizedEmail)),
+      maxPerEmail,
+      windowSeconds,
+    );
+    if (!rateResult.allowed) throw new RateLimitExceededException();
+
+    const user = await this.prismaService.user.findUnique({
+      where: { email: normalizedEmail },
+      select: { id: true, name: true, email: true, emailVerifiedAt: true },
+    });
+
+    const message =
+      'Nếu tài khoản tồn tại và chưa xác thực, email xác thực sẽ được gửi đến hộp thư của bạn.';
+    if (!user || user.emailVerifiedAt) {
+      return { message, delivered: false };
+    }
+
+    const result = await this.issueAndSendVerificationEmail(
+      user,
+      logContext,
+      route,
+    );
+    return { message, delivered: result.success };
   }
 
   /**
@@ -1384,7 +1447,13 @@ export class AuthService {
 
     const user = await this.prismaService.user.findUnique({
       where: { id: userId },
-      select: { id: true, email: true, role: true, isActive: true },
+      select: {
+        id: true,
+        email: true,
+        role: true,
+        isActive: true,
+        emailVerifiedAt: true,
+      },
     });
 
     if (!user) {
@@ -1421,6 +1490,20 @@ export class AuthService {
         ipHash: logContext.ipHash,
         familyIdTruncated,
         failureCategory: 'account_blocked',
+      });
+      throw new UnauthorizedException('Invalid refresh session');
+    }
+
+    if (!user.emailVerifiedAt) {
+      await this.refreshTokenService.revoke(parsed.familyId);
+      this.authEventLogger.log('auth.refresh.failed', {
+        requestId: logContext.requestId,
+        route,
+        durationMs: Date.now() - startedAt,
+        userId: user.id,
+        ipHash: logContext.ipHash,
+        familyIdTruncated,
+        failureCategory: 'email_not_verified',
       });
       throw new UnauthorizedException('Invalid refresh session');
     }
