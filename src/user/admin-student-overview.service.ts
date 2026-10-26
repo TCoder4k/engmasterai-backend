@@ -132,7 +132,7 @@ export class AdminStudentOverviewService {
       ? { AND: filters }
       : undefined;
 
-    const [users, total] = await Promise.all([
+    const [users, total, systemTotal, proTotal, hocTapTotal, freeTotal] = await Promise.all([
       this.prisma.user.findMany({
         where,
         skip,
@@ -152,6 +152,30 @@ export class AdminStudentOverviewService {
         },
       }),
       this.prisma.user.count({ where }),
+      this.prisma.user.count(),
+      this.prisma.user.count({
+        where: {
+          subscriptions: {
+            some: { plan: 'PRO_MONTHLY', expiresAt: { gt: now } },
+          },
+        },
+      }),
+      this.prisma.user.count({
+        where: {
+          subscriptions: {
+            some: { plan: 'PREMIUM_MONTHLY', expiresAt: { gt: now } },
+          },
+        },
+      }),
+      this.prisma.user.count({
+        where: {
+          NOT: {
+            subscriptions: {
+              some: { expiresAt: { gt: now } },
+            },
+          },
+        },
+      }),
     ]);
 
     const userIds = users.map((u) => u.id);
@@ -200,6 +224,10 @@ export class AdminStudentOverviewService {
       data,
       meta: {
         total,
+        systemTotal,
+        proTotal,
+        hocTapTotal,
+        freeTotal,
         page: page || 1,
         limit: take,
         totalPages: Math.ceil(total / take),

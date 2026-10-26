@@ -62,7 +62,16 @@ export interface AdminStudentListRow {
 
 export interface AdminStudentListResult {
   data: AdminStudentListRow[];
-  meta: { total: number; page: number; limit: number; totalPages: number };
+  meta: {
+    total: number;
+    systemTotal: number;
+    proTotal: number;
+    hocTapTotal: number;
+    freeTotal: number;
+    page: number;
+    limit: number;
+    totalPages: number;
+  };
 }
 
 export interface AdminStudentRecentTest {
