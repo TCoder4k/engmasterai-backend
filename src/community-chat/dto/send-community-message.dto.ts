@@ -5,7 +5,7 @@ import { IsString, IsUUID, Length } from 'class-validator';
 // prompt — comfortably fits several sentences or a shared link while making
 // a wall-of-text spam message impossible. DTO-level only, matching this
 // schema's convention of no @db.VarChar anywhere.
-export const MAX_COMMUNITY_MESSAGE_LENGTH = 500;
+export const MAX_COMMUNITY_MESSAGE_LENGTH = 2000;
 
 export class SendCommunityMessageDto {
   // Generated client-side, once per logical outgoing message, and REUSED on

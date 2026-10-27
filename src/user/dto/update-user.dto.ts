@@ -6,7 +6,9 @@ import {
   IsEnum,
   IsInt,
   Min,
+  IsNotEmpty,
 } from 'class-validator';
+import { Transform } from 'class-transformer';
 import { UserRole } from '@prisma/client';
 
 // Self-service update (PUT /users/me). Deliberately excludes role/level/
@@ -24,7 +26,9 @@ export class UpdateProfileDto {
   @MinLength(6)
   password?: string;
 
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
   @IsString()
+  @IsNotEmpty()
   @IsOptional()
   name?: string;
 
@@ -45,7 +49,9 @@ export class AdminUpdateUserDto {
   @MinLength(6)
   password?: string;
 
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
   @IsString()
+  @IsNotEmpty()
   @IsOptional()
   name?: string;
 
